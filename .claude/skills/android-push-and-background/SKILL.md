@@ -8,9 +8,10 @@ description: >
   WorkManager for durable retry, Doze and battery-optimisation exemptions, and
   keeping a control WebSocket alive in the background. Triggers on FCM,
   FirebaseMessagingService, NotificationChannel, POST_NOTIFICATIONS,
-  startForeground, ForegroundServiceStartNotAllowedException, WorkManager,
-  Doze, setExactAndAllowWhileIdle, "notification doesn't arrive",
-  or "the socket dies when I lock the phone".
+  startForeground, ForegroundServiceStartNotAllowedException,
+  MissingForegroundServiceTypeException, WorkManager, Doze,
+  setExactAndAllowWhileIdle, shouldShowRequestPermissionRationale,
+  "notification doesn't arrive", or "the socket dies when I lock the phone".
 ---
 
 # Background execution and push
@@ -59,9 +60,11 @@ if (Build.VERSION.SDK_INT >= 33 &&
 
 Ask **in context**, not at first launch. The right moment is when the user starts
 their first agent run: "notify you when this finishes?" is a request that explains
-itself. A cold-start prompt gets denied, and a denial is effectively permanent —
-after two dismissals Android stops showing the dialog entirely, and your only
-remedy is deep-linking to system settings.
+itself. A cold-start prompt gets denied, and denial is effectively permanent —
+Android stops showing the dialog after repeated denials, leaving deep-linking to
+system settings as the only remedy. Check
+`shouldShowRequestPermissionRationale()` to tell "not asked yet" from
+"permanently denied" rather than firing a launcher that will never appear.
 
 **Handle the denied case as a product state, not an error.** If notifications are
 off, the app must say so on the screen where the user expects to be notified,
@@ -130,9 +133,15 @@ watching — a foreground service is the honest mechanism. Android 14 tightened 
 
 - `android:foregroundServiceType` is **required** in the manifest, and you must
   declare a matching typed permission (e.g. `FOREGROUND_SERVICE_DATA_SYNC`).
-- You must have a **valid reason to start** while backgrounded, or you get
-  `ForegroundServiceStartNotAllowedException`. Starting from an FCM high-priority
-  message is allowed; starting from a timer is not.
+  Omit the type and `startForeground()` throws
+  **`MissingForegroundServiceTypeException`**.
+- Separately, you must have a **valid reason to start** while backgrounded, or
+  you get **`ForegroundServiceStartNotAllowedException`**. Starting from an FCM
+  high-priority message is allowed; starting from a timer is not.
+
+Those two exceptions are different failures with different fixes — a missing
+manifest declaration versus an illegal background start. Don't debug one as the
+other.
 - `dataSync` is capped — the system will stop long-running `dataSync` services.
 
 ```kotlin

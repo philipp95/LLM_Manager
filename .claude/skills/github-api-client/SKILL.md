@@ -76,20 +76,28 @@ too many points in a short burst, too many content-creating requests. They retur
 - On 403, distinguish permission-denied from secondary-limit by inspecting the body
   message — same status code, opposite remedies.
 
-## Conditional requests are free
+## Conditional requests are nearly free
 
-`ETag` responses that return **304 Not Modified do not count against the rate
-limit.** For a polling client this is the difference between viable and not.
+A **304 Not Modified does not count against the *primary* rate limit** — but it
+still costs a point against the *secondary* limit. So conditional requests
+preserve your 5,000/hr budget; they are not a licence to poll in a tight loop.
 
 ```kotlin
 val req = Request.Builder().url(url)
     .apply { etagStore[url]?.let { header("If-None-Match", it) } }
     .build()
-// 304 → serve cache, no quota consumed
+// 304 → serve cache, primary quota preserved
 ```
 
 Use `If-Modified-Since` where no ETag is offered. Cache per URL *and* per
 credential — never let one user's cached response serve another.
+
+**The credential-scoping has a sharp edge for GitHub Apps.** ETags are scoped to
+the token, and an installation token lives at most an hour — so the cache is
+invalidated on every token rotation. An ETag strategy that looks great in
+testing (long-lived PAT) degrades sharply in production (rotating installation
+token). If polling volume actually matters, take webhooks instead; don't build
+the quota model on conditional requests surviving rotation.
 
 ## Pagination — the Link header
 
@@ -116,9 +124,10 @@ POST /repos/{o}/{r}/pulls                      open a PR
 unified diff, or `.patch` for a mail-formatted patch. Do not reconstruct a diff from
 the files list — see `mobile-diff-review`.
 
-Large PRs truncate: `/files` caps at 3000 files, and individual patches are omitted
-above a size threshold. Detect truncation and say so rather than rendering a
-plausible-but-incomplete diff.
+Large PRs truncate: `/files` returns **up to 300 files on the first page and at
+most 3,000 total**, and individual patches are omitted above a size threshold.
+Detect truncation and say so rather than rendering a plausible-but-incomplete
+diff (`mobile-diff-review`).
 
 ## Webhooks beat polling
 
@@ -150,7 +159,8 @@ need to spend and latency you do not need to accept.
 - [ ] GraphQL `errors` array checked despite HTTP 200
 - [ ] `X-RateLimit-Resource` distinguished; secondary limits handled via `Retry-After`
 - [ ] Writes serialised, never concurrent
-- [ ] ETag conditional requests on anything polled
+- [ ] ETag conditional requests on anything polled — and the quota model does
+      **not** assume they survive installation-token rotation
 - [ ] Pagination follows `Link`, never synthesised page numbers
 - [ ] Diff fetched via `Accept:` media type; truncation detected and surfaced
 - [ ] Webhook signatures verified constant-time; deliveries deduped

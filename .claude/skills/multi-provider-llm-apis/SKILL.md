@@ -33,13 +33,20 @@ vendor lacks; they must never silently drop content.
 | | Claude | OpenAI | Gemini |
 |---|---|---|---|
 | **Auth header** | `x-api-key: <key>` **plus** `anthropic-version: 2023-06-01` | `Authorization: Bearer <key>` | `x-goog-api-key: <key>` (or `?key=`) |
-| **System prompt** | top-level `system` param — **not** a message | a message with role `system`/`developer` | top-level `systemInstruction` |
+| **System prompt** | top-level `system` param — **not** a message | a message with role `system` (`developer` on reasoning models) | top-level `systemInstruction` — a **Content object with `parts`**, not a bare string |
 | **Turn roles** | `user` / `assistant` | `user` / `assistant` | `user` / **`model`** |
+| **Output cap** | `max_tokens` — **required** | `max_completion_tokens`; `max_tokens` is **deprecated** | `maxOutputTokens` in `generationConfig` |
 | **Tool args** | `input` — already a **parsed object** | `arguments` — a **JSON string you must parse** | `args` — parsed object |
 
 The system-prompt row causes the most bugs: code that appends a `system`
 message to Claude's `messages` array gets a 400, and code that sets
 Anthropic's top-level `system` on OpenAI silently sends no system prompt at all.
+
+The **output-cap row is the nastiest**, because all three spell it differently
+and one of them is mandatory. A shared `maxTokens` field forwarded verbatim
+fails three different ways: Claude 400s if it's missing, OpenAI accepts a
+deprecated name (and rejects it outright on reasoning models), and Gemini
+ignores a top-level key because it belongs inside `generationConfig`.
 
 Anthropic's `anthropic-version` header is easy to forget and its absence is a
 hard failure, not a default.
@@ -143,10 +150,19 @@ val args = Json.parseToJsonElement(call.function.arguments)  // required
 Results go back as separate messages with `role: "tool"` and `tool_call_id`.
 
 **Gemini** — a `functionCall` part with parsed `args`; results are
-`functionResponse` parts inside a `user`-role content.
+`functionResponse` parts inside a `user`-role content. On Gemini 3.x the
+`functionResponse` **must echo back the `id` and `name`** of the matching
+`functionCall` or the request errors — so the adapter has to carry both through,
+not just the result payload.
 
 Three different envelopes for the same idea. Normalise at the adapter boundary:
 parse OpenAI's string args there, so nothing downstream has to know.
+
+**Tool-call JSON is not guaranteed valid.** OpenAI's own docs note the model may
+emit malformed JSON or hallucinate parameters outside your schema. Parse
+defensively and return a tool error to the model rather than throwing — a
+`JsonSyntaxException` escaping the adapter kills an agent run that the model
+could have recovered from.
 
 ## Streaming
 
@@ -265,7 +281,11 @@ code change — validate per-model at the adapter, not globally.
 - [ ] `thinking.display: "summarized"` set if reasoning is shown
 - [ ] Thinking blocks echoed back unchanged on continuation
 - [ ] `temperature`/`top_p`/`budget_tokens` not sent to current Claude models
-- [ ] OpenAI tool args JSON-parsed at the adapter
+- [ ] Output cap named per vendor (`max_tokens` / `max_completion_tokens` /
+      `generationConfig.maxOutputTokens`); required for Claude
+- [ ] OpenAI tool args JSON-parsed at the adapter, **defensively** — malformed
+      JSON returns a tool error, never an exception
+- [ ] Gemini `functionResponse` echoes the call's `id` and `name`
 - [ ] Claude tool results batched into one user message
 - [ ] Streaming accumulates per block `index`; tool JSON parsed at block stop
 - [ ] `[DONE]` expected for OpenAI only; `message_stop` terminates Claude

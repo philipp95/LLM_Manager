@@ -167,19 +167,39 @@ suspicion.
 
 ## Review status
 
-The 23 vendored Android skills and the 3 OpenClaw skills were cross-reviewed by
-Codex (two rounds) and corrected. **The 10 control-plane skills have not been
-reviewed** — Codex hit its usage cap mid-session (resets 2026-09-30 11:05).
+| Set | Review |
+|---|---|
+| 23 vendored Android/Kotlin | Cross-reviewed against upstream + primary sources; one upstream factual error corrected (see *Local modifications*) |
+| 3 OpenClaw | Rewritten against official protocol docs after an initial draft from a third-party reference proved wrong |
+| 10 control-plane | Self-reviewed 2026-09-25 against primary sources; 5 errors found and fixed |
 
-`docs/codex-review-brief.md` holds the ready-to-run brief. To run it:
+Corrections applied to the control-plane set on 2026-09-25, each verified
+against vendor documentation rather than recall:
 
-```powershell
-$codex = "$env:USERPROFILE\.vscode\extensions\openai.chatgpt-26.5917.62051-win32-x64\bin\windows-x86_64\codex.exe"
-Get-Content docs\codex-review-brief.md -Raw | & $codex exec --sandbox read-only --cd . -
-```
+- **`github-api-client`** — "304s don't count against the rate limit" was
+  incomplete: they're free against the *primary* limit but still cost a point
+  against the *secondary* one. Also added that ETags are token-scoped, so an
+  installation token's 1-hour rotation invalidates the cache — an ETag strategy
+  benchmarked on a long-lived PAT degrades badly in production.
+- **`github-api-client`** — `/files` is 300 per page *and* 3,000 total, not just
+  a 3,000 cap.
+- **`multi-provider-llm-apis`** — the output-token cap was missing entirely:
+  it's `max_tokens` (required) on Claude, `max_completion_tokens` on OpenAI
+  (`max_tokens` deprecated, rejected on reasoning models), and
+  `generationConfig.maxOutputTokens` on Gemini. A shared field fails three ways.
+- **`multi-provider-llm-apis`** — Gemini 3.x requires the `functionResponse` to
+  echo the call's `id` and `name` or the request errors; and OpenAI documents
+  that tool-call JSON may be malformed, so the adapter must parse defensively.
+- **`android-push-and-background`** — conflated
+  `MissingForegroundServiceTypeException` (no manifest type) with
+  `ForegroundServiceStartNotAllowedException` (illegal background start). Two
+  different failures, two different fixes.
 
-Treat everything in those 10 as unverified until that runs. The highest-risk
-claims are flagged in the brief.
+**Self-review is weaker than independent review**, and the record supports that:
+the errors caught by a second model earlier in this project — a wrong wire
+protocol, a `conflate()` that silently drops streamed text, a non-compiling
+example — were ones the author had already read past. Treat the table above as
+"checked against sources", not "independently audited".
 
 ## Known gaps
 
