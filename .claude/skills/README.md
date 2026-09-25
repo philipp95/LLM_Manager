@@ -64,6 +64,56 @@ re-apply the local modifications above), or switch to the marketplace:
 
 ## Written for this repo
 
+> Product context and the runtime decision these assume: `docs/architecture-decision.md`.
+
+### Control plane (the Beelink + multi-agent product)
+
+Written for the actual product — an Android control plane steering Claude, Codex,
+and Gemini against GitHub and Azure DevOps repos, executing on a home server.
+
+**Blocking — needed before any real work:**
+
+- **`remote-server-connectivity`** — reaching the Beelink from off-LAN. Tailscale
+  vs WireGuard vs tunnel, never port-forward, parallel endpoint probing against
+  `/readyz`, captive-portal detection, `NetworkCallback`-driven reconnect, scoped
+  TLS trust, and `NoRoute` vs `AuthFailed` as distinct UI states.
+- **`android-push-and-background`** — FCM data messages wake the app; the socket
+  does the work. `POST_NOTIFICATIONS`, channels by urgency, Android 14
+  `foregroundServiceType`, WorkManager, Doze, OEM battery killers.
+- **`agent-session-multiplexing`** — N concurrent agent sessions. Server is
+  authoritative, client is cache + cursor; attach/detach, seq-based backfill with
+  gap detection, resume after process death, `Blocked` as a first-class status,
+  one worktree per session.
+
+**Repo and provider integration:**
+
+- **`azure-devops-api-client`** — mandatory `api-version`, PAT `base64(":" + pat)`,
+  the **global-PAT retirement (stops working 1 Dec 2026)**, continuation-token
+  paging, JSON-Patch work-item writes, the HTTP-203-sign-in-page trap.
+- **`github-api-client`** — GitHub App installation tokens (1-hour expiry), OAuth
+  device flow for the phone, primary vs secondary rate limits, ETag conditional
+  requests, `Link`-header pagination, webhook signature verification.
+- **`multi-provider-llm-apis`** — where Claude, OpenAI, and Gemini actually
+  diverge: system prompt placement, tool-call envelopes, thinking blocks,
+  streaming event shapes, `refusal`/`pause_turn`, and why `temperature` 400s on
+  current Claude models.
+
+**Trust and review:**
+
+- **`hitl-approval-flows`** — approving an agent action from a phone as an
+  authorisation protocol: `actionHash` bound at approval and re-verified at
+  execution, short expiry, single use, risk tiers with biometric gating, scoped
+  and revocable standing grants, deny-on-timeout, no "approve all".
+- **`agent-audit-trail`** — append-only hash-chained record: intent before
+  execution, server clock, redaction on the write path, `Co-Authored-By` agent
+  attribution that never impersonates a human, tiered retention via tombstones.
+- **`mobile-diff-review`** — inline (not split) layout at phone widths, unified
+  diff parsing incl. omitted `@@` counts and renames, collapsing generated files,
+  persisted per-file viewed state, and rendering bidi controls as escapes.
+- **`terminal-log-streaming-ui`** — ANSI SGR to spans, `\r` rewriting one line
+  instead of 4000, capped tail-preserving scrollback, follow-tail vs manual
+  scroll, OSC discarded, secrets redacted server-side.
+
 ### Android gaps
 
 Two areas central to this app had no upstream coverage:
@@ -115,6 +165,22 @@ names wrong. It was rewritten against the official `docs.openclaw.ai/gateway/pro
 pages after a cross-review. Treat non-official OpenClaw API references with
 suspicion.
 
+## Review status
+
+The 23 vendored Android skills and the 3 OpenClaw skills were cross-reviewed by
+Codex (two rounds) and corrected. **The 10 control-plane skills have not been
+reviewed** — Codex hit its usage cap mid-session (resets 2026-09-30 11:05).
+
+`docs/codex-review-brief.md` holds the ready-to-run brief. To run it:
+
+```powershell
+$codex = "$env:USERPROFILE\.vscode\extensions\openai.chatgpt-26.5917.62051-win32-x64\bin\windows-x86_64\codex.exe"
+Get-Content docs\codex-review-brief.md -Raw | & $codex exec --sandbox read-only --cd . -
+```
+
+Treat everything in those 10 as unverified until that runs. The highest-risk
+claims are flagged in the brief.
+
 ## Known gaps
 
 Not covered by any skill here; worth adding when the work comes up:
@@ -123,12 +189,14 @@ Not covered by any skill here; worth adding when the work comes up:
 - **CI** — build workflow, lint/test gates, artifact and mapping-file retention
 - **R8 / ProGuard** — `android-debugging` covers retracing and keep rules, but there
   is no optimized-release build and validation workflow
-- **WorkManager** — `kotlin-coroutines` mentions it; no implementation guidance for
-  constraints, unique work, retry, or process-death recovery
-- **Notifications and runtime permissions** — relevant only if work continues in the
-  background
+- **Server-side orchestration** — worktree lifecycle, agent process supervision,
+  merge/conflict resolution when two agents touch one repo. Deliberately deferred
+  until the runtime decision in `docs/architecture-decision.md` is made.
 - **Model binary downloads** — resumable downloads, integrity checks, disk-space
   handling, if the app ever manages on-device weights rather than remote endpoints
+
+`WorkManager` and `notifications/runtime permissions` were listed here previously;
+both are now covered by `android-push-and-background`.
 
 ## Licenses
 
