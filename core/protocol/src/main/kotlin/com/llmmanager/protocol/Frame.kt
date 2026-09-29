@@ -9,7 +9,7 @@ import kotlinx.serialization.json.JsonElement
  *
  * One connection carries request/response and server-pushed events. The
  * discriminator is `type`, matching the shape documented in
- * `.claude/skills/openclaw-gateway-client` — a sound reference design even
+ * `.agents/skills/openclaw-gateway-client` — a sound reference design even
  * though this is not OpenClaw's protocol.
  */
 @Serializable

@@ -6,6 +6,30 @@ import kotlin.test.assertTrue
 
 class SecretRedactorTest {
 
+    @Test
+    fun `PEM blocks are suppressed across stream lines and reset after the end`() {
+        val stream = SecretRedactor().newStream()
+        val output = listOf(
+            "before -----BEGIN RSA PRIVATE KEY-----",
+            "SYNTHETIC-KEY-MATERIAL",
+            "-----END RSA PRIVATE KEY----- after",
+        ).joinToString("\n") { stream.redact(it) }
+        assertFalse(output.contains("SYNTHETIC-KEY-MATERIAL"))
+        assertTrue(output.contains("before"))
+        assertTrue(output.contains("after"))
+        assertTrue(stream.redact("normal") == "normal")
+    }
+
+    @Test
+    fun `unterminated keys remain suppressed without contaminating other streams`() {
+        val redactor = SecretRedactor()
+        val stream = redactor.newStream()
+        stream.redact("-----BEGIN PRIVATE KEY-----")
+        assertFalse(stream.redact("PRIVATE-CONTENT").contains("PRIVATE-CONTENT"))
+        assertTrue(redactor.newStream().redact("normal") == "normal")
+        assertFalse(redactor.redact("-----BEGIN PRIVATE KEY-----\nPRIVATE-CONTENT").contains("PRIVATE-CONTENT"))
+    }
+
     private val redactor = SecretRedactor()
 
     @Test

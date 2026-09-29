@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
  * Token counts for one model within a run.
  *
  * Counts are per-provider and NOT comparable across vendors — see
- * `.claude/skills/multi-provider-llm-apis`. Never sum raw token counts across
+ * `.agents/skills/multi-provider-llm-apis`. Never sum raw token counts across
  * providers and present the total as a single number; sum cost instead.
  */
 @Serializable

@@ -19,7 +19,7 @@ enum class HarnessId { CLAUDE_CODE, CODEX, GEMINI }
  * have deliberately chosen; anything remote-affecting (push, deploy, credential
  * access) belongs behind this product's own approval flow instead, where the
  * decision is recorded and bound to the exact action.
- * See `.claude/skills/hitl-approval-flows`.
+ * See `.agents/skills/hitl-approval-flows`.
  */
 @Serializable
 enum class PermissionMode { ACCEPT_EDITS, BYPASS, PLAN }
@@ -41,7 +41,7 @@ data class RunSpec(
 /**
  * `Blocked` is a first-class status, not a flavour of `Running` — it is the only
  * one that needs the user *now*, and it drives the high-priority notification
- * channel. See `.claude/skills/agent-session-multiplexing`.
+ * channel. See `.agents/skills/agent-session-multiplexing`.
  */
 @Serializable
 sealed interface RunStatus {

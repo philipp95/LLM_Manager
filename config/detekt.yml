@@ -1,0 +1,15 @@
+config:
+  validation: true
+
+style:
+  ReturnCount:
+    excludeGuardClauses: true
+  # Numeric protocol fixtures and CLI presentation values are clearer inline.
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 160
+
+complexity:
+  LongParameterList:
+    ignoreDataClasses: true

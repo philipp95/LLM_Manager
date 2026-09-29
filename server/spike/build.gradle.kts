@@ -8,6 +8,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.clikt)
     runtimeOnly(libs.logback.classic)
+    testImplementation(libs.kotlin.test)
 }
 
 application {

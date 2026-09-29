@@ -24,7 +24,7 @@ House defaults — apply them without reminders or re-derivation; where the proj
 
 ## Skill routing
 
-These skills are vendored locally into this repo's `.claude/skills/`, so load them
+These skills are vendored locally into this repo's `.agents/skills/`, so load them
 by their **plain name** (`compose`, `koin`, …). Upstream's `android-skills:`
 marketplace prefix does not apply in this layout.
 
