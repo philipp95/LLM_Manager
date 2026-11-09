@@ -3,19 +3,24 @@ package com.llmmanager.server.api
 import com.sun.net.httpserver.HttpServer
 import java.io.File
 import java.net.InetSocketAddress
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.condition.DisabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 
 /**
  * Real pushes to a local bare repository (origin URLs are rewritten with git's
  * `insteadOf`), and forge APIs served by a local HTTP server or a fake `gh`.
  */
+@DisabledOnOs(OS.WINDOWS, disabledReason = "fake gh is a shell script; POSIX token permissions")
 class BranchServiceTest {
     @TempDir
     lateinit var directory: Path
@@ -68,8 +73,8 @@ class BranchServiceTest {
         git(wt, "add", "feature.txt")
         commit(wt, "agent work")
         val tokens = File(root, "config").also { it.mkdirs() }
-        File(tokens, ForgeCredentials.GITLAB_FILE).writeText("glpat-test-token\n")
-        File(tokens, ForgeCredentials.AZURE_FILE).writeText("ado-pat-value\n")
+        private(File(tokens, "${ForgeCredentials.GITLAB_FILE}-gitlab.example.com")).writeText("glpat-test-token\n")
+        private(File(tokens, ForgeCredentials.AZURE_FILE)).writeText("ado-pat-value\n")
         val credentials = ForgeCredentials(tokens, gh)
         val scanner = ProjectScanner(listOf("${root.path}/repos/*"))
         val store = StateStore(File(root, "state"))
@@ -166,16 +171,47 @@ class BranchServiceTest {
     fun `missing credentials are explained, and push auth stays off the command line`() {
         val credentials = ForgeCredentials(File(root, "empty"), gh = null)
         val gitlab = Forge.GitLab("gitlab.example.com", "team/app")
-        assertTrue(credentials.missing(gitlab)!!.contains("gitlab-token"))
+        assertTrue(credentials.missing(gitlab)!!.contains("gitlab-token-gitlab.example.com"))
         assertTrue(credentials.missing(Forge.AzureDevOps("o", "p", "r"))!!.contains("organisation-scoped"))
         assertTrue(credentials.missing(Forge.GitHub("o", "r"))!!.contains("gh auth login"))
 
         File(root, "cfg").mkdirs()
-        File(root, "cfg/${ForgeCredentials.GITLAB_FILE}").writeText("tok")
-        val env = ForgeCredentials(File(root, "cfg"), null).pushEnvironment(gitlab, "https://gitlab.example.com/team/app.git")
+        private(File(root, "cfg/${ForgeCredentials.GITLAB_FILE}-gitlab.example.com")).writeText("tok")
+        val cfg = ForgeCredentials(File(root, "cfg"), null)
+        val env = cfg.pushEnvironment(gitlab, "https://gitlab.example.com/team/app.git")
         assertEquals("http.https://gitlab.example.com/.extraHeader", env["GIT_CONFIG_KEY_0"])
         assertEquals("Authorization: Basic " + Base64.getEncoder().encodeToString("oauth2:tok".toByteArray()), env["GIT_CONFIG_VALUE_0"])
-        assertTrue(ForgeCredentials(File(root, "cfg"), null).pushEnvironment(gitlab, "git@gitlab.example.com:team/app.git").isEmpty())
+        assertTrue(cfg.pushEnvironment(gitlab, "git@gitlab.example.com:team/app.git").isEmpty())
+        // The token goes only to its own host, whatever the origin says.
+        assertTrue(cfg.pushEnvironment(gitlab, "https://gitlab.attacker.example/team/app.git").isEmpty())
+    }
+
+    @Test
+    fun `tokens are bound to their host and must be private`() {
+        val api = fakeApi { _, _ -> Triple(201, "application/json", "{}") }
+        val f = fixture("https://gitlab.example.com/team/app.git", { ForgeClient(it, gitlabApi = { _ -> api }) })
+        val tokens = File(root, "config")
+        File(tokens, "${ForgeCredentials.GITLAB_FILE}-gitlab.example.com").delete()
+        private(File(tokens, ForgeCredentials.GITLAB_FILE)).writeText("token-for-gitlab-com\n")
+
+        val refused = f.service.openPullRequest(f.projectId, f.branch) as BranchService.Outcome.Invalid
+
+        assertTrue(refused.reason.contains("for gitlab.example.com"), refused.reason)
+        assertTrue(requests.isEmpty(), "the gitlab.com token must never reach another host")
+
+        val open = File(tokens, "${ForgeCredentials.GITLAB_FILE}-gitlab.example.com").apply { writeText("tok\n") }
+        Files.setPosixFilePermissions(open.toPath(), PosixFilePermissions.fromString("rw-r--r--"))
+        val shared = f.service.openPullRequest(f.projectId, f.branch) as BranchService.Outcome.Invalid
+        assertTrue(shared.reason.contains("readable by other users"), shared.reason)
+        assertTrue(requests.isEmpty())
+    }
+
+    /** Creates [file] as an owner-only file, the only kind of token file the server uses. */
+    private fun private(file: File): File {
+        file.parentFile.mkdirs()
+        file.createNewFile()
+        Files.setPosixFilePermissions(file.toPath(), PosixFilePermissions.fromString("rw-------"))
+        return file
     }
 
     private companion object {

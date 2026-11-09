@@ -25,21 +25,22 @@ data class ApiOk(val status: String = "ok")
 @Serializable
 data class RunLog(val run: Run, val activity: List<ActivityLine>)
 
-/**
- * Usage is open to the tailnet like the project overview. Schedules, run logs and
- * every change need the access token: they reveal prompts and start agents.
- */
-fun Route.scheduleRoutes(api: ScheduleApi, token: ApiToken) {
+/** Usage, schedules, run logs and publishing. Every route needs the access token. */
+fun Route.scheduleRoutes(api: ScheduleApi, token: ApiToken, onChange: () -> Unit = {}) {
+    val usage = TtlCache(USAGE_TTL_MS) { api.usage.read() }
     get("/api/usage") {
-        call.respond(withContext(Dispatchers.IO) { api.usage.read() })
+        if (!call.authorized(token)) return@get
+        call.respond(withContext(Dispatchers.IO) { usage.get() })
     }
     jobRoutes(api, token)
     runRoutes(api, token)
-    api.branches?.let { branchRoutes(it, token) }
+    api.branches?.let { branchRoutes(it, token, onChange) }
 }
 
+private const val USAGE_TTL_MS = 10_000L
+
 /** Issue #1: push an agent branch, open its pull request, merge it through the forge. */
-private fun Route.branchRoutes(branches: BranchService, token: ApiToken) {
+private fun Route.branchRoutes(branches: BranchService, token: ApiToken, onChange: () -> Unit) {
     post("/api/projects/{id}/branches/{action}") {
         if (!call.authorized(token)) return@post
         val branch = runCatching { call.receive<BranchRequest>() }.getOrNull()?.branch
@@ -55,6 +56,7 @@ private fun Route.branchRoutes(branches: BranchService, token: ApiToken) {
                 }
             }
         }
+        onChange()
         when (outcome) {
             is BranchService.Outcome.Ok -> call.respond(BranchResult(outcome.message, outcome.record))
             is BranchService.Outcome.Invalid -> call.respond(HttpStatusCode.BadRequest, ApiError(outcome.reason))
@@ -124,9 +126,3 @@ private fun Route.runRoutes(api: ScheduleApi, token: ApiToken) {
     }
 }
 
-/** Responds 401 and returns false unless the request carries the access token. */
-private suspend fun ApplicationCall.authorized(token: ApiToken): Boolean {
-    if (token.accepts(request.headers[HttpHeaders.Authorization])) return true
-    respond(HttpStatusCode.Unauthorized, ApiError("Missing or wrong access token"))
-    return false
-}

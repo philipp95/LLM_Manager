@@ -24,6 +24,22 @@ object BindAddress {
         return address
     }
 
+    /**
+     * The machine's MagicDNS names, full (`host.tailnet.ts.net`) and short (`host`), so
+     * clients can use them; any other Host header is refused.
+     */
+    fun tailscaleNames(status: () -> String? = { Processes.run(listOf("tailscale", "status", "--json"), timeoutMillis = 5_000L) }): List<String> {
+        val dnsName = status()?.let { MAGIC_DNS.find(it)?.groupValues?.get(1) }?.trimEnd('.')?.lowercase() ?: return emptyList()
+        if (!dnsName.matches(Regex("[a-z0-9.-]+"))) return emptyList()
+        return listOf(dnsName, dnsName.substringBefore('.')).distinct()
+    }
+
+    /** `host:port` values the server answers to: the bind address, MagicDNS names and [extra]. */
+    fun allowedHosts(address: Inet4Address, port: Int, names: List<String>, extra: List<String>): Set<String> =
+        (listOf(address.hostAddress) + names + extra).map { it.lowercase() }.flatMap { name ->
+            if (port == HTTP_PORT) listOf("$name:$port", name) else listOf("$name:$port")
+        }.toSet()
+
     fun isTailscale(address: Inet4Address): Boolean {
         val bytes = address.address
         val first = bytes[0].toInt() and 0xFF
@@ -37,4 +53,7 @@ object BindAddress {
 
     private const val TAILSCALE_TIMEOUT_MILLIS = 5_000L
     private val IPV4_LITERAL = Regex("""(?:\d{1,3}\.){3}\d{1,3}""")
+    /** Self.DNSName in `tailscale status --json`; the first DNSName in the output is the local node's. */
+    private val MAGIC_DNS = Regex("\"Self\"\\s*:\\s*\\{.*?\"DNSName\"\\s*:\\s*\"([^\"]+)\"", RegexOption.DOT_MATCHES_ALL)
+    private const val HTTP_PORT = 80
 }

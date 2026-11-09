@@ -25,8 +25,9 @@ sealed interface ApiResult<out T> {
 class ServerClient(
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-    suspend fun projects(server: ServerAddress): ApiResult<ProjectsResponse> =
-        request(server, Call("GET", "/api/projects"), token = null) { json.decodeFromString(ProjectsResponse.serializer(), it) }
+    /** Every API call carries the access token; only the configured server ever receives it. */
+    suspend fun projects(server: ServerAddress, token: String): ApiResult<ProjectsResponse> =
+        request(server, Call("GET", "/api/projects"), token) { json.decodeFromString(ProjectsResponse.serializer(), it) }
 
     suspend fun startCodex(server: ServerAddress, projectId: String, token: String): ApiResult<LaunchResponse> =
         request(server, Call("POST", "/api/projects/${encode(projectId)}/codex"), token) {
@@ -41,8 +42,8 @@ class ServerClient(
         }
     }
 
-    suspend fun usage(server: ServerAddress): ApiResult<UsageResponse> =
-        request(server, Call("GET", "/api/usage"), token = null) { json.decodeFromString(UsageResponse.serializer(), it) }
+    suspend fun usage(server: ServerAddress, token: String): ApiResult<UsageResponse> =
+        request(server, Call("GET", "/api/usage"), token) { json.decodeFromString(UsageResponse.serializer(), it) }
 
     suspend fun schedule(server: ServerAddress, token: String): ApiResult<ScheduleResponse> =
         request(server, Call("GET", "/api/schedule"), token) { json.decodeFromString(ScheduleResponse.serializer(), it) }

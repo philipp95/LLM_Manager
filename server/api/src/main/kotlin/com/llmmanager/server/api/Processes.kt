@@ -14,10 +14,22 @@ object Processes {
         val ok: Boolean get() = exitCode == 0
     }
 
-    /** Like [run], but keeps stderr and the exit code so failures can be explained to the user. */
-    fun exec(command: List<String>, directory: File? = null, timeoutMillis: Long = 60_000, environment: Map<String, String> = emptyMap()): Exec {
+    /**
+     * Like [run], but keeps stderr and the exit code so failures can be explained to the user.
+     * With [inheritEnvironment] false the child gets only [environment].
+     */
+    fun exec(
+        command: List<String>,
+        directory: File? = null,
+        timeoutMillis: Long = 60_000,
+        environment: Map<String, String> = emptyMap(),
+        inheritEnvironment: Boolean = true,
+    ): Exec {
         val process = try {
-            ProcessBuilder(command).directory(directory).also { it.environment().putAll(environment) }.start()
+            ProcessBuilder(command).directory(directory).also {
+                if (!inheritEnvironment) it.environment().clear()
+                it.environment().putAll(environment)
+            }.start()
         } catch (e: IOException) {
             return Exec(-1, "", e.message ?: "could not start ${command.first()}")
         }
@@ -85,19 +97,33 @@ object Processes {
 /**
  * Git with `GIT_OPTIONAL_LOCKS=0`, so `git status` never refreshes the index and
  * inspecting a worktree an agent is using never takes `index.lock`.
+ *
+ * Every call also overrides the settings through which repository config can make git
+ * run programs: fsmonitor, hooks, signature verification and signing, and the `ext::`
+ * transport. Agents can write to their worktrees, and repositories in the scanned
+ * folders may come from anywhere, so their config is not trusted to execute anything
+ * in this process. Filter drivers are the remaining path; see [WorktreeGuard].
  */
 class Git(private val binary: String = "git", private val timeoutMillis: Long = 10_000) {
     fun run(directory: File, vararg args: String): String? = run(directory, args.asList())
 
     fun run(directory: File, args: List<String>): String? =
-        Processes.run(listOf(binary, "-C", directory.path) + args, timeoutMillis = timeoutMillis, environment = ENVIRONMENT)
+        Processes.run(command(directory, args), timeoutMillis = timeoutMillis, environment = ENVIRONMENT)
 
     /** For network operations: keeps the error text, and accepts extra environment such as `GIT_CONFIG_*` auth. */
     fun exec(directory: File, args: List<String>, environment: Map<String, String> = emptyMap()): Processes.Exec =
-        Processes.exec(listOf(binary, "-C", directory.path) + args, timeoutMillis = NETWORK_TIMEOUT_MS, environment = ENVIRONMENT + environment)
+        Processes.exec(command(directory, args), timeoutMillis = NETWORK_TIMEOUT_MS, environment = ENVIRONMENT + environment)
 
-    private companion object {
-        val ENVIRONMENT = mapOf("GIT_OPTIONAL_LOCKS" to "0", "GIT_TERMINAL_PROMPT" to "0")
-        const val NETWORK_TIMEOUT_MS = 120_000L
+    private fun command(directory: File, args: List<String>) = listOf(binary, "-C", directory.path) + HARDENING + args
+
+    companion object {
+        private val ENVIRONMENT = mapOf("GIT_OPTIONAL_LOCKS" to "0", "GIT_TERMINAL_PROMPT" to "0")
+        private const val NETWORK_TIMEOUT_MS = 120_000L
+
+        /** Command-line config wins over every config file, including a substituted one. */
+        val HARDENING = listOf(
+            "core.fsmonitor=false", "core.hooksPath=/dev/null", "log.showSignature=false",
+            "commit.gpgSign=false", "tag.gpgSign=false", "protocol.ext.allow=never",
+        ).flatMap { listOf("-c", it) }
     }
 }

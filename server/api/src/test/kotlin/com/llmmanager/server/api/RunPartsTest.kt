@@ -9,6 +9,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.condition.DisabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 
 class RunPartsTest {
@@ -108,11 +110,12 @@ class RunPartsTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS, disabledReason = "runs the bash wrapper")
     fun `wrapper script quotes hostile paths`() {
         val weird = directory.resolve("it's \$(touch pwned) dir").toFile().also { it.mkdirs() }
         val runDir = directory.resolve("run").toFile().also { it.mkdirs() }
         File(runDir, "prompt.txt").writeText("hello; rm -rf /")
-        val script = File(runDir, "run.sh").apply { writeText(RunEngine.wrapper(weird, runDir, listOf("cat"))) }
+        val script = File(runDir, "run.sh").apply { writeText(RunEngine.wrapper(weird, runDir, listOf("cat"), Agent.CLAUDE)) }
 
         val process = ProcessBuilder("bash", script.path).start()
         assertTrue(process.waitFor(10, TimeUnit.SECONDS))
@@ -121,6 +124,35 @@ class RunPartsTest {
         assertEquals("0", File(runDir, "exit").readText().trim())
         assertFalse(File(weird, "pwned").exists())
         assertFalse(directory.resolve("pwned").toFile().exists())
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS, disabledReason = "runs the bash wrapper")
+    fun `agents start with only allowed variables, dropping tokens, sockets and other agents' keys`() {
+        val runDir = directory.resolve("envrun").toFile().also { it.mkdirs() }
+        File(runDir, "prompt.txt").writeText("")
+        val script = File(runDir, "run.sh").apply { writeText(RunEngine.wrapper(runDir, runDir, listOf("env"), Agent.CLAUDE)) }
+        val builder = ProcessBuilder("bash", script.path)
+        builder.environment().apply {
+            clear()
+            putAll(
+                mapOf(
+                    "HOME" to "/home/u", "PATH" to System.getenv("PATH").orEmpty(), "ANTHROPIC_API_KEY" to "sk-ant-x",
+                    "OPENAI_API_KEY" to "sk-openai", "GH_TOKEN" to "ghp_x", "SSH_AUTH_SOCK" to "/tmp/ssh-x/agent",
+                    "TMUX" to "/tmp/tmux-1/default,1,0", "LANG" to "C.UTF-8 with spaces",
+                ),
+            )
+        }
+
+        assertTrue(builder.start().waitFor(10, TimeUnit.SECONDS))
+
+        val env = File(runDir, "events.jsonl").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
+        assertEquals("/home/u", env["HOME"])
+        assertEquals("sk-ant-x", env["ANTHROPIC_API_KEY"])
+        assertEquals("C.UTF-8 with spaces", env["LANG"])
+        listOf("OPENAI_API_KEY", "GH_TOKEN", "SSH_AUTH_SOCK", "TMUX", "JAVA_HOME").forEach { assertFalse(it in env, "$it leaked: $env") }
+        // The secret value is read at run time; it is never written into the script.
+        assertFalse(script.readText().contains("sk-ant-x"))
     }
 
     @Test

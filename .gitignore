@@ -11,3 +11,10 @@ build/
 
 # Local machine config — JDK path differs per machine
 local.properties
+
+# Signing keys and secrets never belong in the repository
+*.jks
+*.keystore
+*.p12
+*-token
+.env

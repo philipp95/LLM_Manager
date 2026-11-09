@@ -3,8 +3,10 @@ package com.llmmanager.server.api
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.split
+import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.restrictTo
 import io.ktor.server.engine.embeddedServer
@@ -36,39 +38,67 @@ class ApiServer : CliktCommand(name = "api") {
         .default(File(System.getProperty("user.home"), ".local/share/llm-manager").path)
     private val runWorktrees by option("--run-worktrees", help = "Where scheduled runs get their worktrees")
         .default(File(System.getProperty("user.home"), "agent-work/runs").path)
+    private val allowedHost by option(
+        "--allowed-host",
+        help = "Extra host name clients may use (repeatable); the bind address and MagicDNS names are always allowed",
+    ).multiple()
+    private val agentSandbox by option(
+        "--agent-sandbox",
+        help = "auto: sandbox agent runs with bubblewrap when it works; on: refuse runs that cannot be sandboxed; off: never",
+    ).choice("auto" to AgentSandbox.Mode.AUTO, "on" to AgentSandbox.Mode.ON, "off" to AgentSandbox.Mode.OFF).default(AgentSandbox.Mode.AUTO)
     private val tokenFile by option("--token-file", help = "Access token for launching sessions; created if missing")
         .default(File(System.getProperty("user.home"), ".config/llm-manager/api-token").path)
 
     override fun run() {
         val address = BindAddress.resolve(host)
+        val state = SecureFiles.privateDir(File(stateDir), tighten = true)
+        val token = ApiToken.loadOrCreate(File(tokenFile))
         val sessions = TmuxSessions()
         val scanner = ProjectScanner(projects.filter { it.isNotBlank() }, sessions = sessions)
         val codexPath = codex ?: CodexLauncher.findCodex()
-        val launcher = CodexLauncher(scanner, sessions, CodexLauncher.Settings(File(codexWorktrees), codexPath))
-        val token = ApiToken.loadOrCreate(File(tokenFile))
-        val schedule = schedule(scanner, sessions, codexPath)
-        val log = LoggerFactory.getLogger(ApiServer::class.java)
-        log.info("Dashboard on http://{}:{}/ scanning {}", address.hostAddress, port, projects)
-        log.info("Codex: {}. Launch token in {}. State in {}", codexPath ?: "not found, launching disabled", tokenFile, stateDir)
-        embeddedServer(Netty, port = port, host = address.hostAddress) {
-            dashboardModule(scanner, launcher, token, ApkFile(File(apk)), schedule)
-        }.start(wait = true)
-    }
-
-    /** Scheduling: persistent jobs and runs, ticking in the background for the server's lifetime. */
-    private fun schedule(scanner: ProjectScanner, sessions: SessionHost, codexPath: String?): ScheduleApi {
-        val state = File(stateDir)
-        val store = StateStore(state)
-        val usage = UsageReader(File(System.getProperty("user.home")), state)
-        // Gemini's command allowlist mirrors Claude's; written fresh at every start.
-        val policy = File(state, "gemini-policy.toml").apply { parentFile.mkdirs(); writeText(AgentCommands.geminiPolicy()) }
+        val policy = File(state, "gemini-policy.toml").apply { writeText(AgentCommands.geminiPolicy()) }
         val commands = AgentCommands(
             claude ?: CodexLauncher.findBinary("claude"), codexPath,
             gemini = gemini ?: CodexLauncher.findBinary("gemini"), geminiPolicyFile = policy.path,
         )
-        val workspace = Workspace(scanner, sessions, commands)
+        val sandbox = sandbox(state, policy, commands)
+        val launcher = CodexLauncher(
+            scanner, sessions,
+            CodexLauncher.Settings(File(codexWorktrees), codexPath, scriptDir = File(state, "sessions"), sandbox = sandbox),
+        )
+        val workspace = Workspace(scanner, sessions, commands, sandbox = sandbox)
+        val schedule = schedule(state, workspace)
+        val hosts = BindAddress.allowedHosts(address, port, BindAddress.tailscaleNames(), allowedHost)
+        val log = LoggerFactory.getLogger(ApiServer::class.java)
+        log.info("Dashboard on http://{}:{}/ scanning {}", address.hostAddress, port, projects)
+        log.info("Codex: {}. Token in {}. State in {}. Answering for {}", codexPath ?: "not found", tokenFile, stateDir, hosts)
+        embeddedServer(Netty, port = port, host = address.hostAddress) {
+            dashboardModule(scanner, token, DashboardServices(launcher, ApkFile(File(apk)), schedule), allowedHosts = hosts)
+        }.start(wait = true)
+    }
+
+    /** Agent containment: bubblewrap with secrets hidden, when it is installed and passes its self-test. */
+    private fun sandbox(state: File, policy: File, commands: AgentCommands): AgentSandbox {
+        val home = File(System.getProperty("user.home"))
+        val uid = runCatching { java.nio.file.Files.getAttribute(java.nio.file.Path.of("/proc/self"), "unix:uid") as Int }.getOrNull()?.toLong()
+        val profile = { bwrap: String ->
+            AgentSandbox.Profile(
+                bwrap, home,
+                hiddenServerPaths = listOf(state, File(tokenFile).absoluteFile.parentFile),
+                visible = listOf(policy),
+                uid = uid,
+            )
+        }
+        val agents = Agent.entries.associateWith { commands.binary(it) }
+        return AgentSandbox.detect(agentSandbox, profile, agents, File(state, "sandbox-check"))
+    }
+
+    /** Scheduling and publishing: persistent jobs and runs, ticking in the background for the server's lifetime. */
+    private fun schedule(state: File, workspace: Workspace): ScheduleApi {
+        val store = StateStore(state).also { it.pruneRunDirs() }
+        val usage = UsageReader(File(System.getProperty("user.home")), state)
         val engine = RunEngine(store, workspace, File(runWorktrees))
-        val scheduler = Scheduler(store, engine, sessions, limitResetHint = usage::resetHint)
+        val scheduler = Scheduler(store, engine, workspace.sessions, limitResetHint = usage::resetHint)
         scheduler.launch(CoroutineScope(SupervisorJob()))
         val credentials = ForgeCredentials(File(tokenFile).absoluteFile.parentFile, CodexLauncher.findBinary("gh"))
         val branches = BranchService(store, BranchStore(state), workspace, ForgeClient(credentials), credentials)

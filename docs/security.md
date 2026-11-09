@@ -1,0 +1,83 @@
+# Security model
+
+Status: reviewed 2026-11-09. This describes what the code enforces today and what
+still depends on the machine's configuration.
+
+## What is being protected
+
+The server runs as one Unix account on a home machine. That account holds:
+
+- the dashboard's access token (`~/.config/llm-manager/api-token`);
+- forge credentials: the GitHub CLI login (`~/.config/gh`), GitLab and Azure DevOps
+  tokens (`~/.config/llm-manager/*-token`);
+- the Android release signing key (`~/.config/llm-manager/android-release.jks`);
+- the logins of Claude Code, Codex and Gemini;
+- the repositories it works on.
+
+The phone (web page or app) steers agents that edit those repositories, unattended.
+
+## Threats considered
+
+| Threat | Example |
+| --- | --- |
+| Other devices or people on the tailnet | A shared node browses the dashboard or calls the API |
+| A web page in a browser on the tailnet | DNS rebinding to the server's address; CSRF |
+| A malicious or prompt-injected agent run | Edits `build.gradle.kts`, then runs the allowlisted `./gradlew` |
+| A hostile repository in a scanned folder | `.git/config` with `core.fsmonitor` or filter drivers |
+| A token sent to the wrong host | A repository whose origin is some other GitLab instance |
+| Vulnerable dependencies | HTTP request smuggling in the web server |
+
+## Controls
+
+| Control | Where |
+| --- | --- |
+| Binds only to the Tailscale IPv4 (or loopback); never `0.0.0.0` | `BindAddress` |
+| Every `/api` endpoint needs `Authorization: Bearer <token>` (256-bit, compared in constant time). Open: the static page, `/readyz`, the APK | `DashboardModule`, `ApiToken` |
+| Host header must be the bind address or the machine's MagicDNS names (`--allowed-host` adds more); others get 421 | `DashboardModule`, `BindAddress.allowedHosts` |
+| CSP allows only the page's own script (by SHA-256); `frame-ancestors 'none'`, COOP/CORP, `nosniff`, `no-referrer`, `no-store` | `DashboardModule` |
+| Request bodies ≤ 64 KiB, `Content-Length` required; unexpected errors become JSON 500 without details | `DashboardModule` |
+| Token, state and run logs private (0600 / 0700); forge token files refused unless owner-only | `SecureFiles`, `StateStore`, `ForgeCredentials` |
+| Forge tokens bound to one host (`gitlab-token` = gitlab.com, `gitlab-token-<host>` otherwise; Azure DevOps = dev.azure.com), never sent across redirects, passed to `git push` via environment, not argv | `ForgeCredentials`, `ForgeClient` |
+| Agent permissions pinned on the command line: edits plus an allowlist of build/test/read-only git commands (Claude, Gemini policy), Codex's workspace-write sandbox; reviews read-only | `AgentCommands` |
+| Agents start with a minimal environment: no `SSH_AUTH_SOCK`, `GH_TOKEN`, tmux/D-Bus variables or other agents' keys | `AgentEnvironment` |
+| With bubblewrap: read-only root; secrets, other agents' logins and runtime sockets hidden; only the worktree, the agent's own state and build caches writable; agent config (hooks, settings, MCP servers) read-only | `AgentSandbox` |
+| Server-side git never runs repository-defined programs (fsmonitor, hooks, signing, `ext::`), and runs inside a linked worktree only while its `.git` link points into the repository | `Git.HARDENING`, `WorktreeGuard` |
+| Publishing only for agent branches; pushes never forced; merges through the forge's API so its checks and approvals apply | `BranchService` |
+| Secrets redacted from run logs before they reach the phone | `RunOutput` (`SecretRedactor`) |
+| Android: token in Android Keystore (AES-GCM), excluded from backup; only Tailscale hosts accepted; no redirects with the token | `android/app` |
+| Dependencies checked against OSV; Netty and Logback pinned to patched releases | `gradle/libs.versions.toml` |
+
+## Admin steps this account cannot do itself
+
+1. **Install bubblewrap** so agent runs are contained:
+   `sudo apt install bubblewrap`. With the default `--agent-sandbox auto`, the next
+   server start self-tests the profile with each agent's `--version` and sandboxes the
+   agents that pass. The Schedule tab shows the result. Use `--agent-sandbox on` to
+   refuse runs that cannot be sandboxed.
+2. **Enable lingering** so the dashboard runs as a supervised service that starts at
+   boot: `sudo loginctl enable-linger llm`, then install `deploy/llm-manager-api.service`.
+
+## Operating guidance
+
+- **Rotate the access token** by deleting `~/.config/llm-manager/api-token` and
+  restarting the server, then paste the new token into each device.
+- **Restrict the tailnet**: use Tailscale ACLs so only your devices reach port 8080.
+- **Forge tokens**: give them the smallest scope (GitLab `api` on one instance; Azure
+  DevOps organisation-scoped, Code read & write). Global Azure DevOps PATs stop working
+  on 1 December 2026.
+- **Repositories**: allowed build commands run the repository's own build scripts.
+  Without bubblewrap, a run can do anything this account can.
+
+## Residual risks
+
+- **No OS sandbox until bubblewrap is installed.** Until then the environment allowlist
+  and permission pinning reduce exposure, but a run that executes build scripts can read
+  every file this account can read.
+- **Network access is not restricted** for agents, even when sandboxed: they need their
+  model APIs. A run can send anything it can read to the internet.
+- **Build caches are writable** inside the sandbox (`~/.gradle`, `~/.npm`, ...), so a
+  run could poison a cache used by later builds.
+- **The access token is a single shared secret** without per-device identity or expiry.
+  Pairing with per-device credentials remains future work (`docs/architecture-decision.md`).
+- **The sandbox profile is untested on this machine** because bubblewrap is not installed;
+  it is unit-tested as an argument list and self-tested at startup before use.

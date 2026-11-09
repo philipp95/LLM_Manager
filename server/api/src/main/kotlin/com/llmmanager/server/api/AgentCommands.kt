@@ -56,7 +56,8 @@ class AgentCommands(
 
     private fun codexExec() = listOf(required(Agent.CODEX), "exec", "--json", "--sandbox", "workspace-write")
 
-    private fun binary(agent: Agent) = when (agent) {
+    /** The executable for [agent], or null when it is not installed. */
+    fun binary(agent: Agent): String? = when (agent) {
         Agent.CLAUDE -> claude
         Agent.CODEX -> codex
         Agent.GEMINI -> gemini

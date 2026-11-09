@@ -35,6 +35,8 @@ data class ScheduleResponse(
     val jobs: List<JobView>,
     val runs: List<Run>,
     val resumable: List<ResumeTarget>,
+    /** Whether agent runs are contained by the OS sandbox. */
+    val sandbox: SandboxStatus? = null,
 )
 
 /** Creates, lists and changes jobs; the only path by which clients affect scheduling. */
@@ -61,6 +63,7 @@ class JobService(
             jobs = store.jobs().sortedBy { it.createdAt }.map { JobView(it, ScheduleTimes.next(it, now)?.toString()) },
             runs = store.runs().sortedByDescending { it.createdAt }.take(RECENT_RUNS),
             resumable = resumable(),
+            sandbox = workspace.sandbox.status(),
         )
     }
 

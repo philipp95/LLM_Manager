@@ -26,6 +26,9 @@ class CodexLauncher(
         val codexCommand: String?,
         /** Upper bound on concurrent `codex-*` tmux sessions. */
         val maxRunning: Int = 4,
+        /** Where the per-session start scripts are written. */
+        val scriptDir: File = File(System.getProperty("java.io.tmpdir"), "llm-manager-sessions"),
+        val sandbox: AgentSandbox = AgentSandbox.disabled(),
     )
 
     sealed interface Result {
@@ -53,16 +56,27 @@ class CodexLauncher(
     }
 
     private fun start(located: Located, command: String): Result {
+        settings.sandbox.refusal(Agent.CODEX)?.let { return Result.Failed(it) }
         val worktrees = Worktrees(git, settings.worktreeRoot, clock)
-        val made = worktrees.create(located, BRANCH_PREFIX.trimEnd('/'))
-        if (made is Worktrees.Result.Failed) return Result.Failed(made.reason)
-        val created = (made as Worktrees.Result.Ok).worktree
+        return when (val made = worktrees.create(located, BRANCH_PREFIX.trimEnd('/'))) {
+            is Worktrees.Result.Failed -> Result.Failed(made.reason)
+            is Worktrees.Result.Ok -> open(located, made.worktree, worktrees, command)
+        }
+    }
+
+    /** Starts the tmux session in a fresh worktree; removes the worktree again if that fails. */
+    private fun open(located: Located, created: Worktrees.Created, worktrees: Worktrees, command: String): Result {
         val name = checkNotNull(sessionNameFor(created.branch))
-        val started = sessions.start(name, created.path, listOf(command) + CODEX_ARGS)
-        // Leave nothing behind for a session that never started.
-        if (!started) worktrees.discard(located, created) else log.info("Started Codex session {} for {} in {}", name, located.project.name, created.path)
-        return if (started) Result.Started(CodexSession(name, true, "tmux attach -t $name"), created.branch, created.path.path)
-        else Result.Failed("tmux could not start the session")
+        // Same environment rules (and sandbox, when available) as unattended runs.
+        val wrapped = settings.sandbox.wrap(Agent.CODEX, created.path, listOf(command) + CODEX_ARGS, interactive = true)
+        val script = File(SecureFiles.privateDir(settings.scriptDir), "$name.sh")
+            .apply { writeText(RunEngine.interactive(created.path, wrapped, Agent.CODEX)) }
+        if (!sessions.start(name, created.path, listOf("bash", script.path))) {
+            worktrees.discard(located, created)
+            return Result.Failed("tmux could not start the session")
+        }
+        log.info("Started Codex session {} for {} in {}", name, located.project.name, created.path)
+        return Result.Started(CodexSession(name, true, "tmux attach -t $name"), created.branch, created.path.path)
     }
 
     companion object {

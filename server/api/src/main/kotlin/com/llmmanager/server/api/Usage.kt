@@ -86,9 +86,10 @@ private class ClaudeUsage(private val home: File, private val stateDir: File, pr
     fun read(window: ActivityWindow): AgentUsage {
         val since = window.start(clock)
         val files = File(home, ".claude/projects").walkTopDown()
-            .filter { it.isFile && it.name.endsWith(".jsonl") && it.lastModified() >= since.toEpochMilli() }
+            .filter { it.isFile && it.name.endsWith(".jsonl") && it.lastModified() >= since.toEpochMilli() }.toList()
+        logs.retain(files.map { it.path }.toSet())
         // Resumed sessions repeat earlier messages in a new file: count each message id once.
-        val entries = files.flatMap(logs::read).distinctBy { it.id }.filter { !it.at.isBefore(since) }.toList()
+        val entries = files.asSequence().flatMap(logs::read).distinctBy { it.id }.filter { !it.at.isBefore(since) }.toList()
         val (windows, asOf) = latestWindows()
         return AgentUsage(
             windows = windows,
@@ -158,9 +159,10 @@ private class CodexUsage(private val home: File, private val clock: Clock) {
     fun read(window: ActivityWindow): AgentUsage {
         val since = window.start(clock)
         val root = File(home, ".codex/sessions")
-        val entries = root.walkTopDown()
-            .filter { it.isFile && it.name.startsWith("rollout-") && it.name.endsWith(".jsonl") && it.lastModified() >= since.toEpochMilli() }
-            .flatMap(rollouts::read).filter { !it.at.isBefore(since) }.toList()
+        val files = root.walkTopDown()
+            .filter { it.isFile && it.name.startsWith("rollout-") && it.name.endsWith(".jsonl") && it.lastModified() >= since.toEpochMilli() }.toList()
+        rollouts.retain(files.map { it.path }.toSet())
+        val entries = files.asSequence().flatMap(rollouts::read).filter { !it.at.isBefore(since) }.toList()
         val latest = entries.filter { it.limits != null }.maxByOrNull { it.at }
         return AgentUsage(
             windows = latest?.let { windows(checkNotNull(it.limits), it.at) }.orEmpty(),
@@ -219,9 +221,10 @@ private class GeminiUsage(private val stateDir: File, private val clock: Clock) 
 
     fun read(window: ActivityWindow): AgentUsage {
         val since = window.start(clock)
-        val entries = File(stateDir, "runs").listFiles().orEmpty().map { File(it, "events.jsonl") }
+        val files = File(stateDir, "runs").listFiles().orEmpty().map { File(it, "events.jsonl") }
             .filter { it.isFile && it.lastModified() >= since.toEpochMilli() }
-            .flatMap(results::read).filter { !it.at.isBefore(since) }
+        results.retain(files.map { it.path }.toSet())
+        val entries = files.flatMap(results::read).filter { !it.at.isBefore(since) }
         val models = entries.flatMap { it.models.entries }.groupBy({ it.key }, { it.value })
         return AgentUsage(
             windows = emptyList(),
@@ -262,18 +265,43 @@ private class JsonlTail<T>(private val parse: (JsonObject) -> T?) {
         return state.items
     }
 
+    /** Parses complete new lines in chunks, so a multi-gigabyte log never has to fit in memory. */
     private fun append(file: File, state: State<T>, length: Long) {
-        val bytes = RandomAccessFile(file, "r").use { raf ->
-            raf.seek(state.offset)
-            ByteArray((length - state.offset).toInt()).also(raf::readFully)
+        RandomAccessFile(file, "r").use { raf ->
+            while (state.offset < length && consumeChunk(raf, state, length)) Unit
         }
-        // A partly written last line is left for the next read.
+    }
+
+    /** Parses one chunk's complete lines; false when only a partial last line remains. */
+    private fun consumeChunk(raf: RandomAccessFile, state: State<T>, length: Long): Boolean {
+        raf.seek(state.offset)
+        val bytes = ByteArray(minOf(CHUNK_BYTES, length - state.offset).toInt()).also(raf::readFully)
         val end = bytes.lastIndexOf('\n'.code.toByte())
-        if (end < 0) return
-        String(bytes, 0, end, Charsets.UTF_8).lineSequence()
-            .mapNotNull { runCatching { usageJson.parseToJsonElement(it) as? JsonObject }.getOrNull()?.let(parse) }
-            .forEach(state.items::add)
-        state.offset += end + 1
+        return when {
+            // A partly written last line is left for the next read.
+            end < 0 && bytes.size < CHUNK_BYTES -> false
+            // A single line longer than a chunk: skip it rather than buffer it whole.
+            end < 0 -> {
+                state.offset += bytes.size
+                true
+            }
+            else -> {
+                String(bytes, 0, end, Charsets.UTF_8).lineSequence()
+                    .mapNotNull { runCatching { usageJson.parseToJsonElement(it) as? JsonObject }.getOrNull()?.let(parse) }
+                    .forEach(state.items::add)
+                state.offset += end + 1
+                true
+            }
+        }
+    }
+
+    /** Forgets files that are gone, so the cache does not grow forever. */
+    fun retain(paths: Set<String>) {
+        files.keys.retainAll(paths)
+    }
+
+    private companion object {
+        const val CHUNK_BYTES = 8L * 1024 * 1024
     }
 }
 

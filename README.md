@@ -58,11 +58,15 @@ a deadline in seconds (default 1800, range 1–604800). Permission modes are
 tmux new-session -d -s api ~/LLM_Manager/server/api/build/install/api/bin/api
 ```
 
+Or, once an admin has run `sudo loginctl enable-linger <user>`, as a supervised
+service that starts at boot: see `deploy/llm-manager-api.service`.
+
 It binds to this machine's Tailscale IPv4 (`tailscale ip -4`) on port 8080 and
 refuses to start if Tailscale is not up. It never binds to `0.0.0.0`; only a
 Tailscale address (100.64.0.0/10) or loopback is accepted via `--host`. Open
-`http://<tailscale-ip>:8080/` on a device in your tailnet; `GET /api/projects`
-returns the same data as JSON, and `GET /readyz` reports readiness.
+`http://<tailscale-ip>:8080/` or `http://<machine>.<tailnet>.ts.net:8080/` on a
+device in your tailnet. Requests for any other host name are refused (DNS
+rebinding); add names with `--allowed-host`. `GET /readyz` reports readiness.
 
 Projects are the git repositories in `~/agent-work/mirrors/*`, `~/LLM_Manager`,
 and `~/repos/*`. Override the list with `--projects` or `LLM_MANAGER_PROJECTS`
@@ -73,9 +77,12 @@ branch, and every worktree with branch, last commit time, and changed-file
 count. Git is queried with `GIT_OPTIONAL_LOCKS=0` so inspection never rewrites
 an index an agent is using.
 
-Reading needs only tailnet membership: anyone on your tailnet can see paths,
-branch names, and remotes. Restrict it with Tailscale ACLs if the tailnet is
-shared.
+Everything under `/api` needs the access token, created on first start in
+`~/.config/llm-manager/api-token` (mode 600); paste it once into the page (lock
+icon) or the app. Only the page itself, `/readyz` and the APK download are open.
+Restrict port 8080 to your own devices with Tailscale ACLs as well. The full
+security model, including the admin steps it relies on, is in
+[docs/security.md](docs/security.md).
 
 ### Codex sessions
 
@@ -102,8 +109,8 @@ npm install -g --prefix ~/.local @openai/codex
 ~/.local/bin/codex login --device-auth
 ```
 
-Options: `--codex`, `--claude`, `--codex-worktrees`, `--run-worktrees`,
-`--state-dir`, `--token-file`, `--apk`.
+Options: `--codex`, `--claude`, `--gemini`, `--codex-worktrees`, `--run-worktrees`,
+`--state-dir`, `--token-file`, `--apk`, `--allowed-host`, `--agent-sandbox`.
 
 ### Scheduled runs
 
@@ -119,7 +126,10 @@ chosen weekday at a time. Each job is one of:
 - **Resume**: continue the latest Claude or Codex session found in an agent
   worktree (never your main checkout), with an optional message.
 
-Runs execute unattended in a new `run/<project>-<time>` branch and worktree
+Runs execute unattended with a minimal environment (no SSH agent, forge tokens
+or other agents' keys) and, when bubblewrap is installed, inside an OS sandbox
+that hides secrets and leaves only the worktree writable; the Schedule tab shows
+which applies. They work in a new `run/<project>-<time>` branch and worktree
 under `~/agent-work/runs/`, inside a tmux session `run-<id>` (attachable, and
 surviving server restarts). Permissions are pinned on the command line:
 
@@ -177,12 +187,13 @@ published from here.
 | Forge | Recognised remotes | Credentials (on the server only) |
 | --- | --- | --- |
 | GitHub | `github.com` | the signed-in `gh` CLI |
-| GitLab | `gitlab.com` and hosts with a `gitlab` label | token with `api` scope in `~/.config/llm-manager/gitlab-token` |
+| GitLab | `gitlab.com` and hosts with a `gitlab` label | token with `api` scope in `~/.config/llm-manager/gitlab-token` (gitlab.com) or `gitlab-token-<host>` (self-hosted) |
 | Azure DevOps | `dev.azure.com`, `ssh.dev.azure.com`, `*.visualstudio.com` | organisation-scoped PAT (Code: Read & write) in `~/.config/llm-manager/azure-devops-token` |
 
-Create token files with `chmod 600`. Tokens are sent only to their forge's
-host, never across redirects, and are passed to `git push` through
-`GIT_CONFIG_*` environment variables rather than the command line. Azure DevOps
+Create token files with `chmod 600`; files readable by other users are refused.
+Each token is bound to one host and is never sent to another just because a
+repository's origin names it, nor across redirects. Tokens reach `git push`
+through `GIT_CONFIG_*` environment variables rather than the command line. Azure DevOps
 global PATs stop working on 1 December 2026; use an organisation-scoped PAT
 (an Entra service principal is the longer-term option). Until a forge has
 credentials, the card says what is missing.
@@ -242,7 +253,8 @@ Shared agent skills live in `.agents/skills/`. `AGENTS.md` and `CLAUDE.md` direc
 coding agents to that single library. Skills are loaded as needed for each task.
 
 See [environment setup](docs/environment-setup.md) and the
-[architecture status](docs/architecture-decision.md). The prototype is not a
-security sandbox: worktrees isolate edits, not OS permissions. Network access,
-device identity, approvals, durable audit storage, and other provider harnesses
-remain future work.
+[architecture status](docs/architecture-decision.md), and the
+[security model](docs/security.md). Worktrees isolate edits, not OS permissions:
+agent runs are contained by the OS only when bubblewrap is installed (see the
+security model). Per-device identity, approvals and durable audit storage remain
+future work.

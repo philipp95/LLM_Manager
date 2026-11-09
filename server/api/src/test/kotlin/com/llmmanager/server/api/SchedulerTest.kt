@@ -12,12 +12,15 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.condition.DisabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 
 /**
  * Drives real git worktrees and the real wrapper script, with fake `claude` and
  * `codex` executables that emit the agents' event formats and edit files.
  */
+@DisabledOnOs(OS.WINDOWS, disabledReason = "runs bash wrappers and shell-script fake agents, as the Linux server does")
 class SchedulerTest {
     @TempDir
     lateinit var directory: Path
@@ -193,6 +196,24 @@ class SchedulerTest {
         assertEquals(RunStatus.SUCCEEDED, resumed.status, resumed.error)
         assertEquals(limited.worktree, resumed.worktree)
         assertNotNull(resumed.resultCommit)
+    }
+
+    @Test
+    fun `a run that fails unexpectedly is marked failed and the scheduler keeps going`() {
+        val f = fixture()
+        // A resume without a session cannot be started: building its command throws inside the engine.
+        f.store.putRun(
+            Run("0123456789ab", null, f.projectId, "app", Agent.CLAUDE, Stage.RESUME, RunStatus.QUEUED, "continue",
+                worktree = f.repo.path, createdAt = "2026-11-09T11:00:00Z"),
+        )
+        f.jobs.create(JobRequest(f.projectId, JobKind.RUN, Agent.CODEX, "Still runs"))
+
+        repeat(3) { f.scheduler.tick() }
+
+        val broken = f.store.run("0123456789ab")!!
+        assertEquals(RunStatus.FAILED, broken.status)
+        assertTrue(broken.error!!.startsWith("Internal error"), broken.error)
+        assertEquals(RunStatus.SUCCEEDED, f.store.runs().single { it.agent == Agent.CODEX }.status)
     }
 
     @Test

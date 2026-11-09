@@ -1,0 +1,33 @@
+# systemd user unit for the LLM Manager dashboard.
+#
+# Install (as the account that runs agents, e.g. llm):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/llm-manager-api.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now llm-manager-api
+# To run without a login session and start at boot, an admin enables lingering once:
+#   sudo loginctl enable-linger <user>
+# Logs: journalctl --user -u llm-manager-api -f
+
+[Unit]
+Description=LLM Manager dashboard (Tailscale only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/LLM_Manager
+ExecStart=%h/LLM_Manager/server/api/build/install/api/bin/api
+Environment=JAVA_OPTS=-Xmx512m
+# The server refuses to start until the Tailscale address exists; retry until it does.
+Restart=on-failure
+RestartSec=15
+# Agent runs live in tmux sessions. Restarting the dashboard must not kill them,
+# so only the server process itself is stopped.
+KillMode=process
+# New files are private; nothing started from here can gain privileges (setuid, sudo).
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

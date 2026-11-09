@@ -121,7 +121,12 @@ data class ScheduleResponse(
     val jobs: List<JobView> = emptyList(),
     val runs: List<Run> = emptyList(),
     val resumable: List<ResumeTarget> = emptyList(),
+    val sandbox: SandboxStatus? = null,
 )
+
+/** Whether agent runs are contained by the OS sandbox on the server. */
+@Serializable
+data class SandboxStatus(val mode: String = "auto", val agents: Map<String, Boolean> = emptyMap(), val note: String = "")
 
 @Serializable
 data class JobView(val job: Job, val nextRunAt: String? = null)

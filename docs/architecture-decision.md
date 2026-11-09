@@ -33,11 +33,13 @@ The repository currently contains five Kotlin/JVM modules and an Android app:
   with the access token encrypted under an Android Keystore key.
 
 There is no OpenClaw plugin, database, push notification, or pairing service. The
-dashboard's static bearer token is a stopgap, not the pairing, per-device
-identity, and approval design listed below. Unattended runs rely on the agents'
-own permission systems (Claude's tool allowlist, Codex's sandbox), not on OS
-containment; allowed build commands run repository code. There is no API that
-removes worktrees, force-pushes, or publishes anything but agent branches. Protocol types and unused catalog entries
+dashboard's static bearer token (required for every API call) is a stopgap, not the
+pairing, per-device identity, and approval design listed below. Unattended runs are
+confined by the agents' own permission systems plus a minimal environment, and by an
+OS sandbox (bubblewrap) only where it is installed; allowed build commands run
+repository code. Server-side git ignores repository-defined programs and refuses
+worktrees whose `.git` link was redirected. There is no API that removes worktrees,
+force-pushes, or publishes anything but agent branches. See `docs/security.md`. Protocol types and unused catalog entries
 are preparation, not implemented transport or storage.
 
 ## Current execution model

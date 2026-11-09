@@ -25,45 +25,56 @@ import kotlinx.serialization.json.put
 data class PullRequestRef(val forge: String, val number: Long, val url: String, val state: String)
 
 /**
- * Credentials for forges, all on the server and never sent to the phone:
- * GitHub through the signed-in `gh` CLI; GitLab and Azure DevOps through tokens in
- * owner-only files under [dir] (`gitlab-token`, `azure-devops-token`).
+ * Credentials for forges, all on the server and never sent to the phone. GitHub goes
+ * through the signed-in `gh` CLI. GitLab and Azure DevOps tokens live in owner-only files
+ * under [dir], each bound to one host: `gitlab-token` is for gitlab.com only, a self-hosted
+ * instance needs `gitlab-token-<host>`, and `azure-devops-token` is sent only to
+ * dev.azure.com. A token never goes to a host just because a repository's origin names it.
  */
 class ForgeCredentials(private val dir: File, val gh: String?) {
-    fun gitlabToken(): String? = read(GITLAB_FILE)
+    /** The token for GitLab at [host], or null when there is none (or it is not private). */
+    fun gitlabToken(host: String): String? = read(gitlabFile(host))
 
-    fun azureToken(): String? = read(AZURE_FILE)
+    fun azureToken(): String? = read(File(dir, AZURE_FILE))
 
     /** What is missing to open pull requests on [forge], or null when it is ready. */
     fun missing(forge: Forge): String? = when (forge) {
         is Forge.GitHub -> if (gh == null) "Install the GitHub CLI (gh) on the server and run `gh auth login`" else null
-        is Forge.GitLab -> if (gitlabToken() == null) "Add a GitLab token (api scope) to ${File(dir, GITLAB_FILE)} (chmod 600)" else null
-        is Forge.AzureDevOps -> if (azureToken() == null) {
-            "Add an organisation-scoped Azure DevOps PAT (Code: Read & write) to ${File(dir, AZURE_FILE)} (chmod 600)"
-        } else {
-            null
-        }
+        is Forge.GitLab -> problem(gitlabFile(forge.host), "a GitLab token (api scope) for ${forge.host}")
+        is Forge.AzureDevOps -> problem(File(dir, AZURE_FILE), "an organisation-scoped Azure DevOps PAT (Code: Read & write)")
     }
 
     /**
      * HTTPS push credentials for GitLab and Azure DevOps, as `GIT_CONFIG_*` variables so the
-     * token never appears on a command line, scoped to the remote's own host.
+     * token never appears on a command line, scoped to the forge's own host. Nothing is
+     * returned when [originUrl] points anywhere else.
      */
     fun pushEnvironment(forge: Forge, originUrl: String): Map<String, String> {
-        val origin = runCatching { URI(originUrl) }.getOrNull()?.takeIf { it.scheme == "https" && it.host != null } ?: return emptyMap()
+        val host = runCatching { URI(originUrl) }.getOrNull()?.takeIf { it.scheme == "https" }?.host?.lowercase() ?: return emptyMap()
         val basic = when (forge) {
-            is Forge.GitLab -> gitlabToken()?.let { "oauth2:$it" }
-            is Forge.AzureDevOps -> azureToken()?.let { ":$it" }
+            is Forge.GitLab -> gitlabToken(forge.host)?.takeIf { host == forge.host }?.let { "oauth2:$it" }
+            is Forge.AzureDevOps -> azureToken()?.takeIf { host == "dev.azure.com" || host.endsWith(".visualstudio.com") }?.let { ":$it" }
             is Forge.GitHub -> null
         } ?: return emptyMap()
         return mapOf(
             "GIT_CONFIG_COUNT" to "1",
-            "GIT_CONFIG_KEY_0" to "http.https://${origin.host}/.extraHeader",
+            "GIT_CONFIG_KEY_0" to "http.https://$host/.extraHeader",
             "GIT_CONFIG_VALUE_0" to "Authorization: Basic " + Base64.getEncoder().encodeToString(basic.toByteArray()),
         )
     }
 
-    private fun read(name: String): String? = File(dir, name).takeIf { it.isFile }?.readText()?.trim()?.ifEmpty { null }
+    private fun gitlabFile(host: String) = File(dir, if (host == "gitlab.com") GITLAB_FILE else "$GITLAB_FILE-$host")
+
+    private fun problem(file: File, what: String): String? = when {
+        !file.isFile -> "Add $what to $file (chmod 600)"
+        !SecureFiles.isPrivate(file) -> "$file is readable by other users; run chmod 600 $file"
+        file.readText().isBlank() -> "$file is empty"
+        else -> null
+    }
+
+    /** Only owner-only token files are used, the same rule ssh applies to keys. */
+    private fun read(file: File): String? =
+        file.takeIf { it.isFile && SecureFiles.isPrivate(it) }?.readText()?.trim()?.ifEmpty { null }
 
     companion object {
         const val GITLAB_FILE = "gitlab-token"
@@ -161,9 +172,9 @@ private class GitLabPulls(private val credentials: ForgeCredentials, private val
             put("title", pr.title)
             put("description", pr.body)
         }
-        val created = http.send(request(requests).POST(HttpRequest.BodyPublishers.ofString(payload.toString())))
+        val created = http.send(request(forge, requests).POST(HttpRequest.BodyPublishers.ofString(payload.toString())))
         if (created.statusCode() == HTTP_CONFLICT) {
-            val open = http.send(request("$requests?source_branch=${query(pr.branch)}&state=opened").GET())
+            val open = http.send(request(forge, "$requests?source_branch=${query(pr.branch)}&state=opened").GET())
             ((parseOrNull(open.body()) as? JsonArray)?.firstOrNull() as? JsonObject)?.let { return ref(it) }
         }
         return if (created.statusCode() in OK_RANGE) ref(http.parse(created)) else ForgeClient.Result.Failed(http.error("GitLab", created))
@@ -171,11 +182,12 @@ private class GitLabPulls(private val credentials: ForgeCredentials, private val
 
     fun merge(forge: Forge.GitLab, pr: PullRequestRef): ForgeClient.Result {
         val url = "${api(forge)}/projects/${segment(forge.path)}/merge_requests/${pr.number}/merge"
-        val merged = http.send(request(url).PUT(HttpRequest.BodyPublishers.noBody()))
+        val merged = http.send(request(forge, url).PUT(HttpRequest.BodyPublishers.noBody()))
         return if (merged.statusCode() in OK_RANGE) ref(http.parse(merged)) else ForgeClient.Result.Failed(http.error("GitLab", merged))
     }
 
-    private fun request(url: String) = http.request(url).header("PRIVATE-TOKEN", checkNotNull(credentials.gitlabToken()))
+    /** The token for this forge's host only. */
+    private fun request(forge: Forge.GitLab, url: String) = http.request(url).header("PRIVATE-TOKEN", checkNotNull(credentials.gitlabToken(forge.host)))
 
     private fun ref(o: JsonObject) =
         ForgeClient.Result.Ok(PullRequestRef("gitlab", o.long("iid"), o.string("web_url").orEmpty(), o.string("state") ?: "opened"))

@@ -47,11 +47,12 @@ class ScheduleViewModel(private val settings: SettingsStore, private val client:
         }
     }
 
-    fun refreshUsage() = launchWithServer { server ->
-        val result = client.usage(server)
+    fun refreshUsage() = withToken { server, token ->
+        val result = client.usage(server, token)
         mutableState.update {
             when (result) {
                 is ApiResult.Ok -> it.copy(usage = result.value, usageError = null)
+                ApiResult.Unauthorized -> it.copy(needsToken = true, usageError = "Enter the access token to see usage")
                 else -> it.copy(usageError = describe(result))
             }
         }

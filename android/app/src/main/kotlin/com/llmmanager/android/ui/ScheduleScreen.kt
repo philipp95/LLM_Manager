@@ -81,6 +81,15 @@ fun ScheduleScreen(
             return@LazyColumn
         }
         state.scheduleError?.let { item { Panel { Text(it, color = Palette.bad) } } }
+        data?.sandbox?.let { sandbox ->
+            item {
+                val on = sandbox.agents.values.any { it }
+                Column {
+                    Chip(if (on) "Agent sandbox on" else "Agent sandbox off", if (on) ChipTone.Ok else ChipTone.Warn)
+                    Muted(sandbox.note)
+                }
+            }
+        }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SectionTitle("Jobs")

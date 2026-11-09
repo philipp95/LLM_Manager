@@ -189,6 +189,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.connectionNotice(
 ) {
     val (title, body) = when (connection) {
         Connection.NotConfigured -> "Set the server address" to "Enter the dashboard's Tailscale address, e.g. http://100.101.102.103:8080."
+        is Connection.NeedsToken -> if (connection.refused) {
+            "Access token refused" to "The server did not accept the saved token. Enter the current one (cat ~/.config/llm-manager/api-token)."
+        } else {
+            "Access token needed" to "The server shares repositories and starts agents only with its access token (cat ~/.config/llm-manager/api-token)."
+        }
         is Connection.NoRoute -> "Can't reach the server" to "Is Tailscale connected on this phone? (${connection.detail})"
         is Connection.Failed -> "Something went wrong" to connection.message
         Connection.Loading, Connection.Online -> return
@@ -199,7 +204,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.connectionNotice(
             Text(body, color = Palette.muted, fontSize = 13.5.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (connection) {
-                    Connection.NotConfigured -> Button(onClick = onSettings) { Text("Settings") }
+                    Connection.NotConfigured, is Connection.NeedsToken -> Button(onClick = onSettings) { Text("Settings") }
                     is Connection.NoRoute -> {
                         val tailscale = context.packageManager.getLaunchIntentForPackage(TAILSCALE_PACKAGE)
                         if (tailscale != null) {
@@ -253,6 +258,7 @@ private fun statusLine(connection: Connection, data: ProjectsResponse?): String 
     Connection.Loading -> "Connecting…"
     Connection.NotConfigured -> "Not configured"
     is Connection.NoRoute -> "Offline"
+    is Connection.NeedsToken -> "Locked"
     is Connection.Failed -> "Error"
     Connection.Online -> data?.generatedAt?.let { updated(it) } ?: "Online"
 }

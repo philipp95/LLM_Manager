@@ -27,6 +27,7 @@ class Scheduler(
     private val limitResetHint: (Agent) -> Instant? = { null },
 ) {
     private val log = LoggerFactory.getLogger(Scheduler::class.java)
+    private val followUps = FollowUps(store, clock, limitResetHint)
 
     fun launch(scope: CoroutineScope, interval: Duration = Duration.ofSeconds(15)): CoroutineJob = scope.launch(Dispatchers.IO) {
         while (isActive) {
@@ -41,10 +42,20 @@ class Scheduler(
         store.jobs().filter { ScheduleTimes.isDue(it, now) }.forEach { fire(it) }
         val live = sessions.list() ?: return
         store.runs().filter { it.status == RunStatus.RUNNING }.forEach { running ->
-            val polled = engine.poll(running, live)
-            if (polled.status.finished) followUp(polled)
+            val polled = isolated(running) { engine.poll(running, live) }
+            if (polled.status.finished) followUps.after(polled)
         }
         startQueued(now)
+    }
+
+    /** One run's failure is recorded on that run; it never stops the scheduler for the others. */
+    @Suppress("TooGenericExceptionCaught") // the isolation boundary: any failure belongs to this run alone
+    private fun isolated(run: Run, step: () -> Run): Run = try {
+        step()
+    } catch (e: Exception) {
+        log.error("Run {} failed unexpectedly", run.id, e)
+        val error = "Internal error: ${e.message ?: e.javaClass.simpleName}"
+        run.copy(status = RunStatus.FAILED, error = error, finishedAt = Instant.now(clock).toString()).also(store::putRun)
     }
 
     /** Queues the first run of [job] now, and records the firing. */
@@ -83,13 +94,34 @@ class Scheduler(
         store.runs().filter { it.status == RunStatus.QUEUED }.sortedBy { it.createdAt }.forEach { queued ->
             val ready = ScheduleTimes.instant(queued.notBefore)?.let { !it.isAfter(now) } ?: true
             if (slots <= 0 || !ready || queued.worktree in busy) return@forEach
-            val started = engine.start(queued)
+            val started = isolated(queued) { engine.start(queued) }
             started.worktree?.let(busy::add)
-            if (started.status == RunStatus.RUNNING) slots-- else followUp(started)
+            if (started.status == RunStatus.RUNNING) slots-- else followUps.after(started)
         }
     }
 
-    private fun followUp(run: Run) {
+}
+
+private const val RUN_ID_CHARS = 12
+
+internal fun newRunId(): String = UUID.randomUUID().toString().replace("-", "").take(RUN_ID_CHARS)
+
+/** A fresh queued run that carries over the project, worktree, session and pipeline of this one. */
+internal fun Run.requeued(now: Instant): Run = copy(
+    id = newRunId(), status = RunStatus.QUEUED, createdAt = now.toString(), startedAt = null, finishedAt = null,
+    summary = null, error = null, limitResetsAt = null, resumeScheduled = false, tmuxSession = null, notBefore = null,
+)
+
+/** What happens after a run finishes: the next pipeline stage, or a resume after a usage limit. */
+private class FollowUps(
+    private val store: StateStore,
+    private val clock: Clock,
+    private val limitResetHint: (Agent) -> Instant?,
+) {
+    private val log = LoggerFactory.getLogger(Scheduler::class.java)
+
+    /** Queues what follows [run]: the next pipeline stage, or a resume once a usage limit resets. */
+    fun after(run: Run) {
         when {
             run.status == RunStatus.LIMITED -> resumeAfterLimit(run)
             run.status == RunStatus.SUCCEEDED && run.pipelineId != null -> nextStage(run)
@@ -149,13 +181,3 @@ class Scheduler(
         val RESET_MARGIN: Duration = Duration.ofMinutes(2)
     }
 }
-
-private const val RUN_ID_CHARS = 12
-
-internal fun newRunId(): String = UUID.randomUUID().toString().replace("-", "").take(RUN_ID_CHARS)
-
-/** A fresh queued run that carries over the project, worktree, session and pipeline of this one. */
-internal fun Run.requeued(now: Instant): Run = copy(
-    id = newRunId(), status = RunStatus.QUEUED, createdAt = now.toString(), startedAt = null, finishedAt = null,
-    summary = null, error = null, limitResetsAt = null, resumeScheduled = false, tmuxSession = null, notBefore = null,
-)

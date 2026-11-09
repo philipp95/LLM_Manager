@@ -111,13 +111,19 @@ class ProjectScanner(
             val branch = fields["branch"]?.removePrefix("refs/heads/")
             val directory = File(path)
             val present = directory.isDirectory && "prunable" !in fields
+            // Run git inside the worktree only while its link to this repository is intact.
+            val trusted = present && WorktreeGuard.intact(directory, commonDir)
             Worktree(
                 path = path,
                 branch = branch,
                 head = head,
                 // Commits live in the shared object store, so this works even for a missing worktree.
                 lastCommitAt = head?.let { git.run(commonDir, "log", "-1", "--format=%cI", it) }?.trim()?.takeIf { it.isNotEmpty() },
-                changedFiles = if (present) git.run(directory, "status", "--porcelain")?.lines()?.count { it.isNotBlank() } else null,
+                changedFiles = if (trusted) {
+                    git.run(directory, "status", "--porcelain", "--ignore-submodules=all")?.lines()?.count { it.isNotBlank() }
+                } else {
+                    null
+                },
                 agentRun = branch?.startsWith(AGENT_BRANCH_PREFIX) == true,
                 scheduledRun = branch?.startsWith(RunEngine.RUN_BRANCH_PREFIX + "/") == true,
                 main = index == 0,

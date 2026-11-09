@@ -12,11 +12,15 @@ import kotlinx.serialization.json.Json
  * schedules and run history survive restarts. Writes are atomic (temp file + move).
  */
 class StateStore(val dir: File) {
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
-    private val jobsFile = File(dir, "jobs.json")
-    private val runsFile = File(dir, "runs.json")
-    private var jobs: List<Job> = load(jobsFile, Job.serializer())
-    private var runs: List<Run> = load(runsFile, Run.serializer())
+    init {
+        // Prompts, run logs and branch records: readable by this user only.
+        SecureFiles.privateDir(dir, tighten = true)
+    }
+
+    private val jobsFile = JsonListFile(File(dir, "jobs.json"), Job.serializer())
+    private val runsFile = JsonListFile(File(dir, "runs.json"), Run.serializer())
+    private var jobs: List<Job> = jobsFile.load()
+    private var runs: List<Run> = runsFile.load()
 
 
     @Synchronized fun jobs(): List<Job> = jobs
@@ -29,12 +33,12 @@ class StateStore(val dir: File) {
 
     @Synchronized fun putJob(job: Job) {
         jobs = jobs.filterNot { it.id == job.id } + job
-        save(jobsFile, jobs, Job.serializer())
+        jobsFile.save(jobs)
     }
 
     @Synchronized fun removeJob(id: String) {
         jobs = jobs.filterNot { it.id == id }
-        save(jobsFile, jobs, Job.serializer())
+        jobsFile.save(jobs)
     }
 
     @Synchronized fun putRun(run: Run) {
@@ -44,23 +48,43 @@ class StateStore(val dir: File) {
         val excess = (others.size + 1 - MAX_RUNS).coerceAtLeast(0)
         val dropped = finished.take(excess).map { it.id }.toSet()
         runs = others.filterNot { it.id in dropped } + run
-        save(runsFile, runs, Run.serializer())
+        runsFile.save(runs)
+        dropped.forEach { deleteRunDir(it) }
     }
 
     /** Working files of one run: prompt, wrapper script, event stream, exit code. */
-    fun runDir(id: String): File = File(dir, "runs/$id").also { it.mkdirs() }
-
-    private fun <T> load(file: File, serializer: KSerializer<T>): List<T> =
-        if (file.isFile) json.decodeFromString(ListSerializer(serializer), file.readText()) else emptyList()
-
-    private fun <T> save(file: File, items: List<T>, serializer: KSerializer<T>) {
-        dir.mkdirs()
-        val temp = File(dir, "${file.name}.tmp")
-        temp.writeText(json.encodeToString(ListSerializer(serializer), items))
-        Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    fun runDir(id: String): File {
+        require(RUN_ID.matches(id)) { "Invalid run id" }
+        return File(dir, "runs/$id").also { it.mkdirs() }
     }
 
-    private companion object {
+    /** Removes run directories that no longer belong to a run in the history (e.g. after a crash). */
+    @Synchronized fun pruneRunDirs() {
+        val known = runs.map { it.id }.toSet()
+        File(dir, "runs").listFiles().orEmpty().filter { it.isDirectory && RUN_ID.matches(it.name) && it.name !in known }.forEach { deleteRunDir(it.name) }
+    }
+
+    private fun deleteRunDir(id: String) {
+        // Only ever directly below runs/, named like a run id: never follow a crafted path.
+        if (RUN_ID.matches(id)) File(dir, "runs/$id").deleteRecursively()
+    }
+
+    companion object {
+        /** Runs kept in the history; older finished runs (and their files) are dropped. */
         const val MAX_RUNS = 500
+        private val RUN_ID = Regex("[0-9a-f]{12}")
+    }
+}
+
+/** A list persisted as JSON, written atomically (temp file + move) so a crash never leaves half a file. */
+class JsonListFile<T>(private val file: File, private val serializer: KSerializer<T>) {
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
+
+    fun load(): List<T> = if (file.isFile) json.decodeFromString(ListSerializer(serializer), file.readText()) else emptyList()
+
+    fun save(items: List<T>) {
+        val temp = File(file.parentFile, "${file.name}.tmp")
+        temp.writeText(json.encodeToString(ListSerializer(serializer), items))
+        Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 }

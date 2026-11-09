@@ -273,7 +273,7 @@
 <dialog id="token-dialog">
   <div>
     <h2>Access token</h2>
-    <p>Starting Codex and scheduling runs need the server's token. On the server run<br><code>cat ~/.config/llm-manager/api-token</code><br>and paste it here. It is stored only in this browser.</p>
+    <p>The dashboard needs the server's access token. On the server run<br><code>cat ~/.config/llm-manager/api-token</code><br>and paste it here. It is stored only in this browser.</p>
     <input id="token-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste token">
     <div class="row">
       <button id="token-cancel" type="button">Cancel</button>
@@ -701,16 +701,33 @@
       tile(wts.filter((w) => w.changedFiles > 0).length, "Uncommitted", "var(--warn)"));
   }
 
+  /** Without a (valid) token there is nothing to show but how to get one, and the open app download. */
+  function renderLocked(refused) {
+    stats.replaceChildren();
+    analytics.hidden = true;
+    $("app-slot").replaceChildren();
+    list.replaceChildren(el("div", { class: "panel" },
+      el("div", { class: "section-head" }, el("h2", null, refused ? "Access token refused" : "Access token needed")),
+      el("p", { class: "muted" }, refused
+        ? "The saved token was not accepted. It changes if the server's token file is replaced."
+        : "This dashboard shows repositories and starts agents, so it needs the server's access token."),
+      el("div", { class: "actions-row" },
+        el("button", { class: "small-btn go", type: "button", onclick: async () => { if (await askToken()) load(); } }, icon("lock"), "Enter token"),
+        el("a", { class: "small-btn", href: "/download/llm-manager.apk", download: "llm-manager.apk" }, icon("download"), "Android app"))));
+    status.textContent = "Locked";
+  }
+
   async function load() {
     if (inFlight) return;
+    if (!getToken()) { renderLocked(false); return; }
     inFlight = true;
     $("refresh").classList.add("spin");
     try {
-      const response = await fetch("/api/projects", { cache: "no-store", headers: { Accept: "application/json" } });
+      const result = await api("/api/projects", { prompt: false });
+      if (result.status === 401) { renderLocked(true); return; }
       // A captive portal answers 200 with HTML; only trust a JSON body of the expected shape.
-      const type = response.headers.get("Content-Type") || "";
-      if (!response.ok || !type.includes("application/json")) throw new Error("Unexpected response (" + response.status + ")");
-      const body = await response.json();
+      if (!result.ok || !result.json) throw new Error("Unexpected response (" + result.status + ")");
+      const body = result.body;
       if (!body || !Array.isArray(body.projects)) throw new Error("Unexpected response shape");
       codexAvailable = body.codexAvailable === true;
       projectsCache = body.projects;
@@ -754,16 +771,21 @@
     return "in " + (d >= 1 ? d + "d " + (h % 24) + "h" : h >= 1 ? h + "h " + m + "m" : m + "m");
   }
 
-  /** Authenticated JSON request; prompts for the token once on 401. */
+  /**
+   * Authenticated JSON request to this origin. On 401 it asks for the token once, unless
+   * `prompt: false` (background refreshes must never pop a dialog).
+   */
   async function api(path, options) {
-    const send = () => fetch(path, Object.assign({ cache: "no-store" }, options || {}, {
-      headers: Object.assign({ Accept: "application/json", Authorization: "Bearer " + getToken() }, (options && options.headers) || {}),
+    const { prompt = true, ...init } = options || {};
+    const send = () => fetch(path, Object.assign({ cache: "no-store" }, init, {
+      headers: Object.assign({ Accept: "application/json", Authorization: "Bearer " + getToken() }, init.headers || {}),
     }));
     let response = await send();
-    if (response.status === 401 && await askToken()) response = await send();
+    if (response.status === 401 && prompt && await askToken()) response = await send();
     const type = response.headers.get("Content-Type") || "";
-    const body = type.includes("application/json") ? await response.json().catch(() => ({})) : {};
-    return { ok: response.ok, status: response.status, body };
+    const json = type.includes("application/json");
+    const body = json ? await response.json().catch(() => ({})) : {};
+    return { ok: response.ok, status: response.status, body, json };
   }
 
   function showTab(name) {
@@ -867,7 +889,12 @@
       if (!result.ok) throw new Error(result.body.error || "Failed (" + result.status + ")");
       scheduleData = result.body;
       const jobs = scheduleData.jobs, runs = scheduleData.runs;
+      const sandbox = scheduleData.sandbox;
+      const sandboxed = sandbox && Object.values(sandbox.agents || {}).some(Boolean);
       scheduleTab.replaceChildren(
+        sandbox ? el("div", { class: "row" },
+          chip(sandboxed ? "Agent sandbox on" : "Agent sandbox off", sandboxed ? "ok" : "warn", sandboxed ? "check" : "alert"),
+          el("span", { class: "hint-text" }, sandbox.note)) : null,
         el("div", { class: "section-head" }, el("h2", null, "Jobs"),
           el("button", { class: "small-btn go", type: "button", onclick: () => openJobForm() }, icon("plus"), "New job")),
         el("div", { class: "list-card" }, jobs.length ? jobs.map(jobItem)
@@ -1045,10 +1072,10 @@
   async function loadUsage() {
     $("refresh").classList.add("spin");
     try {
-      const response = await fetch("/api/usage", { cache: "no-store", headers: { Accept: "application/json" } });
-      const type = response.headers.get("Content-Type") || "";
-      if (!response.ok || !type.includes("application/json")) throw new Error("Unexpected response (" + response.status + ")");
-      renderUsage(await response.json());
+      const result = await api("/api/usage", { prompt: false });
+      if (result.status === 401) throw new Error("Enter the access token (lock icon) to see usage");
+      if (!result.ok || !result.json) throw new Error("Unexpected response (" + result.status + ")");
+      renderUsage(result.body);
       status.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     } catch (error) {
       usageTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Couldn't load usage"), error.message));
@@ -1065,8 +1092,8 @@
   $("refresh").addEventListener("click", refreshActive);
   for (const button of document.querySelectorAll(".tabs button")) button.addEventListener("click", () => showTab(button.dataset.tab));
   $("lock").addEventListener("click", async () => {
-    if (getToken() && confirm("Forget the saved access token on this device?")) { setToken(""); renderLock(); toast("Token removed"); return; }
-    if (!getToken() && await askToken()) toast("Token saved");
+    if (getToken() && confirm("Forget the saved access token on this device?")) { setToken(""); renderLock(); toast("Token removed"); refreshActive(); return; }
+    if (!getToken() && await askToken()) { toast("Token saved"); refreshActive(); }
   });
   renderLock();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshActive(); });

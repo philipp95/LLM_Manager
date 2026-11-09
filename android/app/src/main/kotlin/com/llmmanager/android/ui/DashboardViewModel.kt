@@ -31,6 +31,9 @@ class DashboardViewModel(
         data object NotConfigured : Connection
         data object Online : Connection
         data class NoRoute(val detail: String) : Connection
+
+        /** No token saved yet, or the server rejected it ([refused]). */
+        data class NeedsToken(val refused: Boolean) : Connection
         data class Failed(val message: String) : Connection
     }
 
@@ -80,14 +83,19 @@ class DashboardViewModel(
             return
         }
         refreshJob = viewModelScope.launch {
+            val token = settings.token()
+            if (token == null) {
+                mutableState.update { it.copy(connection = Connection.NeedsToken(refused = false), data = null) }
+                return@launch
+            }
             mutableState.update { it.copy(refreshing = true) }
-            val connection = when (val result = client.projects(server)) {
+            val connection = when (val result = client.projects(server, token)) {
                 is ApiResult.Ok -> {
                     mutableState.update { it.copy(data = result.value) }
                     Connection.Online
                 }
                 is ApiResult.NoRoute -> Connection.NoRoute(result.detail)
-                ApiResult.Unauthorized -> Connection.Failed("The server refused the request")
+                ApiResult.Unauthorized -> Connection.NeedsToken(refused = true)
                 is ApiResult.Failed -> Connection.Failed(result.message)
             }
             mutableState.update { it.copy(connection = connection, refreshing = false) }

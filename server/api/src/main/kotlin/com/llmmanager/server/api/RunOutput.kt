@@ -38,12 +38,12 @@ object RunOutput {
 
     fun outcome(agent: Agent, stage: Stage, events: File, stderr: File, exitCode: Int?): RunOutcome {
         val parsed = when {
-            stage == Stage.REVIEW && agent == Agent.CODEX -> RunOutcome(summary = events.readTextOrEmpty().trim().take(MAX_SUMMARY).ifEmpty { null })
-            agent == Agent.CLAUDE -> claude(lines(events))
-            agent == Agent.GEMINI -> gemini(lines(events))
-            else -> codex(lines(events))
+            stage == Stage.REVIEW && agent == Agent.CODEX -> RunOutcome(summary = events.tail(MAX_SUMMARY.toLong()).trim().ifEmpty { null })
+            agent == Agent.CLAUDE -> EventFiles.parse(events, ::claude)
+            agent == Agent.GEMINI -> EventFiles.parse(events, ::gemini)
+            else -> EventFiles.parse(events, ::codex)
         }
-        val stderrText = stderr.readTextOrEmpty().takeLast(MAX_SUMMARY)
+        val stderrText = stderr.tail(MAX_SUMMARY.toLong())
         val limited = parsed.limited || (exitCode != 0 && LIMIT_TEXT.containsMatchIn(stderrText + (parsed.error ?: "")))
         val error = parsed.error ?: stderrText.lines().lastOrNull { it.isNotBlank() }?.takeIf { exitCode != 0 }
         return parsed.copy(
@@ -119,13 +119,6 @@ object RunOutput {
         return outcome
     }
 
-    internal fun lines(file: File): Sequence<JsonObject> {
-        if (!file.isFile) return emptySequence()
-        return file.readLines().asSequence().mapNotNull { line ->
-            runCatching { json.parseToJsonElement(line) as? JsonObject }.getOrNull()
-        }
-    }
-
     private fun findObject(element: JsonElement, predicate: (JsonObject) -> Boolean): JsonObject? = when (element) {
         is JsonObject -> if (predicate(element)) element else element.values.firstNotNullOfOrNull { findObject(it, predicate) }
         is JsonArray -> element.firstNotNullOfOrNull { findObject(it, predicate) }
@@ -140,20 +133,48 @@ object RunOutput {
 
 internal fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
-internal fun File.readTextOrEmpty(): String = if (isFile) readText() else ""
+/** The last [maxBytes] of this file as text, starting at a line boundary; empty if missing. */
+internal fun File.tail(maxBytes: Long): String {
+    if (!isFile) return ""
+    java.io.RandomAccessFile(this, "r").use { raf ->
+        val start = (raf.length() - maxBytes).coerceAtLeast(0)
+        raf.seek(start)
+        val bytes = ByteArray((raf.length() - start).toInt()).also(raf::readFully)
+        val text = String(bytes, Charsets.UTF_8)
+        // Starting mid-file: drop the partial first line.
+        return if (start == 0L) text else text.substringAfter('\n', "")
+    }
+}
+
+/** Reading the JSON-lines event files agents write: streamed, or only their recent tail. */
+internal object EventFiles {
+    private val json = Json { ignoreUnknownKeys = true }
+    private const val RECENT_BYTES = 2L * 1024 * 1024
+
+    /** Streams [file]'s JSON lines into [parse] without loading the file; long runs produce large logs. */
+    fun <T> parse(file: File, parse: (Sequence<JsonObject>) -> T): T =
+        if (!file.isFile) parse(emptySequence()) else file.useLines { lines -> parse(lines.mapNotNull(::line)) }
+
+    /** JSON lines from at most the last [maxBytes] of [file], for showing recent activity. */
+    fun recent(file: File, maxBytes: Long = RECENT_BYTES): Sequence<JsonObject> = file.tail(maxBytes).lineSequence().mapNotNull(::line)
+
+    private fun line(text: String): JsonObject? = runCatching { json.parseToJsonElement(text) as? JsonObject }.getOrNull()
+}
 
 /** A run's recent steps in readable form, for the run log on the phone. Redacted. */
 object RunActivity {
+    private const val ACTIVITY_TAIL_BYTES = 256L * 1024
+
     /** The last [max] readable steps of a run, redacted. */
     fun activity(agent: Agent, stage: Stage, events: File, max: Int = 150): List<ActivityLine> {
         if (stage == Stage.REVIEW && agent == Agent.CODEX) {
-            return events.readTextOrEmpty().lines().filter { it.isNotBlank() }.takeLast(max)
+            return events.tail(ACTIVITY_TAIL_BYTES).lines().filter { it.isNotBlank() }.takeLast(max)
                 .map { ActivityLine("text", RunOutput.redact(it).take(RunOutput.MAX_LINE)) }
         }
         val steps = when (agent) {
-            Agent.CLAUDE -> RunOutput.lines(events).flatMap(::claudeSteps).toList()
-            Agent.CODEX -> RunOutput.lines(events).flatMap(::codexSteps).toList()
-            Agent.GEMINI -> geminiSteps(RunOutput.lines(events))
+            Agent.CLAUDE -> EventFiles.recent(events).flatMap(::claudeSteps).toList()
+            Agent.CODEX -> EventFiles.recent(events).flatMap(::codexSteps).toList()
+            Agent.GEMINI -> geminiSteps(EventFiles.recent(events))
         }
         return steps.takeLast(max).map { it.copy(text = RunOutput.redact(it.text).take(RunOutput.MAX_LINE)) }
     }

@@ -43,7 +43,10 @@ class CodexLauncherTest {
 
     private fun launcher(sessions: FakeSessions, codex: String? = "/opt/codex", max: Int = 4) =
         ProjectScanner(listOf("${root.path}/checkouts/*"), sessions = sessions).let { scanner ->
-            scanner to CodexLauncher(scanner, sessions, CodexLauncher.Settings(File(root, "codex-worktrees"), codex, max), clock = clock)
+            scanner to CodexLauncher(
+                scanner, sessions,
+                CodexLauncher.Settings(File(root, "codex-worktrees"), codex, max, scriptDir = File(root, "sessions")), clock = clock,
+            )
         }
 
     @Test
@@ -66,7 +69,10 @@ class CodexLauncherTest {
         val (name, dir, command) = sessions.started.single()
         assertEquals("codex-" + result.branch.removePrefix("codex/"), name)
         assertEquals(path.canonicalFile, dir.canonicalFile)
-        assertEquals(listOf("/opt/codex", "--sandbox", "workspace-write", "--ask-for-approval", "on-request"), command)
+        // tmux runs a generated script that clears the environment, then starts Codex with pinned flags.
+        assertEquals(listOf("bash", File(root, "sessions/$name.sh").path), command)
+        val script = File(root, "sessions/$name.sh").readText()
+        assertTrue(script.contains("exec env -i \"\${keep[@]}\" '/opt/codex' '--sandbox' 'workspace-write' '--ask-for-approval' 'on-request'"), script)
         assertEquals("tmux attach -t $name", result.session.attachCommand)
 
         val reported = scanner.scan().single().worktrees.single { it.branch == result.branch }
@@ -88,7 +94,9 @@ class CodexLauncherTest {
         git(mirror, "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*")
         val sessions = FakeSessions()
         val scanner = ProjectScanner(listOf("${mirrors.path}/*"), sessions = sessions)
-        val launcher = CodexLauncher(scanner, sessions, CodexLauncher.Settings(File(root, "codex-worktrees"), "/opt/codex"), clock = clock)
+        val launcher = CodexLauncher(
+            scanner, sessions, CodexLauncher.Settings(File(root, "codex-worktrees"), "/opt/codex", scriptDir = File(root, "sessions")), clock = clock,
+        )
 
         val result = assertIs<CodexLauncher.Result.Started>(launcher.launch(scanner.scan().single().id))
 

@@ -7,6 +7,7 @@ plugins {
 dependencies {
     // SecretRedactor: agent output is redacted before it is shown on the phone.
     implementation(project(":server:runner"))
+    implementation(platform(libs.netty.bom))
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.content.negotiation)

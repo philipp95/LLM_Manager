@@ -27,4 +27,16 @@ class BindAddressTest {
     fun `missing tailscale fails instead of falling back`() {
         assertFailsWith<IllegalStateException> { BindAddress.resolve(null) { null } }
     }
+
+    @Test
+    fun `magic dns names come from the local node and become the host allowlist`() {
+        val status = """{"Version":"1.90","Self":{"ID":"n1","HostName":"os-name","DNSName":"Box.Tail257.ts.net.","TailscaleIPs":["100.1.2.3"]},""" +
+            """"Peer":{"k":{"DNSName":"other.tail257.ts.net."}}}"""
+        assertEquals(listOf("box.tail257.ts.net", "box"), BindAddress.tailscaleNames { status })
+        assertEquals(emptyList(), BindAddress.tailscaleNames { null })
+        assertEquals(emptyList(), BindAddress.tailscaleNames { """{"Self":{"DNSName":"bad name;rm.ts.net."}}""" })
+
+        val hosts = BindAddress.allowedHosts(BindAddress.resolve("100.101.102.103"), 8080, listOf("box.tail257.ts.net", "box"), listOf("Extra.example"))
+        assertEquals(setOf("100.101.102.103:8080", "box.tail257.ts.net:8080", "box:8080", "extra.example:8080"), hosts)
+    }
 }

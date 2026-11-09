@@ -6,7 +6,10 @@ serialization = "1.7.3"
 clikt = "5.0.1"
 sqldelight = "2.0.2"
 slf4j = "2.0.16"
-logback = "1.5.12"
+logback = "1.5.38"
+# Ktor 3.0.3 brings Netty 4.1.116, which has HTTP request-smuggling and DoS advisories;
+# pin the patched 4.1.x line through Netty's BOM.
+netty = "4.1.139.Final"
 kotest = "5.9.1"
 turbine = "1.2.0"
 detekt = "1.23.8"
@@ -25,6 +28,7 @@ clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 
+netty-bom = { module = "io.netty:netty-bom", version.ref = "netty" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
 ktor-server-websockets = { module = "io.ktor:ktor-server-websockets", version.ref = "ktor" }
