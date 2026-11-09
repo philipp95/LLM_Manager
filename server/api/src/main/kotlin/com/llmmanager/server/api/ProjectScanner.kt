@@ -65,13 +65,16 @@ class ProjectScanner(
         val worktrees = git.run(commonDir, "worktree", "list", "--porcelain")?.let { parseWorktrees(commonDir, it, running) } ?: return null
         val origin = git.run(commonDir, "config", "--get", "remote.origin.url")?.trim()?.takeIf { it.isNotEmpty() }?.let(RemoteUrl::of)
         val path = if (bare) commonDir else worktrees.firstOrNull { it.main }?.let { File(it.path) } ?: commonDir.parentFile
+        val forge = origin?.let(Forge::of)
         return Project(
             id = projectId(commonDir),
-            name = origin?.gitHubSlug ?: fallbackName(path, origin, bare),
+            name = forge?.name ?: fallbackName(path, origin, bare),
             kind = if (bare) Project.Kind.MIRROR else Project.Kind.CHECKOUT,
             path = path.path,
             originUrl = origin?.display,
-            gitHubUrl = origin?.gitHubWebUrl,
+            gitHubUrl = (forge as? Forge.GitHub)?.webUrl,
+            forge = forge?.id,
+            webUrl = forge?.webUrl,
             defaultBranch = defaultBranch(commonDir, bare),
             worktrees = worktrees.sortedWith(
                 compareByDescending<Worktree> { it.main }.thenByDescending { it.lastCommitAt.orEmpty() },

@@ -3,9 +3,10 @@
 A project for steering coding agents from an Android app, with execution on a
 separate computer. **The current implementation is a Kotlin/JVM CLI prototype**
 for Claude Code, plus a dashboard served over Tailscale that lists projects,
-charts their activity, schedules unattended Claude and Codex runs (including a
-build-then-cross-review pipeline), resumes them after usage limits, and shows
-plan usage, with a native Android app for the same dashboard.
+charts their activity, schedules unattended Claude, Codex and Gemini runs
+(including a build-then-cross-review pipeline), resumes them after usage limits,
+shows plan usage, and pushes agent branches and opens pull requests on GitHub,
+GitLab or Azure DevOps, with a native Android app for the same dashboard.
 
 ## Requirements
 
@@ -111,9 +112,10 @@ chosen weekday at a time. Each job is one of:
 
 - **Run a task**: one agent works on the prompt.
 - **Build + review**: the chosen agent implements; the server commits; the
-  *other* agent reviews that commit (`codex review --commit` or a read-only
-  Claude session); the builder then resumes its own session with the findings
-  and addresses them. A review of "No findings" ends the pipeline.
+  reviewer you pick (by default Codex for Claude, Claude for Codex and Gemini)
+  reviews that commit (`codex review --commit`, or a read-only Claude or Gemini
+  session); the builder then resumes its own session with the findings and
+  addresses them. A review of "No findings" ends the pipeline.
 - **Resume**: continue the latest Claude or Codex session found in an agent
   worktree (never your main checkout), with an optional message.
 
@@ -125,9 +127,11 @@ surviving server restarts). Permissions are pinned on the command line:
 | --- | --- | --- |
 | Claude | `-p --permission-mode acceptEdits` plus an allowlist of build, test and read-only git commands; anything else is denied | read-only tools and `git show/diff/log` |
 | Codex | `exec --sandbox workspace-write` (writes confined to the worktree, no network) | `review` in the read-only sandbox |
+| Gemini | `--approval-mode auto_edit` plus a generated policy (`gemini-policy.toml`) allowing the same shell commands as Claude; anything that would ask is denied in headless mode | `--approval-mode plan` (read-only) |
 
 After a successful build or fix stage the server commits the changes as
-`Claude via LLM Manager` / `Codex via LLM Manager`. Nothing is pushed. Allowed
+`Claude via LLM Manager`, `Codex via LLM Manager` or `Gemini via LLM Manager`.
+Nothing is pushed until you choose to (see *Publishing agent branches*). Allowed
 build commands such as `./gradlew` execute the repository's own build scripts,
 so schedule runs only on repositories you trust.
 
@@ -151,9 +155,37 @@ The **Usage** tab shows, from local records only:
 - **Tokens per day** for both over 30 days (input + output, cache reads shown
   separately), and Claude tokens by model.
 
-Claude and Codex both read `AGENTS.md`, so the skill library and project rules
-are shared between them; the review prompt asks the reviewer to check the
-change against it.
+- **Gemini tokens** from the results of Gemini runs started by the server.
+  Gemini reports no plan limits and its interactive sessions are not counted.
+
+Claude (`CLAUDE.md`), Codex and Gemini (`GEMINI.md`) all read `AGENTS.md`, so
+the skill library and project rules are shared between them; the review prompt
+asks the reviewer to check the change against it.
+
+Install Gemini CLI with `npm install -g --prefix ~/.local @google/gemini-cli`
+and sign in once by running `~/.local/bin/gemini` over SSH.
+
+### Publishing agent branches
+
+Worktrees on agent branches (`run/…`, `codex/…`, `agent/…`) get **Push**,
+**Create PR** (merge request on GitLab) and, once a pull request is open,
+**Merge**. Push sends exactly that branch to `origin` and never forces. Merge
+goes through the forge's own API, so required checks, approvals and branch
+protection still decide. The default branch and your own checkouts are never
+published from here.
+
+| Forge | Recognised remotes | Credentials (on the server only) |
+| --- | --- | --- |
+| GitHub | `github.com` | the signed-in `gh` CLI |
+| GitLab | `gitlab.com` and hosts with a `gitlab` label | token with `api` scope in `~/.config/llm-manager/gitlab-token` |
+| Azure DevOps | `dev.azure.com`, `ssh.dev.azure.com`, `*.visualstudio.com` | organisation-scoped PAT (Code: Read & write) in `~/.config/llm-manager/azure-devops-token` |
+
+Create token files with `chmod 600`. Tokens are sent only to their forge's
+host, never across redirects, and are passed to `git push` through
+`GIT_CONFIG_*` environment variables rather than the command line. Azure DevOps
+global PATs stop working on 1 December 2026; use an organisation-scoped PAT
+(an Entra service principal is the longer-term option). Until a forge has
+credentials, the card says what is missing.
 
 ### Analytics
 

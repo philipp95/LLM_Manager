@@ -41,6 +41,8 @@ enum class ChipTone(val text: Color, val border: Color, val fill: Color) {
     Neutral(Palette.muted, Palette.line, Color.White.copy(alpha = 0.03f)),
     Codex(Palette.codexText, Palette.codex.copy(alpha = 0.45f), Palette.codex.copy(alpha = 0.12f)),
     Agent(Palette.agentText, Palette.agent.copy(alpha = 0.45f), Palette.agent.copy(alpha = 0.12f)),
+    Gemini(Palette.geminiText, Palette.gemini.copy(alpha = 0.45f), Palette.gemini.copy(alpha = 0.12f)),
+    Accent(Palette.accent, Palette.accent.copy(alpha = 0.45f), Color.Transparent),
     Ok(Palette.ok, Palette.ok.copy(alpha = 0.3f), Color.Transparent),
     Warn(Palette.warn, Palette.warn.copy(alpha = 0.35f), Palette.warn.copy(alpha = 0.07f)),
     Bad(Palette.bad, Palette.bad.copy(alpha = 0.35f), Color.Transparent),

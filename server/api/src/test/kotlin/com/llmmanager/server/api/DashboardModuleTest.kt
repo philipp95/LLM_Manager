@@ -150,7 +150,7 @@ class DashboardModuleTest {
         val authorized = client.get("/api/schedule") { header(HttpHeaders.Authorization, "Bearer ${"t".repeat(40)}") }
         assertEquals(HttpStatusCode.OK, authorized.status)
         val overview = Json.decodeFromString<ScheduleResponse>(authorized.bodyAsText())
-        assertEquals(mapOf("claude" to false, "codex" to false), overview.agents)
+        assertEquals(mapOf("claude" to false, "codex" to false, "gemini" to false), overview.agents)
         val refused = client.post("/api/jobs") {
             header(HttpHeaders.Authorization, "Bearer ${"t".repeat(40)}")
             header(HttpHeaders.ContentType, "application/json")

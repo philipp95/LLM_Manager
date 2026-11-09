@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -45,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.llmmanager.android.data.CodexSession
 import com.llmmanager.android.data.Project
+import com.llmmanager.android.data.Publish
 import com.llmmanager.android.data.Worktree
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -55,12 +58,14 @@ fun ProjectCard(
     launching: Boolean,
     onStartCodex: () -> Unit,
     onCopy: (String) -> Unit,
+    onPublish: (branch: String, action: String) -> Unit = { _, _ -> },
 ) {
     val uriHandler = LocalUriHandler.current
     val owner = project.name.substringBeforeLast('/', "")
     val repo = project.name.substringAfterLast('/')
-    // Only ever open github.com links the server built from a validated owner/repo.
-    val gitHubUrl = project.gitHubUrl?.takeIf { it.startsWith("https://github.com/") }
+    // The server builds the forge link from validated parts; still only open https links.
+    val webUrl = (project.webUrl ?: project.gitHubUrl)?.takeIf { it.startsWith("https://") }
+    val forgeName = FORGES[project.forge]
     val agents = project.worktrees.count { it.agentRun }
     val live = project.worktrees.count { it.codex?.running == true }
 
@@ -72,15 +77,16 @@ fun ProjectCard(
                 if (owner.isNotEmpty()) Text(owner, color = Palette.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(repo, color = Palette.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (gitHubUrl != null) {
-                IconButton(onClick = { uriHandler.openUri(gitHubUrl) }) {
-                    Icon(Icons.Filled.Share, contentDescription = "Open on GitHub", tint = Palette.text)
+            if (webUrl != null) {
+                IconButton(onClick = { uriHandler.openUri(webUrl) }) {
+                    Icon(Icons.Filled.Share, contentDescription = "Open on ${forgeName ?: "the forge"}", tint = Palette.text)
                 }
             }
         }
         FlowRow(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Chip(project.defaultBranch ?: "unknown", mono = true)
             Chip(project.kind)
+            forgeName?.let { Chip(it) }
             Chip(relativeTime(project.worktrees.mapNotNull { it.lastCommitAt }.maxOrNull()))
             if (live > 0) Chip("$live live", ChipTone.Codex, dot = true)
             if (agents > 0) Chip(plural(agents, "run", "runs"), ChipTone.Agent, dot = true)
@@ -97,7 +103,7 @@ fun ProjectCard(
         }
         project.worktrees.forEach { worktree ->
             HorizontalDivider(color = Palette.lineSoft)
-            WorktreeRow(worktree, onCopy)
+            WorktreeRow(worktree, onCopy, project.forge == "gitlab", project.defaultBranch, onPublish)
         }
         PathsSection(project)
         HorizontalDivider(color = Palette.lineSoft)
@@ -143,7 +149,13 @@ private fun Avatar(name: String, repo: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun WorktreeRow(worktree: Worktree, onCopy: (String) -> Unit) {
+private fun WorktreeRow(
+    worktree: Worktree,
+    onCopy: (String) -> Unit,
+    mergeRequests: Boolean,
+    defaultBranch: String?,
+    onPublish: (branch: String, action: String) -> Unit,
+) {
     val state = stateColor(worktree)
     // Intrinsic height lets the status bar span the whole row, however tall its content is.
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(14.dp)) {
@@ -170,7 +182,50 @@ private fun WorktreeRow(worktree: Worktree, onCopy: (String) -> Unit) {
                 }
             }
             worktree.codex?.let { AttachBox(it, onCopy) }
+            val branch = worktree.branch
+            if (worktree.publish != null && branch != null) {
+                PublishRow(worktree.publish, mergeRequests, branch, defaultBranch) { action -> onPublish(branch, action) }
+            }
         }
+    }
+}
+
+private val FORGES = mapOf("github" to "GitHub", "gitlab" to "GitLab", "azure-devops" to "Azure DevOps")
+
+/** Push / pull request / merge for an agent branch. Merging happens on the forge, with its checks. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PublishRow(publish: Publish, mergeRequests: Boolean, branch: String, defaultBranch: String?, onAction: (String) -> Unit) {
+    val uriHandler = LocalUriHandler.current
+    var confirmMerge by remember { mutableStateOf(false) }
+    val pr = publish.pullRequest
+    FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (publish.upToDate) {
+            Chip("pushed", ChipTone.Ok)
+        } else {
+            OutlinedButton(onClick = { onAction("push") }) { Text(if (publish.pushed) "Push update" else "Push", fontSize = 13.sp) }
+        }
+        pr?.takeIf { it.url.startsWith("https://") }?.let {
+            TextButton(onClick = { uriHandler.openUri(it.url) }) {
+                Text("${if (mergeRequests) "!" else "#"}${it.number} ${it.state}", color = if (it.open) Palette.accent else Palette.ok, fontSize = 13.sp)
+            }
+        }
+        if (pr == null && publish.blocked == null) {
+            Button(onClick = { onAction("pull-request") }, colors = ButtonDefaults.buttonColors(containerColor = Palette.accent)) {
+                Text(if (mergeRequests) "Create MR" else "Create PR", fontSize = 13.sp)
+            }
+        }
+        if (pr?.open == true && publish.blocked == null) OutlinedButton(onClick = { confirmMerge = true }) { Text("Merge", fontSize = 13.sp) }
+    }
+    publish.blocked?.let { Text(it, color = Palette.faint, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+    if (confirmMerge) {
+        AlertDialog(
+            onDismissRequest = { confirmMerge = false }, containerColor = Palette.raised,
+            title = { Text("Merge $branch?") },
+            text = { Text("Into ${defaultBranch ?: "the default branch"}. The forge's required checks and approvals still apply.") },
+            confirmButton = { TextButton(onClick = { confirmMerge = false; onAction("merge") }) { Text("Merge") } },
+            dismissButton = { TextButton(onClick = { confirmMerge = false }) { Text("Cancel") } },
+        )
     }
 }
 

@@ -29,8 +29,12 @@ data class Project(
     val path: String,
     /** Origin with any embedded credentials removed. */
     val originUrl: String?,
-    /** Set only for github.com remotes; built from a validated `owner/repo`. */
+    /** Set only for github.com remotes; kept for older clients, which link only to GitHub. */
     val gitHubUrl: String?,
+    /** github, gitlab or azure-devops; null for other remotes. */
+    val forge: String? = null,
+    /** The repository's web page on its forge, built from validated parts. */
+    val webUrl: String? = null,
     val defaultBranch: String?,
     val worktrees: List<Worktree>,
     /** Commits reachable from any ref, per day; aligned with [Analytics.days]. */
@@ -70,6 +74,8 @@ data class Worktree(
     val codex: CodexSession? = null,
     /** When a Codex session or agent run began (ISO-8601); null for other worktrees or when unknown. */
     val startedAt: String? = null,
+    /** Push / pull request state for agent branches; null for other worktrees. */
+    val publish: Publish? = null,
 )
 
 @Serializable

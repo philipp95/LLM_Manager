@@ -23,7 +23,10 @@ The repository currently contains five Kotlin/JVM modules and an Android app:
   approval prompts govern what it does. Token-protected routes also schedule
   **unattended** Claude and Codex runs (single runs, build-then-cross-review
   pipelines, resumes), which execute in tmux with permissions pinned per agent
-  and resume themselves after plan limits reset. It reports activity analytics
+  and resume themselves after plan limits reset; Claude, Codex and Gemini are
+  supported. It pushes agent branches and opens and merges pull requests on
+  GitHub (via `gh`), GitLab and Azure DevOps (via their REST APIs, with tokens
+  in owner-only files), always through the forge's own merge rules. It reports activity analytics
   and plan usage from local records, and serves the Android APK. It uses the
   runner's `SecretRedactor` for run logs but not its harness.
 - `android/app`: a Compose client for that API, restricted to Tailscale hosts,
@@ -34,7 +37,7 @@ dashboard's static bearer token is a stopgap, not the pairing, per-device
 identity, and approval design listed below. Unattended runs rely on the agents'
 own permission systems (Claude's tool allowlist, Codex's sandbox), not on OS
 containment; allowed build commands run repository code. There is no API that
-removes worktrees or pushes. Protocol types and unused catalog entries
+removes worktrees, force-pushes, or publishes anything but agent branches. Protocol types and unused catalog entries
 are preparation, not implemented transport or storage.
 
 ## Current execution model

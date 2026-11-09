@@ -30,6 +30,7 @@ class ApiServer : CliktCommand(name = "api") {
         .default(File(System.getProperty("user.home"), "agent-work/codex").path)
     private val apk by option("--apk", help = "Android APK offered for download at ${ApkFile.URL}")
         .default(File(System.getProperty("user.home"), "LLM_Manager/android/app/build/outputs/apk/release/app-release.apk").path)
+    private val gemini by option("--gemini", help = "Gemini CLI for scheduled runs. Default: `gemini` on PATH or ~/.local/bin/gemini")
     private val claude by option("--claude", help = "Claude Code CLI for scheduled runs. Default: `claude` on PATH or ~/.local/bin/claude")
     private val stateDir by option("--state-dir", help = "Schedules, run history and run logs")
         .default(File(System.getProperty("user.home"), ".local/share/llm-manager").path)
@@ -59,11 +60,18 @@ class ApiServer : CliktCommand(name = "api") {
         val state = File(stateDir)
         val store = StateStore(state)
         val usage = UsageReader(File(System.getProperty("user.home")), state)
-        val commands = AgentCommands(claude ?: CodexLauncher.findBinary("claude"), codexPath)
+        // Gemini's command allowlist mirrors Claude's; written fresh at every start.
+        val policy = File(state, "gemini-policy.toml").apply { parentFile.mkdirs(); writeText(AgentCommands.geminiPolicy()) }
+        val commands = AgentCommands(
+            claude ?: CodexLauncher.findBinary("claude"), codexPath,
+            gemini = gemini ?: CodexLauncher.findBinary("gemini"), geminiPolicyFile = policy.path,
+        )
         val workspace = Workspace(scanner, sessions, commands)
         val engine = RunEngine(store, workspace, File(runWorktrees))
         val scheduler = Scheduler(store, engine, sessions, limitResetHint = usage::resetHint)
         scheduler.launch(CoroutineScope(SupervisorJob()))
-        return ScheduleApi(JobService(store, scheduler, workspace, SessionCatalog()), store, usage)
+        val credentials = ForgeCredentials(File(tokenFile).absoluteFile.parentFile, CodexLauncher.findBinary("gh"))
+        val branches = BranchService(store, BranchStore(state), workspace, ForgeClient(credentials), credentials)
+        return ScheduleApi(JobService(store, scheduler, workspace, SessionCatalog()), store, usage, branches)
     }
 }

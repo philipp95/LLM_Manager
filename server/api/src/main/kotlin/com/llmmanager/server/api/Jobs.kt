@@ -10,9 +10,13 @@ enum class Agent(val label: String) {
 
     @SerialName("codex")
     CODEX("Codex"),
+
+    @SerialName("gemini")
+    GEMINI("Gemini"),
     ;
 
-    val other: Agent get() = if (this == CLAUDE) CODEX else CLAUDE
+    /** Who reviews this agent's work in a pipeline unless the job names a reviewer. */
+    val defaultReviewer: Agent get() = if (this == CLAUDE) CODEX else CLAUDE
 }
 
 /** What a job does each time it fires. */
@@ -55,8 +59,10 @@ data class Job(
     val projectId: String,
     val projectName: String,
     val kind: JobKind,
-    /** The agent that works (for a pipeline: the builder; the reviewer is the other one). */
+    /** The agent that works (for a pipeline: the builder). */
     val agent: Agent,
+    /** For a pipeline: who reviews; defaults to [Agent.defaultReviewer]. */
+    val reviewer: Agent? = null,
     val prompt: String,
     val schedule: Schedule,
     val resume: SessionRef? = null,

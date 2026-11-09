@@ -13,7 +13,7 @@
     --text: #e8eaf0; --muted: #8a93a6; --faint: #5c6478;
     --accent: #8b7cf6; --accent-2: #5ec4ff; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --live: #22d3ee;
     /* Chart series (validated on the card surface): Codex = slot 1, agent runs = slot 2, commits = accent. */
-    --series-codex: #3987e5; --series-agent: #d95926; --series-commits: #9085e9; --grid: #232938;
+    --series-codex: #3987e5; --series-agent: #d95926; --series-gemini: #199e70; --series-commits: #9085e9; --grid: #232938;
     --radius: 18px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
@@ -167,6 +167,10 @@
   .tab[hidden] { display: none; }
   .chip.claude { color: #f0a07e; border-color: rgba(217, 89, 38, .45); background: rgba(217, 89, 38, .12); }
   .chip.codex { color: #8fbaf2; border-color: rgba(57, 135, 229, .45); background: rgba(57, 135, 229, .12); }
+  .chip.gemini { color: #6fd3ad; border-color: rgba(25, 158, 112, .45); background: rgba(25, 158, 112, .12); }
+  .publish { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .publish a.chip { text-decoration: none; }
+  .publish .note { font-size: 12px; color: var(--faint); flex-basis: 100%; }
   .chip.running { color: var(--accent); border-color: rgba(139, 124, 246, .45); }
   .chip.running svg { animation: spin 1.2s linear infinite; }
   .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -423,7 +427,34 @@
     return el("div", { class: "attach" }, el("code", null, session.attachCommand), button);
   }
 
-  function worktreeRow(w) {
+  /** Push / pull request / merge for an agent branch (issue #1). Merging happens on the forge. */
+  function publishRow(w, project) {
+    const pub = w.publish;
+    const pr = pub.pullRequest;
+    const mr = project.forge === "gitlab";
+    const act = (action, label, iconName, cls, confirmText) => el("button", { class: "small-btn " + (cls || ""), type: "button", onclick: async (event) => {
+      if (confirmText && !confirm(confirmText)) return;
+      event.currentTarget.disabled = true;
+      const result = await api("/api/projects/" + encodeURIComponent(project.id) + "/branches/" + action,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branch: w.branch }) });
+      toast(result.ok ? result.body.message : (result.body.error || "Failed (" + result.status + ")"), !result.ok);
+      load();
+    } }, icon(iconName), label);
+    const open = pr && ["open", "opened", "active"].includes(pr.state);
+    const prLink = pr && typeof pr.url === "string" && pr.url.startsWith("https://")
+      ? el("a", { class: "chip " + (pr.state === "merged" || pr.state === "completed" ? "ok" : "running"), href: pr.url, target: "_blank", rel: "noopener noreferrer" },
+          icon("link"), el("span", { class: "t" }, (mr ? "!" : "#") + pr.number + " " + pr.state))
+      : null;
+    return el("div", { class: "publish" },
+      pub.upToDate ? chip("pushed", "ok", "check") : act("push", pub.pushed ? "Push update" : "Push", "play"),
+      prLink,
+      !pr && !pub.blocked ? act("pull-request", mr ? "Create MR" : "Create PR", "plus", "go") : null,
+      open && !pub.blocked ? act("merge", "Merge", "check", null,
+        "Merge " + w.branch + " into " + (project.defaultBranch || "the default branch") + "? The forge's required checks and approvals still apply.") : null,
+      pub.blocked ? el("span", { class: "note" }, pub.blocked) : null);
+  }
+
+  function worktreeRow(w, project) {
     const label = w.branch || ("detached @ " + (w.head ? w.head.slice(0, 8) : "?"));
     const tags = [
       w.codex ? chip(w.codex.running ? "Codex live" : "Codex", w.codex.running ? "live" : null, "spark") : null,
@@ -439,7 +470,8 @@
           el("span", { title: w.lastCommitAt || "" }, icon("clock"), relative(w.lastCommitAt)),
           w.head ? el("span", null, icon("branch"), w.head.slice(0, 7)) : null),
         tags.length ? el("div", { class: "chips" }, tags) : null,
-        w.codex ? attachBox(w.codex) : null));
+        w.codex ? attachBox(w.codex) : null,
+        w.publish && w.branch && project ? publishRow(w, project) : null));
   }
 
   function lastActivity(p) {
@@ -478,8 +510,10 @@
     const repo = parts.pop();
     const owner = parts.join("/");
     const h = hue(p.name);
-    // gitHubUrl is built server-side from a validated owner/repo; still only accept GitHub.
-    const safeUrl = typeof p.gitHubUrl === "string" && p.gitHubUrl.startsWith("https://github.com/") ? p.gitHubUrl : null;
+    // The server builds webUrl from validated parts; still only follow https links.
+    const link = p.webUrl || p.gitHubUrl;
+    const safeUrl = typeof link === "string" && link.startsWith("https://") ? link : null;
+    const forgeName = { github: "GitHub", gitlab: "GitLab", "azure-devops": "Azure DevOps" }[p.forge];
     const agents = p.worktrees.filter((w) => w.agentRun).length;
     const live = p.worktrees.filter((w) => w.codex && w.codex.running).length;
     const button = el("button", { class: "primary", type: "button", disabled: !codexAvailable }, icon("terminal"), "Start Codex");
@@ -488,10 +522,11 @@
       el("div", { class: "card-head" },
         el("div", { class: "avatar", style: `background: linear-gradient(135deg, hsl(${h} 70% 55%), hsl(${(h + 40) % 360} 70% 42%))` }, repo.slice(0, 2)),
         el("div", { class: "names" }, owner ? el("div", { class: "owner" }, owner) : null, el("div", { class: "repo", title: p.name }, repo)),
-        safeUrl ? el("a", { class: "icon-btn", href: safeUrl, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open on GitHub" }, icon("link")) : null),
+        safeUrl ? el("a", { class: "icon-btn", href: safeUrl, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open on " + (forgeName || "the forge") }, icon("link")) : null),
       el("div", { class: "chips" },
         chip(p.defaultBranch || "unknown", null, "branch", true),
         chip(p.kind === "mirror" ? "mirror" : "checkout", null, p.kind === "mirror" ? "box" : "folder"),
+        forgeName ? chip(forgeName, null, "link") : null,
         chip(relative(lastActivity(p)), null, "clock"),
         live ? chip(live + " live", "live", "spark") : null,
         agents ? chip(agents + (agents === 1 ? " run" : " runs"), "agent", "bot") : null),
@@ -499,7 +534,7 @@
         ? (() => { const last = p.commitsPerDay.slice(-14); const n = last.reduce((x, y) => x + y, 0);
             return el("div", { class: "spark" }, el("span", null, "14d"), sparkline(last), el("span", null, plural(n, "commit", "commits"))); })()
         : null,
-      p.worktrees.length ? el("div", { class: "wts" }, p.worktrees.map(worktreeRow)) : null,
+      p.worktrees.length ? el("div", { class: "wts" }, p.worktrees.map((w) => worktreeRow(w, p))) : null,
       el("details", null,
         el("summary", null, icon("folder"), "Paths & origin"),
         el("div", { class: "paths" },
@@ -702,7 +737,12 @@
   const compact = (n) => (Math.abs(n) >= 10000 ? new Intl.NumberFormat([], { notation: "compact", maximumFractionDigits: 1 }).format(n) : String(n));
   const chartWidth = () => Math.max(240, document.querySelector("main").clientWidth - 58);
   const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  const AGENT = { claude: { label: "Claude", chip: "claude", color: "var(--series-agent)" }, codex: { label: "Codex", chip: "codex", color: "var(--series-codex)" } };
+  const AGENT = {
+    claude: { label: "Claude", chip: "claude", color: "var(--series-agent)" },
+    codex: { label: "Codex", chip: "codex", color: "var(--series-codex)" },
+    gemini: { label: "Gemini", chip: "gemini", color: "var(--series-gemini)" },
+  };
+  const defaultReviewer = (agent) => (agent === "claude" ? "codex" : "claude");
   const STAGE = { work: "Build", review: "Review", fix: "Fix", resume: "Resume" };
   const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -767,7 +807,7 @@
 
   function jobItem(view) {
     const job = view.job;
-    const agents = job.kind === "pipeline" ? [job.agent, job.agent === "claude" ? "codex" : "claude"] : [job.agent];
+    const agents = job.kind === "pipeline" ? [job.agent, job.reviewer || defaultReviewer(job.agent)] : [job.agent];
     const action = (path, label, iconName, cls, confirmText) => el("button", { class: "small-btn " + (cls || ""), type: "button", onclick: async () => {
       if (confirmText && !confirm(confirmText)) return;
       const result = await api("/api/jobs/" + encodeURIComponent(job.id) + "/" + path, { method: "POST" });
@@ -868,7 +908,8 @@
 
   async function openJobForm() {
     if (!projectsCache.length) await load();
-    const form = { kind: "run", agent: "claude", when: "now", days: [1, 2, 3, 4, 5] };
+    const form = { kind: "run", agent: "claude", reviewer: "codex", when: "now", days: [1, 2, 3, 4, 5] };
+    const agentOptions = [["claude", "Claude"], ["codex", "Codex"], ["gemini", "Gemini"]];
     const dialog = $("job-dialog");
     const agentsOk = (scheduleData && scheduleData.agents) || {};
     const project = el("select", null, projectsCache.map((p) => el("option", { value: p.id }, p.name)));
@@ -889,9 +930,15 @@
     }, name)));
     renderDays();
     const agentHint = el("div", { class: "hint-text" });
+    const reviewerSlot = el("div");
+    const renderReviewer = () => {
+      if (form.reviewer === form.agent) form.reviewer = defaultReviewer(form.agent);
+      reviewerSlot.replaceChildren(segmented(agentOptions.filter(([v]) => v !== form.agent), form.reviewer, (v) => { form.reviewer = v; sync(); }));
+    };
     const fields = {
       project: el("div", { class: "field" }, el("label", null, "Project"), project),
-      agent: el("div", { class: "field" }, el("span", null, "Agent"), segmented([["claude", "Claude"], ["codex", "Codex"]], form.agent, (v) => { form.agent = v; sync(); }), agentHint),
+      agent: el("div", { class: "field" }, el("span", null, "Agent"), segmented(agentOptions, form.agent, (v) => { form.agent = v; renderReviewer(); sync(); }), agentHint),
+      reviewer: el("div", { class: "field" }, el("span", null, "Reviewer"), reviewerSlot),
       session: el("div", { class: "field" }, el("label", null, "Session to continue"), session,
         el("div", { class: "hint-text" }, "Only sessions in agent worktrees can be resumed, never your own checkout.")),
       prompt: el("div", { class: "field" }, el("label", null, "Task"), prompt),
@@ -903,14 +950,16 @@
       fields.project.hidden = resume; fields.agent.hidden = resume; fields.session.hidden = !resume;
       prompt.placeholder = resume ? "Optional: what to tell it (default: continue where you left off)" : "What should the agent do?";
       fields.at.hidden = form.when !== "once"; fields.daily.hidden = form.when !== "daily";
-      const other = form.agent === "claude" ? "codex" : "claude";
-      agentHint.textContent = form.kind === "pipeline"
-        ? AGENT[form.agent].label + " builds and commits, " + AGENT[other].label + " reviews the commit, then " + AGENT[form.agent].label + " addresses the review."
-        : (agentsOk[form.agent] === false ? AGENT[form.agent].label + " is not installed on the server." : "");
+      fields.reviewer.hidden = form.kind !== "pipeline";
+      const missing = [form.agent, form.kind === "pipeline" ? form.reviewer : null].filter((a) => a && agentsOk[a] === false);
+      agentHint.textContent = (form.kind === "pipeline"
+        ? AGENT[form.agent].label + " builds and commits, " + AGENT[form.reviewer].label + " reviews the commit, then " + AGENT[form.agent].label + " addresses the review. "
+        : "") + missing.map((a) => AGENT[a].label + " is not installed on the server.").join(" ");
     }
     const submit = el("button", { class: "primary", type: "button" }, "Create job");
     submit.addEventListener("click", async () => {
       const request = { kind: form.kind, agent: form.agent, prompt: prompt.value, resumeOnLimitReset: resumeOnLimit.checked };
+      if (form.kind === "pipeline") request.reviewer = form.reviewer;
       if (form.kind === "resume") {
         const target = resumable[Number(session.value)];
         if (!target) { toast("Choose a session to resume", true); return; }
@@ -935,12 +984,13 @@
         el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
       el("div", { class: "field" }, el("span", null, "What"),
         segmented([["run", "Run a task"], ["pipeline", "Build + review"], ["resume", "Resume"]], form.kind, (v) => { form.kind = v; sync(); })),
-      fields.project, fields.agent, fields.session, fields.prompt,
+      fields.project, fields.agent, fields.reviewer, fields.session, fields.prompt,
       el("div", { class: "field" }, el("span", null, "When"), segmented([["now", "Now"], ["once", "Once"], ["daily", "Repeat"]], form.when, (v) => { form.when = v; sync(); })),
       fields.at, fields.daily,
       el("label", { class: "check" }, resumeOnLimit, el("span", null, "If a usage limit stops it, continue automatically when the limit resets")),
       el("p", { class: "hint-text" }, "Runs work in a new branch and worktree, may edit files and run build/test commands, and never push."),
       el("div", { class: "row" }, submit));
+    renderReviewer();
     sync();
     dialog.showModal();
   }
@@ -988,7 +1038,8 @@
   function renderUsage(data) {
     lastUsage = data;
     usageTab.replaceChildren(agentPanel("claude", data.claude, data.days), agentPanel("codex", data.codex, data.days),
-      el("p", { class: "hint-text" }, "From local records on the server: Claude Code and Codex session logs, and Claude's status line. Tokens exclude cache reads."));
+      data.gemini ? agentPanel("gemini", data.gemini, data.days) : null,
+      el("p", { class: "hint-text" }, "From local records on the server: Claude Code and Codex session logs, Claude's status line, and Gemini runs started here. Tokens exclude cache reads."));
   }
 
   async function loadUsage() {

@@ -89,6 +89,26 @@ class UsageTest {
     }
 
     @Test
+    fun `gemini tokens come from the results of runs this server started`() {
+        val events = File(state, "runs/g1/events.jsonl").apply { parentFile.mkdirs() }
+        events.writeText(
+            """{"type":"init","session_id":"g"}""" + "\n" +
+                """{"type":"result","timestamp":"2026-11-09T10:00:00Z","status":"success","stats":{"total_tokens":1300,"input_tokens":1000,""" +
+                """"output_tokens":300,"cached":600,"models":{"gemini-3-pro":{"input_tokens":1000,"output_tokens":300,"cached":600}}}}""" + "\n",
+        )
+        // A Claude result in the same folder has no stats and is ignored.
+        File(state, "runs/c1/events.jsonl").apply { parentFile.mkdirs() }
+            .writeText("""{"type":"result","timestamp":"2026-11-09T10:00:00Z","usage":{"input_tokens":5}}""" + "\n")
+
+        val gemini = UsageReader(home, state, clock).read().gemini
+
+        assertEquals(700, gemini.tokensPerDay.last())
+        assertEquals(600, gemini.cacheReadsPerDay.last())
+        assertEquals(listOf(ModelTokens("gemini-3-pro", 700)), gemini.models)
+        assertTrue(gemini.windows.isEmpty() && gemini.note!!.contains("does not report plan limits"))
+    }
+
+    @Test
     fun `codex tokens and limits come from rollout token_count events`() {
         val rollout = File(home, ".codex/sessions/2026/11/09/rollout-1.jsonl").apply { parentFile.mkdirs() }
         rollout.writeText(

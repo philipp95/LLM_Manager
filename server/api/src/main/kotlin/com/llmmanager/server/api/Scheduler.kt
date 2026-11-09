@@ -115,9 +115,11 @@ class Scheduler(
     private fun nextStage(run: Run) {
         val pipeline = store.runs().filter { it.pipelineId == run.pipelineId }
         val builder = pipeline.minByOrNull { it.createdAt }?.agent ?: run.agent
-        val task = run.jobId?.let(store::job)?.prompt ?: pipeline.minByOrNull { it.createdAt }?.prompt.orEmpty()
+        val job = run.jobId?.let(store::job)
+        val task = job?.prompt ?: pipeline.minByOrNull { it.createdAt }?.prompt.orEmpty()
+        val reviewer = job?.reviewer ?: builder.defaultReviewer
         val next = when (run.continues ?: run.stage) {
-            Stage.WORK, Stage.RESUME -> reviewOf(run, builder, task)
+            Stage.WORK, Stage.RESUME -> reviewOf(run, builder, reviewer, task)
             Stage.REVIEW -> fixFor(run, builder, pipeline)
             Stage.FIX -> null
         }
@@ -125,10 +127,10 @@ class Scheduler(
     }
 
     /** A review by the other agent, unless the work changed nothing. */
-    private fun reviewOf(run: Run, builder: Agent, task: String): Run? {
+    private fun reviewOf(run: Run, builder: Agent, reviewer: Agent, task: String): Run? {
         val commit = run.resultCommit?.takeIf { it != run.baseCommit } ?: return null
         val prompt = AgentCommands.reviewPrompt(builder, run.baseCommit.orEmpty(), commit, task)
-        return run.requeued(Instant.now(clock)).copy(stage = Stage.REVIEW, agent = builder.other, sessionId = null, prompt = prompt, continues = null)
+        return run.requeued(Instant.now(clock)).copy(stage = Stage.REVIEW, agent = reviewer, sessionId = null, prompt = prompt, continues = null)
     }
 
     /** The builder addresses the review in its own session, unless the reviewer found nothing. */
@@ -138,7 +140,7 @@ class Scheduler(
         if (review == null || session == null) return null
         return run.requeued(Instant.now(clock)).copy(
             stage = Stage.FIX, agent = builder, sessionId = session, continues = null,
-            prompt = AgentCommands.fixPrompt(builder.other, review), baseCommit = run.resultCommit,
+            prompt = AgentCommands.fixPrompt(run.agent, review), baseCommit = run.resultCommit,
         )
     }
 

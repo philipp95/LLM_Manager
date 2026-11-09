@@ -33,6 +33,14 @@ class ServerClient(
             json.decodeFromString(LaunchResponse.serializer(), it)
         }
 
+    /** [action] is push, pull-request or merge; returns the server's message. */
+    suspend fun branchAction(server: ServerAddress, token: String, projectId: String, action: String, branch: String): ApiResult<String> {
+        val body = json.encodeToString(BranchRequest.serializer(), BranchRequest(branch))
+        return request(server, Call("POST", "/api/projects/${encode(projectId)}/branches/${encode(action)}", body), token) {
+            json.decodeFromString(BranchResult.serializer(), it).message
+        }
+    }
+
     suspend fun usage(server: ServerAddress): ApiResult<UsageResponse> =
         request(server, Call("GET", "/api/usage"), token = null) { json.decodeFromString(UsageResponse.serializer(), it) }
 

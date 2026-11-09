@@ -44,9 +44,20 @@ import com.llmmanager.android.data.RunLog
 private val STAGES = mapOf("work" to "Build", "review" to "Review", "fix" to "Fix", "resume" to "Resume")
 private val DAY_NAMES = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
-fun agentLabel(agent: String) = if (agent == "codex") "Codex" else "Claude"
+fun agentLabel(agent: String) = when (agent) {
+    "codex" -> "Codex"
+    "gemini" -> "Gemini"
+    else -> "Claude"
+}
 
-fun agentTone(agent: String) = if (agent == "codex") ChipTone.Codex else ChipTone.Agent
+fun agentTone(agent: String) = when (agent) {
+    "codex" -> ChipTone.Codex
+    "gemini" -> ChipTone.Gemini
+    else -> ChipTone.Agent
+}
+
+/** Who reviews a pipeline when the job does not say. */
+fun defaultReviewer(agent: String) = if (agent == "claude") "codex" else "claude"
 
 @Composable
 fun ScheduleScreen(
@@ -135,7 +146,7 @@ private fun JobCard(view: JobView, onAction: (String) -> Unit, onConfirm: (Strin
         }
         FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (job.kind == "pipeline") {
-                val other = if (job.agent == "claude") "codex" else "claude"
+                val other = job.reviewer ?: defaultReviewer(job.agent)
                 Chip("builds: ${agentLabel(job.agent)}", agentTone(job.agent), dot = true)
                 Chip("reviews: ${agentLabel(other)}", agentTone(other), dot = true)
             } else {

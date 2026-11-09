@@ -177,7 +177,7 @@ private fun OverviewList(
     val context = LocalContext.current
     LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
         connectionNotice(state.connection, onSettings = onSettings, onRetry = viewModel::refresh, context = context)
-        state.data?.let { data -> dashboard(data, state.launching, onStart = onStart, onCopy = onCopy) }
+        state.data?.let { data -> dashboard(data, state.launching, onStart = onStart, onCopy = onCopy, onPublish = viewModel::publish) }
     }
 }
 
@@ -221,6 +221,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
     launching: String?,
     onStart: (Project) -> Unit,
     onCopy: (String) -> Unit,
+    onPublish: (Project, String, String) -> Unit,
 ) {
     val worktrees = data.projects.flatMap { it.worktrees }
     item(key = "stats") {
@@ -241,7 +242,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
         item(key = "empty") { Muted("No git repositories found in the server's configured folders.") }
     }
     items(data.projects, key = { it.id }) { project ->
-        ProjectCard(project, data.codexAvailable, launching == project.id, onStartCodex = { onStart(project) }, onCopy = onCopy)
+        ProjectCard(
+            project, data.codexAvailable, launching == project.id, onStartCodex = { onStart(project) }, onCopy = onCopy,
+            onPublish = { branch, action -> onPublish(project, branch, action) },
+        )
     }
 }
 

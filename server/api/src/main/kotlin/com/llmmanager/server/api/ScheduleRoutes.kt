@@ -14,7 +14,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 
 /** Everything the scheduling and usage routes need. */
-class ScheduleApi(val jobs: JobService, val store: StateStore, val usage: UsageReader)
+class ScheduleApi(val jobs: JobService, val store: StateStore, val usage: UsageReader, val branches: BranchService? = null)
+
+@Serializable
+data class BranchRequest(val branch: String)
 
 @Serializable
 data class ApiOk(val status: String = "ok")
@@ -32,7 +35,35 @@ fun Route.scheduleRoutes(api: ScheduleApi, token: ApiToken) {
     }
     jobRoutes(api, token)
     runRoutes(api, token)
+    api.branches?.let { branchRoutes(it, token) }
 }
+
+/** Issue #1: push an agent branch, open its pull request, merge it through the forge. */
+private fun Route.branchRoutes(branches: BranchService, token: ApiToken) {
+    post("/api/projects/{id}/branches/{action}") {
+        if (!call.authorized(token)) return@post
+        val branch = runCatching { call.receive<BranchRequest>() }.getOrNull()?.branch
+        val id = call.parameters["id"].orEmpty()
+        val outcome = when {
+            branch == null -> BranchService.Outcome.Invalid("Malformed request")
+            else -> withContext(Dispatchers.IO) {
+                when (call.parameters["action"]) {
+                    "push" -> branches.push(id, branch)
+                    "pull-request" -> branches.openPullRequest(id, branch)
+                    "merge" -> branches.merge(id, branch)
+                    else -> BranchService.Outcome.Invalid("Unknown action")
+                }
+            }
+        }
+        when (outcome) {
+            is BranchService.Outcome.Ok -> call.respond(BranchResult(outcome.message, outcome.record))
+            is BranchService.Outcome.Invalid -> call.respond(HttpStatusCode.BadRequest, ApiError(outcome.reason))
+        }
+    }
+}
+
+@Serializable
+data class BranchResult(val message: String, val record: BranchRecord)
 
 private fun Route.jobRoutes(api: ScheduleApi, token: ApiToken) {
     get("/api/schedule") {

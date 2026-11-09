@@ -46,7 +46,8 @@ fun UsageScreen(usage: UsageResponse?, error: String?) {
         }
         item { AgentUsagePanel("Claude", Palette.agent, usage.claude, usage.days) }
         item { AgentUsagePanel("Codex", Palette.codex, usage.codex, usage.days) }
-        item { Muted("From local records on the server: Claude Code and Codex session logs, and Claude's status line. Tokens exclude cache reads.") }
+        usage.gemini?.let { gemini -> item { AgentUsagePanel("Gemini", Palette.gemini, gemini, usage.days) } }
+        item { Muted(SOURCES_NOTE) }
     }
 }
 
@@ -134,3 +135,6 @@ private fun LimitMeter(window: LimitWindow) {
         }
     }
 }
+
+private const val SOURCES_NOTE = "From local records on the server: Claude Code and Codex session logs, Claude's status line, " +
+    "and Gemini runs started here. Tokens exclude cache reads."

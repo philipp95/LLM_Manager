@@ -47,6 +47,8 @@ object Palette {
     val codex = Color(0xFF3987E5)
     val agent = Color(0xFFD95926)
     val commits = Color(0xFF9085E9)
+    val gemini = Color(0xFF199E70)
     val codexText = Color(0xFF8FBAF2)
     val agentText = Color(0xFFF0A07E)
+    val geminiText = Color(0xFF6FD3AD)
 }

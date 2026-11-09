@@ -54,11 +54,13 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 
 private val WEEKDAYS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+private val AGENTS = listOf("claude" to "Claude", "codex" to "Codex", "gemini" to "Gemini")
 
 /** Everything the form holds; one immutable value so each part can be its own composable. */
 private data class Form(
     val kind: String = "run",
     val agent: String = "claude",
+    val reviewer: String = "codex",
     val project: Pair<String, String>? = null,
     val session: ResumeTarget? = null,
     val prompt: String = "",
@@ -81,7 +83,7 @@ private data class Form(
             val ref = SessionRef(target.session.agent, target.session.sessionId, target.session.worktree)
             JobRequest(target.projectId, kind, target.session.agent, prompt, schedule, ref, resumeOnLimit)
         } else {
-            JobRequest(project?.first.orEmpty(), kind, agent, prompt, schedule, null, resumeOnLimit)
+            JobRequest(project?.first.orEmpty(), kind, agent, prompt, schedule, null, resumeOnLimit, reviewer.takeIf { kind == "pipeline" })
         }
     }
 }
@@ -151,12 +153,17 @@ private fun ResumeFields(form: Form, resumable: List<ResumeTarget>, onChange: (F
 @Composable
 private fun TaskFields(form: Form, projects: List<Pair<String, String>>, agents: Map<String, Boolean>, onChange: (Form) -> Unit) {
     Picker("Project", form.project?.second ?: "No projects", projects.map { it to it.second }) { onChange(form.copy(project = it)) }
-    Segmented(listOf("claude" to "Claude", "codex" to "Codex"), form.agent) { onChange(form.copy(agent = it)) }
+    Segmented(AGENTS, form.agent) { agent ->
+        onChange(form.copy(agent = agent, reviewer = if (form.reviewer == agent) defaultReviewer(agent) else form.reviewer))
+    }
     val builder = agentLabel(form.agent)
-    val reviewer = agentLabel(if (form.agent == "claude") "codex" else "claude")
-    when {
-        form.kind == "pipeline" -> Muted("$builder builds and commits, $reviewer reviews the commit, then $builder addresses the review.")
-        agents[form.agent] == false -> Text("$builder is not installed on the server.", color = Palette.bad, fontSize = 12.5.sp)
+    if (form.kind == "pipeline") {
+        Text("Reviewer", color = Palette.muted, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        Segmented(AGENTS.filter { it.first != form.agent }, form.reviewer) { onChange(form.copy(reviewer = it)) }
+        Muted("$builder builds and commits, ${agentLabel(form.reviewer)} reviews the commit, then $builder addresses the review.")
+    }
+    listOfNotNull(form.agent, form.reviewer.takeIf { form.kind == "pipeline" }).filter { agents[it] == false }.forEach {
+        Text("${agentLabel(it)} is not installed on the server.", color = Palette.bad, fontSize = 12.5.sp)
     }
 }
 

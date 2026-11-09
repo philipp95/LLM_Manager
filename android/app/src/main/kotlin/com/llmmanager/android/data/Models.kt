@@ -21,6 +21,9 @@ data class Project(
     val path: String = "",
     val originUrl: String? = null,
     val gitHubUrl: String? = null,
+    /** github, gitlab or azure-devops. */
+    val forge: String? = null,
+    val webUrl: String? = null,
     val defaultBranch: String? = null,
     val worktrees: List<Worktree> = emptyList(),
     val commitsPerDay: List<Int> = emptyList(),
@@ -38,7 +41,29 @@ data class Worktree(
     val main: Boolean = false,
     val missing: Boolean = false,
     val codex: CodexSession? = null,
+    val publish: Publish? = null,
 )
+
+/** Push and pull request state of an agent branch. */
+@Serializable
+data class Publish(
+    val pushed: Boolean = false,
+    val upToDate: Boolean = false,
+    val branchUrl: String? = null,
+    val pullRequest: PullRequestRef? = null,
+    val blocked: String? = null,
+)
+
+@Serializable
+data class PullRequestRef(val forge: String, val number: Long, val url: String, val state: String) {
+    val open: Boolean get() = state in setOf("open", "opened", "active")
+}
+
+@Serializable
+data class BranchRequest(val branch: String)
+
+@Serializable
+data class BranchResult(val message: String)
 
 @Serializable
 data class CodexSession(val name: String, val running: Boolean, val attachCommand: String)
@@ -64,7 +89,12 @@ data class ApiError(val error: String)
 // ---- usage (GET /api/usage, open to the tailnet) ----
 
 @Serializable
-data class UsageResponse(val days: List<String> = emptyList(), val claude: AgentUsage = AgentUsage(), val codex: AgentUsage = AgentUsage())
+data class UsageResponse(
+    val days: List<String> = emptyList(),
+    val claude: AgentUsage = AgentUsage(),
+    val codex: AgentUsage = AgentUsage(),
+    val gemini: AgentUsage? = null,
+)
 
 @Serializable
 data class AgentUsage(
@@ -104,6 +134,7 @@ data class Job(
     val projectName: String = "",
     val kind: String,
     val agent: String,
+    val reviewer: String? = null,
     val prompt: String = "",
     val schedule: Schedule = Schedule(),
     val enabled: Boolean = true,
@@ -151,6 +182,7 @@ data class JobRequest(
     val schedule: Schedule? = null,
     val resume: SessionRef? = null,
     val resumeOnLimitReset: Boolean = true,
+    val reviewer: String? = null,
 )
 
 @Serializable

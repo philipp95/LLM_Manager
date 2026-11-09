@@ -36,7 +36,8 @@ class RunEngine(
         val run = prepared
         val dir = store.runDir(run.id)
         File(dir, "prompt.txt").writeText(prepared.prompt)
-        val sessionId = prepared.sessionId ?: if (prepared.agent == Agent.CLAUDE) UUID.randomUUID().toString() else null
+        // Claude and Gemini accept a chosen session id; Codex reports its own when it starts.
+        val sessionId = prepared.sessionId ?: if (prepared.agent != Agent.CODEX) UUID.randomUUID().toString() else null
         val command = when (prepared.stage) {
             Stage.WORK -> commands.work(prepared.agent, sessionId ?: "")
             Stage.REVIEW -> commands.review(prepared.agent, checkNotNull(prepared.resultCommit))

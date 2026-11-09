@@ -116,6 +116,26 @@ class DashboardViewModel(
         }
     }
 
+    /** Push, pull request or merge for an agent [branch] of [project]; the server validates everything. */
+    fun publish(project: Project, branch: String, action: String) {
+        val server = currentServer() ?: return
+        viewModelScope.launch {
+            val token = settings.token()
+            if (token == null) {
+                eventChannel.send(Event.NeedToken)
+                return@launch
+            }
+            val event = when (val result = client.branchAction(server, token, project.id, action, branch)) {
+                is ApiResult.Ok -> Event.Message(result.value)
+                ApiResult.Unauthorized -> Event.NeedToken
+                is ApiResult.NoRoute -> Event.Message("Can't reach the server — is Tailscale connected?")
+                is ApiResult.Failed -> Event.Message(result.message)
+            }
+            eventChannel.send(event)
+            refresh()
+        }
+    }
+
     /** Saves the address and, when given, a new token. Returns an error to show, or null. */
     fun saveSettings(url: String, token: String?): String? {
         val parsed = ServerAddress.parse(url)

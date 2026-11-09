@@ -18,6 +18,7 @@ class StateStore(val dir: File) {
     private var jobs: List<Job> = load(jobsFile, Job.serializer())
     private var runs: List<Run> = load(runsFile, Run.serializer())
 
+
     @Synchronized fun jobs(): List<Job> = jobs
 
     @Synchronized fun runs(): List<Run> = runs

@@ -70,6 +70,24 @@ class SchedulerTest {
         """.trimIndent(),
     )
 
+    /** Fake Gemini: stream-json events; edits a file when not in plan (review) mode. */
+    private fun fakeGemini() = script(
+        "gemini",
+        """
+        prompt=${'$'}(cat)
+        sid=""; prev=""; mode=""
+        for a in "${'$'}@"; do
+          if [ "${'$'}prev" = "--session-id" ] || [ "${'$'}prev" = "--resume" ]; then sid="${'$'}a"; fi
+          if [ "${'$'}prev" = "--approval-mode" ]; then mode="${'$'}a"; fi
+          prev="${'$'}a"
+        done
+        echo '{"type":"init","session_id":"'"${'$'}sid"'","model":"gemini-test"}'
+        if [ "${'$'}mode" != "plan" ]; then echo "gemini ${'$'}RANDOM" >> gemini-work.txt; fi
+        echo '{"type":"message","role":"assistant","content":"Gemini done.","delta":true}'
+        echo '{"type":"result","status":"success","stats":{"input_tokens":10,"output_tokens":5,"cached":0,"models":{}}}'
+        """.trimIndent(),
+    )
+
     /** Fake Codex: `review` prints findings; `exec` emits JSON events. */
     private fun fakeCodex() = script(
         "codex",
@@ -94,7 +112,7 @@ class SchedulerTest {
         val sessions = ImmediateSessions()
         val scanner = ProjectScanner(listOf("${root.path}/repos/*"), sessions = sessions)
         val store = StateStore(File(root, "state"))
-        val commands = AgentCommands(fakeClaude(), fakeCodex())
+        val commands = AgentCommands(fakeClaude(), fakeCodex(), gemini = fakeGemini())
         val workspace = Workspace(scanner, sessions, commands)
         val engine = RunEngine(store, workspace, File(root, "runs"), clock = clock)
         val scheduler = Scheduler(store, engine, sessions, clock = clock)
@@ -132,6 +150,25 @@ class SchedulerTest {
     }
 
     @Test
+    fun `gemini builds and the chosen reviewer reviews`() {
+        val f = fixture()
+
+        f.jobs.create(JobRequest(f.projectId, JobKind.PIPELINE, Agent.GEMINI, "Add a gemini file", reviewer = Agent.CLAUDE))
+        repeat(6) { f.scheduler.tick() }
+
+        val runs = f.store.runs().sortedBy { it.stage.ordinal }
+        assertEquals(listOf(Stage.WORK to Agent.GEMINI, Stage.REVIEW to Agent.CLAUDE, Stage.FIX to Agent.GEMINI), runs.map { it.stage to it.agent })
+        assertTrue(runs.all { it.status == RunStatus.SUCCEEDED }, runs.joinToString { "${it.stage}:${it.error}" })
+        val work = runs.first()
+        assertTrue(UUID_PATTERN.matches(work.sessionId!!), work.sessionId)
+        assertEquals(work.sessionId, runs.last().sessionId)
+        assertTrue(runs.last().prompt.startsWith("Claude reviewed your change"))
+        assertEquals("Gemini via LLM Manager", output(File(work.worktree!!), "log", "--format=%an", "-1"))
+        val invalid = f.jobs.create(JobRequest(f.projectId, JobKind.PIPELINE, Agent.GEMINI, "x", reviewer = Agent.GEMINI))
+        assertEquals("Choose a different agent to review", (invalid as JobService.Created.Invalid).reason)
+    }
+
+    @Test
     fun `a run stopped by a usage limit resumes in the same session after the reset`() {
         val f = fixture()
 
@@ -162,7 +199,7 @@ class SchedulerTest {
     fun `daily jobs fire once per slot and invalid requests are refused`() {
         val f = fixture()
         val daily = f.jobs.create(
-            JobRequest(f.projectId, JobKind.RUN, Agent.CODEX, "Nightly", Schedule(time = "13:00", zone = "UTC")),
+            JobRequest(f.projectId, JobKind.RUN, Agent.CODEX, "Nightly", schedule = Schedule(time = "13:00", zone = "UTC")),
         ) as JobService.Created.Ok
         f.scheduler.tick()
         assertTrue(f.store.runs().isEmpty(), "not due before 13:00")
@@ -177,9 +214,13 @@ class SchedulerTest {
         fun invalid(request: JobRequest) = (f.jobs.create(request) as JobService.Created.Invalid).reason
         assertTrue(invalid(JobRequest("nope", JobKind.RUN, Agent.CLAUDE, "x")).contains("Unknown project"))
         assertTrue(invalid(JobRequest(f.projectId, JobKind.RUN, Agent.CLAUDE, " ")).contains("Describe"))
-        assertTrue(invalid(JobRequest(f.projectId, JobKind.RUN, Agent.CLAUDE, "x", Schedule(time = "25:00", zone = "UTC"))).contains("time"))
+        assertTrue(invalid(JobRequest(f.projectId, JobKind.RUN, Agent.CLAUDE, "x", schedule = Schedule(time = "25:00", zone = "UTC"))).contains("time"))
         val stranger = SessionRef(Agent.CLAUDE, "00000000-0000-0000-0000-000000000000", f.repo.path)
         assertTrue(invalid(JobRequest(f.projectId, JobKind.RESUME, Agent.CLAUDE, "", resume = stranger)).contains("not resumable"))
+    }
+
+    private companion object {
+        val UUID_PATTERN = Regex("[0-9a-f-]{36}")
     }
 
     private fun git(dir: File, vararg args: String) {

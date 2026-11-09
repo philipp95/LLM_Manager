@@ -32,7 +32,7 @@ data class ActivityLine(val kind: String, val text: String)
  */
 object RunOutput {
     private val json = Json { ignoreUnknownKeys = true }
-    private val LIMIT_TEXT = Regex("""usage limit|rate limit|hit your limit|limit reached|quota""", RegexOption.IGNORE_CASE)
+    private val LIMIT_TEXT = Regex("""usage limit|rate limit|hit your limit|limit reached|quota|RESOURCE_EXHAUSTED""", RegexOption.IGNORE_CASE)
     private const val MAX_SUMMARY = 8_000
     internal const val MAX_LINE = 400
 
@@ -40,6 +40,7 @@ object RunOutput {
         val parsed = when {
             stage == Stage.REVIEW && agent == Agent.CODEX -> RunOutcome(summary = events.readTextOrEmpty().trim().take(MAX_SUMMARY).ifEmpty { null })
             agent == Agent.CLAUDE -> claude(lines(events))
+            agent == Agent.GEMINI -> gemini(lines(events))
             else -> codex(lines(events))
         }
         val stderrText = stderr.readTextOrEmpty().takeLast(MAX_SUMMARY)
@@ -78,6 +79,28 @@ object RunOutput {
         val info = findObject(event) { it.containsKey("status") && (it.containsKey("resetsAt") || it.containsKey("rateLimitType")) } ?: return null
         val resetsAt = (info["resetsAt"] as? JsonPrimitive)?.longOrNull?.let(Instant::ofEpochSecond)
         return (info.string("status") == "rejected") to resetsAt
+    }
+
+    /** Gemini `--output-format stream-json`: init, message (deltas), tool_use, tool_result, error, result. */
+    private fun gemini(events: Sequence<JsonObject>): RunOutcome {
+        var outcome = RunOutcome()
+        val text = StringBuilder()
+        events.forEach { event ->
+            when (event.string("type")) {
+                "init" -> event.string("session_id")?.let { outcome = outcome.copy(sessionId = it) }
+                // The final answer is what the model said after its last tool call.
+                "tool_use" -> text.clear()
+                "message" -> if (event.string("role") == "assistant") text.append(event.string("content").orEmpty())
+                "error" -> event.string("message")?.takeIf { event.string("severity") == "error" }?.let { message ->
+                    outcome = outcome.copy(error = message, limited = outcome.limited || LIMIT_TEXT.containsMatchIn(message))
+                }
+                "result" -> if (event.string("status") == "error") {
+                    val message = (event["error"] as? JsonObject)?.string("message") ?: "Gemini reported an error"
+                    outcome = outcome.copy(error = message, limited = outcome.limited || LIMIT_TEXT.containsMatchIn(message))
+                }
+            }
+        }
+        return outcome.copy(summary = text.toString().trim().take(MAX_SUMMARY).ifEmpty { null })
     }
 
     private fun codex(events: Sequence<JsonObject>): RunOutcome {
@@ -127,8 +150,41 @@ object RunActivity {
             return events.readTextOrEmpty().lines().filter { it.isNotBlank() }.takeLast(max)
                 .map { ActivityLine("text", RunOutput.redact(it).take(RunOutput.MAX_LINE)) }
         }
-        val steps = RunOutput.lines(events).flatMap { if (agent == Agent.CLAUDE) claudeSteps(it) else codexSteps(it) }
-        return steps.toList().takeLast(max).map { it.copy(text = RunOutput.redact(it.text).take(RunOutput.MAX_LINE)) }
+        val steps = when (agent) {
+            Agent.CLAUDE -> RunOutput.lines(events).flatMap(::claudeSteps).toList()
+            Agent.CODEX -> RunOutput.lines(events).flatMap(::codexSteps).toList()
+            Agent.GEMINI -> geminiSteps(RunOutput.lines(events))
+        }
+        return steps.takeLast(max).map { it.copy(text = RunOutput.redact(it.text).take(RunOutput.MAX_LINE)) }
+    }
+
+    /** Gemini streams assistant text in deltas; consecutive deltas become one line. */
+    private fun geminiSteps(events: Sequence<JsonObject>): List<ActivityLine> {
+        val steps = mutableListOf<ActivityLine>()
+        val text = StringBuilder()
+        events.forEach { event ->
+            if (event.string("type") == "message") {
+                if (event.string("role") == "assistant") text.append(event.string("content").orEmpty())
+                return@forEach
+            }
+            val step = geminiStep(event) ?: return@forEach
+            if (text.isNotBlank()) steps += ActivityLine("text", text.toString().trim())
+            text.clear()
+            steps += step
+        }
+        if (text.isNotBlank()) steps += ActivityLine("text", text.toString().trim())
+        return steps
+    }
+
+    private fun geminiStep(event: JsonObject): ActivityLine? {
+        val error = (event["error"] as? JsonObject)?.string("message")
+        return when (event.string("type")) {
+            "tool_use" -> ActivityLine("tool", "${event.string("tool_name")}: ${toolSummary(event["parameters"])}")
+            "tool_result" -> if (event.string("status") == "error") ActivityLine("error", error ?: "tool failed") else null
+            "error" -> ActivityLine(if (event.string("severity") == "error") "error" else "tool", event.string("message").orEmpty())
+            "result" -> if (event.string("status") == "error") ActivityLine("error", error ?: "Failed") else ActivityLine("done", "Finished")
+            else -> null
+        }
     }
 
     private fun claudeSteps(event: JsonObject): Sequence<ActivityLine> = when (event.string("type")) {
@@ -167,7 +223,8 @@ object RunActivity {
 
     private fun toolSummary(input: JsonElement?): String {
         val obj = input as? JsonObject ?: return ""
-        return listOf("command", "file_path", "pattern", "path", "url", "description").firstNotNullOfOrNull { obj.string(it) }.orEmpty()
+        return listOf("command", "file_path", "absolute_path", "pattern", "path", "dir_path", "url", "description")
+            .firstNotNullOfOrNull { obj.string(it) }.orEmpty()
     }
 
 }

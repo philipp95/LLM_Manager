@@ -12,6 +12,8 @@ data class JobRequest(
     val kind: JobKind,
     val agent: Agent,
     val prompt: String = "",
+    /** For a pipeline: who reviews; defaults to [Agent.defaultReviewer]. */
+    val reviewer: Agent? = null,
     /** Null means "now". */
     val schedule: Schedule? = null,
     val resume: SessionRef? = null,
@@ -75,6 +77,7 @@ class JobService(
             projectName = located.project.name,
             kind = request.kind,
             agent = if (request.kind == JobKind.RESUME) checkNotNull(request.resume).agent else request.agent,
+            reviewer = if (request.kind == JobKind.PIPELINE) reviewerOf(request) else null,
             prompt = request.prompt.trim().ifEmpty { "Continue where you left off." },
             schedule = schedule,
             resume = request.resume,
@@ -99,7 +102,12 @@ class JobService(
         val worktrees = scanner.scan().flatMap { project ->
             project.worktrees.filter { !it.main && !it.missing }.map { Triple(project, it.branch, it.path) }
         }
-        val latest = catalog.latest(worktrees.map { it.third })
+        val paths = worktrees.map { it.third }.toSet()
+        // Sessions of runs this server started (any agent, Gemini included), plus Claude/Codex sessions found on disk.
+        val fromRuns = store.runs().filter { it.sessionId != null && it.worktree in paths }.map {
+            ResumableSession(it.agent, checkNotNull(it.sessionId), checkNotNull(it.worktree), it.finishedAt ?: it.createdAt)
+        }
+        val latest = (catalog.latest(paths) + fromRuns).groupBy { it.worktree to it.agent }.values.map { s -> s.maxBy { it.updatedAt } }
         return latest.mapNotNull { session ->
             val (project, branch) = worktrees.firstOrNull { it.third == session.worktree } ?: return@mapNotNull null
             ResumeTarget(project.id, project.name, branch, session)
@@ -108,8 +116,9 @@ class JobService(
 
     private fun problem(request: JobRequest): String? = when {
         !commands.available(request.agent) -> "${request.agent.label} CLI is not installed on the server"
-        request.kind == JobKind.PIPELINE && !commands.available(request.agent.other) ->
-            "${request.agent.other.label} CLI is needed to review but is not installed"
+        request.kind == JobKind.PIPELINE && reviewerOf(request) == request.agent -> "Choose a different agent to review"
+        request.kind == JobKind.PIPELINE && !commands.available(reviewerOf(request)) ->
+            "${reviewerOf(request).label} CLI is needed to review but is not installed"
         request.kind != JobKind.RESUME && request.prompt.isBlank() -> "Describe the task"
         request.prompt.length > MAX_PROMPT -> "The task is too long (max $MAX_PROMPT characters)"
         request.kind == JobKind.RESUME -> resumeProblem(request)
@@ -129,16 +138,18 @@ class JobService(
         }
     }
 
-    private fun defaultName(request: JobRequest): String = when (request.kind) {
-        JobKind.RUN -> "${request.agent.label} run"
-        JobKind.PIPELINE -> "${request.agent.label} builds, ${request.agent.other.label} reviews"
-        JobKind.RESUME -> "Resume ${request.resume?.agent?.label ?: ""} session".replace("  ", " ")
-    }
-
     private companion object {
         const val ID_CHARS = 12
         const val MAX_PROMPT = 20_000
         const val MAX_NAME = 80
         const val RECENT_RUNS = 50
     }
+}
+
+private fun reviewerOf(request: JobRequest): Agent = request.reviewer ?: request.agent.defaultReviewer
+
+private fun defaultName(request: JobRequest): String = when (request.kind) {
+    JobKind.RUN -> "${request.agent.label} run"
+    JobKind.PIPELINE -> "${request.agent.label} builds, ${reviewerOf(request).label} reviews"
+    JobKind.RESUME -> "Resume ${request.resume?.agent?.label ?: ""} session".replace("  ", " ")
 }

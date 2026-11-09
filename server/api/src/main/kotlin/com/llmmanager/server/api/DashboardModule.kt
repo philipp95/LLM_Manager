@@ -46,9 +46,7 @@ fun Application.dashboardModule(
             call.respondText(page, ContentType.Text.Html.withParameter("charset", "utf-8"))
         }
         get("/api/projects") {
-            val snapshot = withContext(Dispatchers.IO) { scanner.snapshot() }
-            val now = OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-            call.respond(ProjectsResponse(now, launcher?.available == true, snapshot.projects, snapshot.analytics, apk?.describe()))
+            call.respond(withContext(Dispatchers.IO) { projectsResponse(scanner, launcher, apk, schedule) })
         }
         post("/api/projects/{id}/codex") {
             if (launcher == null || token == null) {
@@ -89,6 +87,14 @@ fun Application.dashboardModule(
             call.respond(Readiness("ready"))
         }
     }
+}
+
+/** The overview: projects with analytics, publish state for agent branches, and the APK when built. */
+private fun projectsResponse(scanner: ProjectScanner, launcher: CodexLauncher?, apk: ApkFile?, schedule: ScheduleApi?): ProjectsResponse {
+    val snapshot = scanner.snapshot()
+    val projects = schedule?.branches?.annotate(snapshot.projects) ?: snapshot.projects
+    val now = OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+    return ProjectsResponse(now, launcher?.available == true, projects, snapshot.analytics, apk?.describe())
 }
 
 @Serializable

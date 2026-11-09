@@ -14,7 +14,12 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 
 @Serializable
-data class UsageResponse(val days: List<String>, val claude: AgentUsage, val codex: AgentUsage)
+data class UsageResponse(
+    val days: List<String>,
+    val claude: AgentUsage,
+    val codex: AgentUsage,
+    val gemini: AgentUsage = AgentUsage(emptyList(), null, emptyList(), emptyList(), emptyList()),
+)
 
 @Serializable
 data class AgentUsage(
@@ -43,16 +48,23 @@ data class ModelTokens(val model: String, val tokens: Long)
 class UsageReader(home: File, stateDir: File, private val clock: Clock = Clock.systemDefaultZone()) {
     private val claude = ClaudeUsage(home, stateDir, clock)
     private val codex = CodexUsage(home, clock)
+    private val gemini = GeminiUsage(stateDir, clock)
 
     @Synchronized
     fun read(): UsageResponse {
         val window = ActivityWindow(clock)
-        return UsageResponse(window.days.map { it.toString() }, claude.read(window), codex.read(window))
+        return UsageResponse(window.days.map { it.toString() }, claude.read(window), codex.read(window), gemini.read(window))
     }
 
     /** The soonest reset of a window that is (nearly) used up, for retrying after a limit. */
     fun resetHint(agent: Agent): Instant? {
-        val usage = read().let { if (agent == Agent.CLAUDE) it.claude else it.codex }
+        val usage = read().let {
+            when (agent) {
+                Agent.CLAUDE -> it.claude
+                Agent.CODEX -> it.codex
+                Agent.GEMINI -> it.gemini
+            }
+        }
         val windows = usage.windows.filter { it.resetsAt != null }
         val pick = windows.filter { it.usedPercent >= FULL_PERCENT }.ifEmpty { windows }
         return pick.mapNotNull { ScheduleTimes.instant(it.resetsAt) }.minOrNull()
@@ -193,6 +205,43 @@ private class CodexUsage(private val home: File, private val clock: Clock) {
         const val WEEK_MIN = 10_080L
         const val MIN_PER_DAY = 1_440L
         const val MIN_PER_HOUR = 60L
+    }
+}
+
+/**
+ * Gemini tokens from the `result.stats` of runs this server started. Gemini's own
+ * session files are not read, and it reports no plan limits, so windows stay empty.
+ */
+private class GeminiUsage(private val stateDir: File, private val clock: Clock) {
+    private data class Entry(val at: Instant, val tokens: Long, val cacheReads: Long, val models: Map<String, Long>)
+
+    private val results = JsonlTail(::entry)
+
+    fun read(window: ActivityWindow): AgentUsage {
+        val since = window.start(clock)
+        val entries = File(stateDir, "runs").listFiles().orEmpty().map { File(it, "events.jsonl") }
+            .filter { it.isFile && it.lastModified() >= since.toEpochMilli() }
+            .flatMap(results::read).filter { !it.at.isBefore(since) }
+        val models = entries.flatMap { it.models.entries }.groupBy({ it.key }, { it.value })
+        return AgentUsage(
+            windows = emptyList(),
+            windowsAsOf = null,
+            tokensPerDay = window.sum(clock, entries.map { it.at to it.tokens }),
+            cacheReadsPerDay = window.sum(clock, entries.map { it.at to it.cacheReads }),
+            models = models.map { (model, tokens) -> ModelTokens(model, tokens.sum()) }.sortedByDescending { it.tokens },
+            note = "Counts Gemini runs started by LLM Manager; Gemini does not report plan limits.",
+        )
+    }
+
+    private fun entry(line: JsonObject): Entry? {
+        val stats = (line["stats"] as? JsonObject)?.takeIf { line.string("type") == "result" && it.containsKey("models") }
+        val at = usageInstant(line.string("timestamp"))
+        if (stats == null || at == null) return null
+        val cached = stats.long("cached")
+        val models = (stats["models"] as? JsonObject).orEmpty().mapNotNull { (name, value) ->
+            (value as? JsonObject)?.let { name to (it.long("input_tokens") - it.long("cached") + it.long("output_tokens")) }
+        }.toMap()
+        return Entry(at, stats.long("input_tokens") - cached + stats.long("output_tokens"), cached, models)
     }
 }
 
