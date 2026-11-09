@@ -32,6 +32,7 @@ fun Application.dashboardModule(
     launcher: CodexLauncher? = null,
     token: ApiToken? = null,
     apk: ApkFile? = null,
+    schedule: ScheduleApi? = null,
 ) {
     val page = DashboardResources.page()
 
@@ -82,6 +83,7 @@ fun Application.dashboardModule(
             call.response.headers.append(HttpHeaders.ContentDisposition, "attachment; filename=\"llm-manager.apk\"")
             call.respondFile(file)
         }
+        if (schedule != null && token != null) scheduleRoutes(schedule, token)
         // Shape-checked by clients so a captive portal's 200 HTML is not mistaken for the server.
         get("/readyz") {
             call.respond(Readiness("ready"))

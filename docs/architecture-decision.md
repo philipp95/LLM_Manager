@@ -20,15 +20,21 @@ The repository currently contains five Kotlin/JVM modules and an Android app:
   only to the Tailscale IPv4 or loopback. Reads rely on tailnet membership. One
   token-protected route starts an interactive Codex session in a new worktree
   inside tmux, which the user attaches to over SSH; Codex's own sandbox and
-  approval prompts govern what it does. It does not depend on the runner.
-  It also reports 30-day activity analytics and serves the Android APK.
+  approval prompts govern what it does. Token-protected routes also schedule
+  **unattended** Claude and Codex runs (single runs, build-then-cross-review
+  pipelines, resumes), which execute in tmux with permissions pinned per agent
+  and resume themselves after plan limits reset. It reports activity analytics
+  and plan usage from local records, and serves the Android APK. It uses the
+  runner's `SecretRedactor` for run logs but not its harness.
 - `android/app`: a Compose client for that API, restricted to Tailscale hosts,
   with the access token encrypted under an Android Keystore key.
 
 There is no OpenClaw plugin, database, push notification, or pairing service. The
 dashboard's static bearer token is a stopgap, not the pairing, per-device
-identity, and approval design listed below; there is no API that edits files,
-removes worktrees, or pushes. Protocol types and unused catalog entries
+identity, and approval design listed below. Unattended runs rely on the agents'
+own permission systems (Claude's tool allowlist, Codex's sandbox), not on OS
+containment; allowed build commands run repository code. There is no API that
+removes worktrees or pushes. Protocol types and unused catalog entries
 are preparation, not implemented transport or storage.
 
 ## Current execution model

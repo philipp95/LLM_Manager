@@ -34,6 +34,7 @@ data class Worktree(
     val lastCommitAt: String? = null,
     val changedFiles: Int? = null,
     val agentRun: Boolean = false,
+    val scheduledRun: Boolean = false,
     val main: Boolean = false,
     val missing: Boolean = false,
     val codex: CodexSession? = null,
@@ -59,3 +60,101 @@ data class LaunchResponse(val session: CodexSession, val branch: String, val pat
 
 @Serializable
 data class ApiError(val error: String)
+
+// ---- usage (GET /api/usage, open to the tailnet) ----
+
+@Serializable
+data class UsageResponse(val days: List<String> = emptyList(), val claude: AgentUsage = AgentUsage(), val codex: AgentUsage = AgentUsage())
+
+@Serializable
+data class AgentUsage(
+    val windows: List<LimitWindow> = emptyList(),
+    val windowsAsOf: String? = null,
+    val tokensPerDay: List<Long> = emptyList(),
+    val cacheReadsPerDay: List<Long> = emptyList(),
+    val models: List<ModelTokens> = emptyList(),
+    val note: String? = null,
+)
+
+@Serializable
+data class LimitWindow(val label: String, val usedPercent: Double, val resetsAt: String? = null)
+
+@Serializable
+data class ModelTokens(val model: String, val tokens: Long)
+
+// ---- scheduling (token required) ----
+
+@Serializable
+data class ScheduleResponse(
+    val now: String,
+    val agents: Map<String, Boolean> = emptyMap(),
+    val jobs: List<JobView> = emptyList(),
+    val runs: List<Run> = emptyList(),
+    val resumable: List<ResumeTarget> = emptyList(),
+)
+
+@Serializable
+data class JobView(val job: Job, val nextRunAt: String? = null)
+
+@Serializable
+data class Job(
+    val id: String,
+    val name: String,
+    val projectId: String,
+    val projectName: String = "",
+    val kind: String,
+    val agent: String,
+    val prompt: String = "",
+    val schedule: Schedule = Schedule(),
+    val enabled: Boolean = true,
+    val done: Boolean = false,
+    val lastFiredAt: String? = null,
+)
+
+@Serializable
+data class Schedule(val at: String? = null, val time: String? = null, val days: List<Int> = emptyList(), val zone: String? = null)
+
+@Serializable
+data class Run(
+    val id: String,
+    val projectName: String = "",
+    val agent: String,
+    val stage: String,
+    val status: String,
+    val prompt: String = "",
+    val branch: String? = null,
+    val pipelineId: String? = null,
+    val createdAt: String,
+    val startedAt: String? = null,
+    val summary: String? = null,
+    val error: String? = null,
+    val notBefore: String? = null,
+    val resumeScheduled: Boolean = false,
+    val tmuxSession: String? = null,
+)
+
+@Serializable
+data class ResumeTarget(val projectId: String, val projectName: String, val branch: String? = null, val session: ResumableSession)
+
+@Serializable
+data class ResumableSession(val agent: String, val sessionId: String, val worktree: String, val updatedAt: String)
+
+@Serializable
+data class SessionRef(val agent: String, val sessionId: String, val worktree: String)
+
+@Serializable
+data class JobRequest(
+    val projectId: String,
+    val kind: String,
+    val agent: String,
+    val prompt: String,
+    val schedule: Schedule? = null,
+    val resume: SessionRef? = null,
+    val resumeOnLimitReset: Boolean = true,
+)
+
+@Serializable
+data class ActivityLine(val kind: String, val text: String)
+
+@Serializable
+data class RunLog(val run: Run, val activity: List<ActivityLine> = emptyList())

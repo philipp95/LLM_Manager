@@ -3,8 +3,9 @@
 A project for steering coding agents from an Android app, with execution on a
 separate computer. **The current implementation is a Kotlin/JVM CLI prototype**
 for Claude Code, plus a dashboard served over Tailscale that lists projects,
-charts their activity, and can start interactive Codex sessions in tmux, with a
-native Android app for the same dashboard.
+charts their activity, schedules unattended Claude and Codex runs (including a
+build-then-cross-review pipeline), resumes them after usage limits, and shows
+plan usage, with a native Android app for the same dashboard.
 
 ## Requirements
 
@@ -100,7 +101,59 @@ npm install -g --prefix ~/.local @openai/codex
 ~/.local/bin/codex login --device-auth
 ```
 
-Options: `--codex`, `--codex-worktrees`, `--token-file`, `--apk`.
+Options: `--codex`, `--claude`, `--codex-worktrees`, `--run-worktrees`,
+`--state-dir`, `--token-file`, `--apk`.
+
+### Scheduled runs
+
+The **Schedule** tab creates jobs that run now, once at a given time, or every
+chosen weekday at a time. Each job is one of:
+
+- **Run a task**: one agent works on the prompt.
+- **Build + review**: the chosen agent implements; the server commits; the
+  *other* agent reviews that commit (`codex review --commit` or a read-only
+  Claude session); the builder then resumes its own session with the findings
+  and addresses them. A review of "No findings" ends the pipeline.
+- **Resume**: continue the latest Claude or Codex session found in an agent
+  worktree (never your main checkout), with an optional message.
+
+Runs execute unattended in a new `run/<project>-<time>` branch and worktree
+under `~/agent-work/runs/`, inside a tmux session `run-<id>` (attachable, and
+surviving server restarts). Permissions are pinned on the command line:
+
+| Agent | Work | Review |
+| --- | --- | --- |
+| Claude | `-p --permission-mode acceptEdits` plus an allowlist of build, test and read-only git commands; anything else is denied | read-only tools and `git show/diff/log` |
+| Codex | `exec --sandbox workspace-write` (writes confined to the worktree, no network) | `review` in the read-only sandbox |
+
+After a successful build or fix stage the server commits the changes as
+`Claude via LLM Manager` / `Codex via LLM Manager`. Nothing is pushed. Allowed
+build commands such as `./gradlew` execute the repository's own build scripts,
+so schedule runs only on repositories you trust.
+
+When a run stops at a plan limit (Claude's `rate_limit_event` reports
+`rejected`, or Codex reports a usage limit), it is marked **limited** and, unless
+the job opted out, queued to resume in the same session two minutes after the
+limit resets. At most three runs execute at once, one per worktree. Schedules,
+run history and logs live in `~/.local/share/llm-manager/`; logs shown on the
+phone are redacted.
+
+### Usage
+
+The **Usage** tab shows, from local records only:
+
+- **Claude plan limits** (5-hour and weekly %) from the newest of: a scheduled
+  run's `rate_limit_event`, or Claude Code's status line. Install the recorder
+  with `cp scripts/claude-statusline.py ~/.local/share/llm-manager/` and in
+  `~/.claude/settings.json`:
+  `"statusLine": {"type": "command", "command": "python3 -I ~/.local/share/llm-manager/claude-statusline.py"}`.
+- **Codex plan limits** from `token_count` events in `~/.codex/sessions/`.
+- **Tokens per day** for both over 30 days (input + output, cache reads shown
+  separately), and Claude tokens by model.
+
+Claude and Codex both read `AGENTS.md`, so the skill library and project rules
+are shared between them; the review prompt asks the reviewer to check the
+change against it.
 
 ### Analytics
 
@@ -150,7 +203,7 @@ your browser to install apps when Android asks.
 | `server/domain` | Run specifications and statuses |
 | `server/runner` | Claude Code harness, parsing, redaction, process and worktree lifetime |
 | `server/spike` | Local CLI demonstrating one run |
-| `server/api` | Ktor dashboard over Tailscale: project overview, analytics, Codex sessions in tmux |
+| `server/api` | Ktor dashboard over Tailscale: overview, analytics, Codex sessions, scheduled runs, usage |
 | `android/app` | Compose app for the dashboard (built only when an Android SDK is configured) |
 
 Shared agent skills live in `.agents/skills/`. `AGENTS.md` and `CLAUDE.md` direct

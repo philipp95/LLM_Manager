@@ -158,6 +158,61 @@
   .app-banner div { flex: 1; min-width: 0; }
   .app-banner b { display: block; font-size: 15px; }
   .app-banner span { font-size: 12px; color: var(--muted); }
+  /* tabs */
+  header { flex-wrap: wrap; row-gap: 10px; }
+  .tabs { flex-basis: 100%; display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+  .tabs button { flex: 1; min-height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; }
+  .tabs button[aria-selected="true"] { background: var(--raised); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 2px 8px rgba(0,0,0,.3); }
+  .tab { display: grid; gap: 14px; }
+  .tab[hidden] { display: none; }
+  .chip.claude { color: #f0a07e; border-color: rgba(217, 89, 38, .45); background: rgba(217, 89, 38, .12); }
+  .chip.codex { color: #8fbaf2; border-color: rgba(57, 135, 229, .45); background: rgba(57, 135, 229, .12); }
+  .chip.running { color: var(--accent); border-color: rgba(139, 124, 246, .45); }
+  .chip.running svg { animation: spin 1.2s linear infinite; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .section-head h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .small-btn { min-height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+  .small-btn.danger { color: var(--bad); }
+  .small-btn.go { background: var(--accent); border-color: transparent; color: #fff; }
+  .item { padding: 12px 14px; border-top: 1px solid var(--line-soft); display: grid; gap: 6px; }
+  .item:first-of-type { border-top: 0; }
+  .item .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .item .name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .meta { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+  .item .err { font-size: 12.5px; color: var(--bad); overflow-wrap: anywhere; }
+  .item .actions-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+  .list-card { background: linear-gradient(180deg, var(--raised), var(--surface)); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .list-card .empty { padding: 22px 14px; }
+  /* meters: the fill carries severity, the track is a lighter step of the same hue */
+  .meter-row { display: grid; grid-template-columns: 72px 1fr auto; gap: 10px; align-items: center; margin-top: 10px; font-size: 13px; }
+  .meter { height: 10px; border-radius: 999px; overflow: hidden; }
+  .meter > div { height: 100%; border-radius: 999px; }
+  .meter-row .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .meter-row .r { grid-column: 2 / 4; font-size: 12px; color: var(--muted); margin-top: -4px; }
+  .agent-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; }
+  .agent-title i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  /* job form */
+  dialog.sheet { width: min(560px, calc(100% - 20px)); max-height: calc(100vh - 40px); overflow: auto; }
+  .field { display: grid; gap: 6px; margin-top: 14px; }
+  .field > label, .field > span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  .seg { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 11px; padding: 3px; }
+  .seg button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 13.5px; }
+  .seg button[aria-pressed="true"] { background: var(--raised); color: var(--text); font-weight: 600; }
+  dialog select, dialog textarea, dialog input[type="datetime-local"], dialog input[type="time"] {
+    width: 100%; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 10px 12px; font: inherit; font-size: 14px;
+  }
+  dialog textarea { min-height: 120px; resize: vertical; }
+  .days { display: flex; gap: 4px; }
+  .days button { flex: 1; min-height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); font: inherit; font-size: 12.5px; }
+  .days button[aria-pressed="true"] { background: rgba(139, 124, 246, .18); border-color: rgba(139, 124, 246, .5); color: var(--text); }
+  .check { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--text); margin-top: 14px; }
+  .check input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); }
+  .hint-text { font-size: 12.5px; color: var(--faint); }
+  .log { font-family: var(--mono); font-size: 12px; display: grid; gap: 6px; margin-top: 10px; }
+  .log div { overflow-wrap: anywhere; white-space: pre-wrap; padding-left: 10px; border-left: 2px solid var(--line); }
+  .log .tool { color: var(--muted); }
+  .log .error { color: var(--bad); border-left-color: var(--bad); }
+  .log .done { color: var(--ok); border-left-color: var(--ok); }
   .empty, .error { text-align: center; color: var(--muted); padding: 40px 16px; }
   .error strong { color: var(--bad); display: block; margin-bottom: 6px; font-size: 16px; }
 
@@ -192,18 +247,29 @@
   </div>
   <button class="icon-btn" id="lock" type="button" aria-label="Access token"></button>
   <button class="icon-btn" id="refresh" type="button" aria-label="Refresh"></button>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" type="button" data-tab="overview" aria-selected="true">Overview</button>
+    <button role="tab" type="button" data-tab="schedule" aria-selected="false">Schedule</button>
+    <button role="tab" type="button" data-tab="usage" aria-selected="false">Usage</button>
+  </nav>
 </header>
 <main>
-  <div id="app-slot"></div>
-  <section class="stats" id="stats" aria-label="Summary"></section>
-  <section class="panel" id="analytics" aria-label="Activity" hidden></section>
-  <div id="projects"></div>
+  <section class="tab" id="tab-overview">
+    <div id="app-slot"></div>
+    <section class="stats" id="stats" aria-label="Summary"></section>
+    <section class="panel" id="analytics" aria-label="Activity" hidden></section>
+    <div id="projects"></div>
+  </section>
+  <section class="tab" id="tab-schedule" hidden></section>
+  <section class="tab" id="tab-usage" hidden></section>
 </main>
+<dialog id="job-dialog" class="sheet"></dialog>
+<dialog id="log-dialog" class="sheet"></dialog>
 <div class="toast" id="toast" role="status"></div>
 <dialog id="token-dialog">
   <div>
     <h2>Access token</h2>
-    <p>Starting Codex needs the server's token. On the server run<br><code>cat ~/.config/llm-manager/api-token</code><br>and paste it here. It is stored only in this browser.</p>
+    <p>Starting Codex and scheduling runs need the server's token. On the server run<br><code>cat ~/.config/llm-manager/api-token</code><br>and paste it here. It is stored only in this browser.</p>
     <input id="token-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste token">
     <div class="row">
       <button id="token-cancel" type="button">Cancel</button>
@@ -218,7 +284,7 @@
   const list = $("projects"), stats = $("stats"), status = $("status"), toastEl = $("toast");
   const TOKEN_KEY = "llm-manager.token";
   const REFRESH_MS = 30000;
-  let inFlight = false, codexAvailable = false, toastTimer = 0;
+  let inFlight = false, codexAvailable = false, toastTimer = 0, projectsCache = [], activeTab = "overview";
 
   const ICONS = {
     refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
@@ -229,6 +295,12 @@
     unlock: "M7 11V7a5 5 0 0 1 9.9-1M5 11h14v10H5z",
     copy: "M9 9h11v11H9zM5 15H4V4h11v1",
     play: "M7 4l13 8-13 8z",
+    plus: "M12 5v14M5 12h14",
+    pause: "M8 5v14M16 5v14",
+    trash: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13",
+    list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+    x: "M6 6l12 12M18 6 6 18",
+    loader: "M12 3a9 9 0 1 0 9 9",
     box: "M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8",
     folder: "M3 6h6l2 2h10v11H3z",
     clock: "M12 7v5l3 2M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z",
@@ -356,6 +428,7 @@
     const tags = [
       w.codex ? chip(w.codex.running ? "Codex live" : "Codex", w.codex.running ? "live" : null, "spark") : null,
       w.agentRun ? chip("Agent run", "agent", "bot") : null,
+      w.scheduledRun ? chip("Scheduled run", null, "clock") : null,
       w.main ? chip("main worktree", null, "folder") : null,
     ].filter(Boolean);
     return el("div", { class: "wt" },
@@ -457,7 +530,7 @@
 
   /** Columns per day; `series` are stacked bottom-up with a 2px surface gap. */
   function columnChart(days, series, readout, describe) {
-    const width = Math.max(240, analytics.clientWidth - 28), height = 132, top = 8, bottom = 20, left = 24;
+    const width = chartWidth(), height = 132, top = 8, bottom = 20, left = 30;
     const plotW = width - left, plotH = height - top - bottom;
     const totals = days.map((_, i) => series.reduce((sum, s) => sum + s.values[i], 0));
     const max = niceMax(Math.max(...totals));
@@ -468,7 +541,7 @@
     for (const tick of max >= 4 && max % 2 === 0 ? [0, max / 2, max] : [0, max]) {
       svg.append(svgEl("line", { x1: left, x2: width, y1: y(tick), y2: y(tick), stroke: "var(--grid)", "stroke-width": 1 }));
       const label = svgEl("text", { x: left - 6, y: y(tick) + 3, "text-anchor": "end" });
-      label.textContent = String(tick);
+      label.textContent = compact(tick);
       svg.append(label);
     }
     const highlight = svgEl("rect", { class: "hl", y: top, height: plotH, width: band, x: -band, rx: 4 });
@@ -567,7 +640,10 @@
   }
 
   let resizeTimer = 0;
-  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => renderAnalytics(lastAnalytics), 150); });
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { renderAnalytics(lastAnalytics); if (lastUsage) renderUsage(lastUsage); }, 150);
+  });
 
   function renderAppBanner(app) {
     const slot = $("app-slot");
@@ -602,6 +678,7 @@
       const body = await response.json();
       if (!body || !Array.isArray(body.projects)) throw new Error("Unexpected response shape");
       codexAvailable = body.codexAvailable === true;
+      projectsCache = body.projects;
       renderStats(body.projects);
       renderAnalytics(body.analytics);
       renderAppBanner(body.androidApp);
@@ -620,20 +697,333 @@
     }
   }
 
+
+  // ---------- shared ----------
+  const compact = (n) => (Math.abs(n) >= 10000 ? new Intl.NumberFormat([], { notation: "compact", maximumFractionDigits: 1 }).format(n) : String(n));
+  const chartWidth = () => Math.max(240, document.querySelector("main").clientWidth - 58);
+  const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const AGENT = { claude: { label: "Claude", chip: "claude", color: "var(--series-agent)" }, codex: { label: "Codex", chip: "codex", color: "var(--series-codex)" } };
+  const STAGE = { work: "Build", review: "Review", fix: "Fix", resume: "Resume" };
+  const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  function until(iso) {
+    const seconds = Math.round((Date.parse(iso) - Date.now()) / 1000);
+    if (!Number.isFinite(seconds)) return "";
+    if (seconds <= 60) return "now";
+    const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), d = Math.floor(h / 24);
+    return "in " + (d >= 1 ? d + "d " + (h % 24) + "h" : h >= 1 ? h + "h " + m + "m" : m + "m");
+  }
+
+  /** Authenticated JSON request; prompts for the token once on 401. */
+  async function api(path, options) {
+    const send = () => fetch(path, Object.assign({ cache: "no-store" }, options || {}, {
+      headers: Object.assign({ Accept: "application/json", Authorization: "Bearer " + getToken() }, (options && options.headers) || {}),
+    }));
+    let response = await send();
+    if (response.status === 401 && await askToken()) response = await send();
+    const type = response.headers.get("Content-Type") || "";
+    const body = type.includes("application/json") ? await response.json().catch(() => ({})) : {};
+    return { ok: response.ok, status: response.status, body };
+  }
+
+  function showTab(name) {
+    activeTab = name;
+    for (const button of document.querySelectorAll(".tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
+    for (const tab of ["overview", "schedule", "usage"]) $("tab-" + tab).hidden = tab !== name;
+    try { localStorage.setItem("llm-manager.tab", name); } catch (_) { /* private mode */ }
+    refreshActive();
+  }
+
+  function refreshActive() {
+    if (activeTab === "schedule") return loadSchedule();
+    if (activeTab === "usage") return loadUsage();
+    return load();
+  }
+
+  // ---------- schedule ----------
+  let scheduleData = null;
+  const scheduleTab = $("tab-schedule");
+
+  function describeSchedule(job) {
+    const sc = job.schedule;
+    if (sc.at) return job.done ? "Ran " + fmtTime(job.lastFiredAt || sc.at) : "Once · " + fmtTime(sc.at);
+    const days = sc.days && sc.days.length && sc.days.length < 7
+      ? (sc.days.join() === "1,2,3,4,5" ? "Mon–Fri" : sc.days.map((d) => DAY_NAMES[d - 1]).join(" "))
+      : "every day";
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return "Daily " + sc.time + " · " + days + (sc.zone && sc.zone !== here ? " (" + sc.zone + ")" : "");
+  }
+
+  function statusChip(run) {
+    switch (run.status) {
+      case "queued": return chip(run.notBefore && Date.parse(run.notBefore) > Date.now() ? "waits " + until(run.notBefore) : "queued", null, "clock");
+      case "running": return chip("running", "running", "loader");
+      case "succeeded": return chip("done", "ok", "check");
+      case "limited": return chip(run.resumeScheduled ? "limit · resumes" : "usage limit", "warn", "alert");
+      case "cancelled": return chip("cancelled", null, "x");
+      default: return chip("failed", "bad", "alert");
+    }
+  }
+
+  function jobItem(view) {
+    const job = view.job;
+    const agents = job.kind === "pipeline" ? [job.agent, job.agent === "claude" ? "codex" : "claude"] : [job.agent];
+    const action = (path, label, iconName, cls, confirmText) => el("button", { class: "small-btn " + (cls || ""), type: "button", onclick: async () => {
+      if (confirmText && !confirm(confirmText)) return;
+      const result = await api("/api/jobs/" + encodeURIComponent(job.id) + "/" + path, { method: "POST" });
+      toast(result.ok ? label + " ✓" : (result.body.error || "Failed (" + result.status + ")"), !result.ok);
+      loadSchedule();
+    } }, icon(iconName), label);
+    return el("div", { class: "item" },
+      el("div", { class: "row" }, el("span", { class: "name", title: job.name }, job.name),
+        job.enabled ? null : chip("paused", null, "pause")),
+      el("div", { class: "row" },
+        agents.map((a, i) => chip((job.kind === "pipeline" ? (i === 0 ? "builds: " : "reviews: ") : "") + AGENT[a].label, AGENT[a].chip)),
+        chip(job.projectName, null, "folder")),
+      el("div", { class: "meta" }, describeSchedule(job) + (view.nextRunAt && job.enabled ? " · next " + until(view.nextRunAt) : "")),
+      el("div", { class: "meta" }, job.prompt.length > 160 ? job.prompt.slice(0, 160) + "…" : job.prompt),
+      el("div", { class: "actions-row" },
+        action("run", "Run now", "play", "go"),
+        job.enabled ? action("pause", "Pause", "pause") : action("enable", "Enable", "play"),
+        action("delete", "Delete", "trash", "danger", "Delete \"" + job.name + "\"? Past runs and their branches stay.")));
+  }
+
+  function runItem(run) {
+    const live = run.status === "running" && run.tmuxSession;
+    return el("div", { class: "item" },
+      el("div", { class: "row" },
+        chip(AGENT[run.agent].label, AGENT[run.agent].chip),
+        el("span", { class: "name" }, STAGE[run.stage] + " · " + run.projectName),
+        statusChip(run)),
+      el("div", { class: "meta" },
+        (run.branch ? run.branch + " · " : "") + (run.startedAt ? "started " + relative(run.startedAt) : "created " + relative(run.createdAt)) +
+        (run.pipelineId ? " · pipeline " + run.pipelineId.slice(0, 6) : "")),
+      run.summary ? el("div", { class: "meta" }, run.summary.length > 220 ? run.summary.slice(0, 220) + "…" : run.summary) : null,
+      run.error ? el("div", { class: "err" }, run.error.length > 220 ? run.error.slice(0, 220) + "…" : run.error) : null,
+      live ? attachBox({ running: true, attachCommand: "tmux attach -t " + run.tmuxSession }) : null,
+      el("div", { class: "actions-row" },
+        el("button", { class: "small-btn", type: "button", onclick: () => openLog(run) }, icon("list"), "Log"),
+        run.status === "queued" || run.status === "running"
+          ? el("button", { class: "small-btn danger", type: "button", onclick: async () => {
+              if (!confirm("Cancel this run? Its worktree and branch are kept.")) return;
+              const result = await api("/api/runs/" + encodeURIComponent(run.id) + "/cancel", { method: "POST" });
+              toast(result.ok ? "Cancelled" : (result.body.error || "Failed"), !result.ok);
+              loadSchedule();
+            } }, icon("x"), "Cancel")
+          : null));
+  }
+
+  async function loadSchedule() {
+    if (!getToken()) {
+      scheduleTab.replaceChildren(el("div", { class: "panel" },
+        el("div", { class: "section-head" }, el("h2", null, "Schedule")),
+        el("p", { class: "muted" }, "Schedules and run logs need the server's access token."),
+        el("button", { class: "small-btn go", type: "button", onclick: async () => { if (await askToken()) loadSchedule(); } }, icon("lock"), "Enter token")));
+      return;
+    }
+    $("refresh").classList.add("spin");
+    try {
+      const result = await api("/api/schedule");
+      if (!result.ok) throw new Error(result.body.error || "Failed (" + result.status + ")");
+      scheduleData = result.body;
+      const jobs = scheduleData.jobs, runs = scheduleData.runs;
+      scheduleTab.replaceChildren(
+        el("div", { class: "section-head" }, el("h2", null, "Jobs"),
+          el("button", { class: "small-btn go", type: "button", onclick: () => openJobForm() }, icon("plus"), "New job")),
+        el("div", { class: "list-card" }, jobs.length ? jobs.map(jobItem)
+          : el("div", { class: "empty" }, "No jobs yet. Schedule a run, a build-and-review, or a resume.")),
+        el("div", { class: "section-head" }, el("h2", null, "Recent runs")),
+        el("div", { class: "list-card" }, runs.length ? runs.map(runItem) : el("div", { class: "empty" }, "No runs yet.")));
+      status.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch (error) {
+      scheduleTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Couldn't load the schedule"), error.message));
+    } finally {
+      $("refresh").classList.remove("spin");
+    }
+  }
+
+  async function openLog(run) {
+    const dialog = $("log-dialog");
+    const body = el("div", { class: "log" }, el("div", null, "Loading…"));
+    dialog.replaceChildren(
+      el("div", { class: "section-head" }, el("h2", null, STAGE[run.stage] + " · " + AGENT[run.agent].label),
+        el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
+      el("div", { class: "meta muted" }, run.projectName + (run.branch ? " · " + run.branch : "")),
+      el("details", null, el("summary", null, "Prompt"), el("div", { class: "log" }, el("div", null, run.prompt))),
+      body);
+    dialog.showModal();
+    const result = await api("/api/runs/" + encodeURIComponent(run.id) + "/log");
+    if (!result.ok) { body.replaceChildren(el("div", { class: "error" }, result.body.error || "Failed")); return; }
+    const lines = result.body.activity || [];
+    body.replaceChildren(...(lines.length ? lines.map((l) => el("div", { class: l.kind }, l.text)) : [el("div", null, "No activity recorded yet.")]));
+  }
+
+  function segmented(options, value, onChange) {
+    const group = el("div", { class: "seg", role: "group" });
+    const render = (current) => group.replaceChildren(...options.map(([v, label]) =>
+      el("button", { type: "button", "aria-pressed": String(v === current), onclick: () => { render(v); onChange(v); } }, label)));
+    render(value);
+    return group;
+  }
+
+  async function openJobForm() {
+    if (!projectsCache.length) await load();
+    const form = { kind: "run", agent: "claude", when: "now", days: [1, 2, 3, 4, 5] };
+    const dialog = $("job-dialog");
+    const agentsOk = (scheduleData && scheduleData.agents) || {};
+    const project = el("select", null, projectsCache.map((p) => el("option", { value: p.id }, p.name)));
+    const resumable = (scheduleData && scheduleData.resumable) || [];
+    const session = el("select", null, resumable.length
+      ? resumable.map((r, i) => el("option", { value: String(i) }, r.projectName + " · " + (r.branch || "detached") + " · " + AGENT[r.session.agent].label + " · " + relative(r.session.updatedAt)))
+      : el("option", { value: "" }, "No resumable sessions in agent worktrees"));
+    const prompt = el("textarea", { placeholder: "What should the agent do?" });
+    const soon = new Date(Date.now() + 3600e3); soon.setMinutes(0, 0, 0);
+    const pad = (n) => String(n).padStart(2, "0");
+    const at = el("input", { type: "datetime-local", value: `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:00` });
+    const time = el("input", { type: "time", value: "09:00" });
+    const resumeOnLimit = el("input", { type: "checkbox", checked: true });
+    const daysGroup = el("div", { class: "days" });
+    const renderDays = () => daysGroup.replaceChildren(...DAY_NAMES.map((name, i) => el("button", {
+      type: "button", "aria-pressed": String(form.days.includes(i + 1)),
+      onclick: () => { form.days = form.days.includes(i + 1) ? form.days.filter((d) => d !== i + 1) : [...form.days, i + 1].sort(); renderDays(); },
+    }, name)));
+    renderDays();
+    const agentHint = el("div", { class: "hint-text" });
+    const fields = {
+      project: el("div", { class: "field" }, el("label", null, "Project"), project),
+      agent: el("div", { class: "field" }, el("span", null, "Agent"), segmented([["claude", "Claude"], ["codex", "Codex"]], form.agent, (v) => { form.agent = v; sync(); }), agentHint),
+      session: el("div", { class: "field" }, el("label", null, "Session to continue"), session,
+        el("div", { class: "hint-text" }, "Only sessions in agent worktrees can be resumed, never your own checkout.")),
+      prompt: el("div", { class: "field" }, el("label", null, "Task"), prompt),
+      at: el("div", { class: "field" }, el("label", null, "Date and time"), at),
+      daily: el("div", { class: "field" }, el("label", null, "Time"), time, daysGroup),
+    };
+    function sync() {
+      const resume = form.kind === "resume";
+      fields.project.hidden = resume; fields.agent.hidden = resume; fields.session.hidden = !resume;
+      prompt.placeholder = resume ? "Optional: what to tell it (default: continue where you left off)" : "What should the agent do?";
+      fields.at.hidden = form.when !== "once"; fields.daily.hidden = form.when !== "daily";
+      const other = form.agent === "claude" ? "codex" : "claude";
+      agentHint.textContent = form.kind === "pipeline"
+        ? AGENT[form.agent].label + " builds and commits, " + AGENT[other].label + " reviews the commit, then " + AGENT[form.agent].label + " addresses the review."
+        : (agentsOk[form.agent] === false ? AGENT[form.agent].label + " is not installed on the server." : "");
+    }
+    const submit = el("button", { class: "primary", type: "button" }, "Create job");
+    submit.addEventListener("click", async () => {
+      const request = { kind: form.kind, agent: form.agent, prompt: prompt.value, resumeOnLimitReset: resumeOnLimit.checked };
+      if (form.kind === "resume") {
+        const target = resumable[Number(session.value)];
+        if (!target) { toast("Choose a session to resume", true); return; }
+        request.projectId = target.projectId;
+        request.resume = { agent: target.session.agent, sessionId: target.session.sessionId, worktree: target.session.worktree };
+        request.agent = target.session.agent;
+      } else {
+        request.projectId = project.value;
+      }
+      if (form.when === "once") request.schedule = { at: new Date(at.value).toISOString() };
+      if (form.when === "daily") request.schedule = { time: time.value, days: form.days, zone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+      submit.disabled = true;
+      const result = await api("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
+      submit.disabled = false;
+      if (!result.ok) { toast(result.body.error || "Failed (" + result.status + ")", true); return; }
+      dialog.close();
+      toast(form.when === "now" ? "Started" : "Scheduled");
+      loadSchedule();
+    });
+    dialog.replaceChildren(
+      el("div", { class: "section-head" }, el("h2", null, "New job"),
+        el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
+      el("div", { class: "field" }, el("span", null, "What"),
+        segmented([["run", "Run a task"], ["pipeline", "Build + review"], ["resume", "Resume"]], form.kind, (v) => { form.kind = v; sync(); })),
+      fields.project, fields.agent, fields.session, fields.prompt,
+      el("div", { class: "field" }, el("span", null, "When"), segmented([["now", "Now"], ["once", "Once"], ["daily", "Repeat"]], form.when, (v) => { form.when = v; sync(); })),
+      fields.at, fields.daily,
+      el("label", { class: "check" }, resumeOnLimit, el("span", null, "If a usage limit stops it, continue automatically when the limit resets")),
+      el("p", { class: "hint-text" }, "Runs work in a new branch and worktree, may edit files and run build/test commands, and never push."),
+      el("div", { class: "row" }, submit));
+    sync();
+    dialog.showModal();
+  }
+
+  // ---------- usage ----------
+  const usageTab = $("tab-usage");
+  let lastUsage = null;
+
+  function meter(win) {
+    const pct = Math.max(0, Math.min(100, win.usedPercent));
+    const color = pct >= 90 ? "var(--bad)" : pct >= 70 ? "var(--warn)" : "var(--accent)";
+    const track = pct >= 90 ? "rgba(248,113,113,.18)" : pct >= 70 ? "rgba(251,191,36,.18)" : "rgba(139,124,246,.18)";
+    return el("div", { class: "meter-row" },
+      el("span", null, win.label),
+      el("div", { class: "meter", style: "background:" + track, role: "meter", "aria-valuenow": String(Math.round(pct)), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": win.label + " limit used" },
+        el("div", { style: "width:" + pct + "%;background:" + color })),
+      el("span", { class: "v" }, Math.round(win.usedPercent) + "%"),
+      win.resetsAt ? el("span", { class: "r" }, "resets " + until(win.resetsAt) + " · " + fmtTime(win.resetsAt)) : null);
+  }
+
+  function agentPanel(key, usage, days) {
+    const a = AGENT[key];
+    const total = usage.tokensPerDay.reduce((x, y) => x + y, 0);
+    const cache = usage.cacheReadsPerDay.reduce((x, y) => x + y, 0);
+    const readout = el("div", { class: "readout" }, "Tap a day for details");
+    const top = usage.models.length ? usage.models[0].tokens : 0;
+    return el("section", { class: "panel" },
+      el("div", { class: "agent-title" }, el("i", { style: "background:" + a.color }), a.label),
+      el("div", { class: "section" }, el("h3", null, "Plan limits"),
+        usage.windows.length ? usage.windows.map(meter) : null,
+        usage.windowsAsOf ? el("div", { class: "hint-text", style: "margin-top:8px" }, "As of " + relative(usage.windowsAsOf)) : null,
+        usage.note ? el("div", { class: "hint-text", style: "margin-top:8px" }, usage.note) : null),
+      el("div", { class: "section" }, el("h3", null, "Tokens · last " + days.length + " days"),
+        el("div", { class: "hero" }, el("b", null, compact(total)), el("span", null, "tokens" + (cache ? " · " + compact(cache) + " more read from cache" : ""))),
+        readout,
+        total ? columnChart(days, [{ values: usage.tokensPerDay, color: a.color }], readout, (i) => compact(usage.tokensPerDay[i]) + " tokens")
+          : el("div", { class: "muted" }, "No usage recorded in this window.")),
+      usage.models.length > 1 ? el("div", { class: "section" }, el("h3", null, "By model"),
+        el("div", { class: "rank" }, usage.models.map((m) => [
+          el("div", { class: "n", title: m.model }, m.model),
+          el("div", { class: "track" }, el("div", { class: "fill", style: "background:" + a.color + ";width:" + Math.max(3, (m.tokens / top) * 100) + "%" })),
+          el("div", { class: "v" }, compact(m.tokens))]))) : null);
+  }
+
+  function renderUsage(data) {
+    lastUsage = data;
+    usageTab.replaceChildren(agentPanel("claude", data.claude, data.days), agentPanel("codex", data.codex, data.days),
+      el("p", { class: "hint-text" }, "From local records on the server: Claude Code and Codex session logs, and Claude's status line. Tokens exclude cache reads."));
+  }
+
+  async function loadUsage() {
+    $("refresh").classList.add("spin");
+    try {
+      const response = await fetch("/api/usage", { cache: "no-store", headers: { Accept: "application/json" } });
+      const type = response.headers.get("Content-Type") || "";
+      if (!response.ok || !type.includes("application/json")) throw new Error("Unexpected response (" + response.status + ")");
+      renderUsage(await response.json());
+      status.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch (error) {
+      usageTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Couldn't load usage"), error.message));
+    } finally {
+      $("refresh").classList.remove("spin");
+    }
+  }
+
   $("token-cancel").addEventListener("click", () => $("token-dialog").close("cancel"));
   $("token-save").addEventListener("click", () => $("token-dialog").close("save"));
   $("token-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("token-dialog").close("save"); });
   $("logo").append(icon("spark"));
   $("refresh").append(icon("refresh"));
-  $("refresh").addEventListener("click", load);
+  $("refresh").addEventListener("click", refreshActive);
+  for (const button of document.querySelectorAll(".tabs button")) button.addEventListener("click", () => showTab(button.dataset.tab));
   $("lock").addEventListener("click", async () => {
     if (getToken() && confirm("Forget the saved access token on this device?")) { setToken(""); renderLock(); toast("Token removed"); return; }
     if (!getToken() && await askToken()) toast("Token saved");
   });
   renderLock();
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
-  setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshActive(); });
+  setInterval(() => { if (!document.hidden && !document.querySelector("dialog[open]")) refreshActive(); }, REFRESH_MS);
+  let saved = "overview";
+  try { saved = localStorage.getItem("llm-manager.tab") || "overview"; } catch (_) { /* private mode */ }
   load();
+  if (saved !== "overview" && ["schedule", "usage"].includes(saved)) showTab(saved);
 })();
 </script>
 </body>

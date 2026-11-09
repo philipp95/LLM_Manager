@@ -26,20 +26,37 @@ class ServerClient(
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
     suspend fun projects(server: ServerAddress): ApiResult<ProjectsResponse> =
-        request(server, "GET", "/api/projects", token = null) { json.decodeFromString(ProjectsResponse.serializer(), it) }
+        request(server, Call("GET", "/api/projects"), token = null) { json.decodeFromString(ProjectsResponse.serializer(), it) }
 
     suspend fun startCodex(server: ServerAddress, projectId: String, token: String): ApiResult<LaunchResponse> =
-        request(server, "POST", "/api/projects/${URLEncoder.encode(projectId, "UTF-8")}/codex", token) {
+        request(server, Call("POST", "/api/projects/${encode(projectId)}/codex"), token) {
             json.decodeFromString(LaunchResponse.serializer(), it)
         }
 
-    private suspend fun <T> request(
-        server: ServerAddress,
-        method: String,
-        path: String,
-        token: String?,
-        decode: (String) -> T,
-    ): ApiResult<T> = withContext(Dispatchers.IO) {
+    suspend fun usage(server: ServerAddress): ApiResult<UsageResponse> =
+        request(server, Call("GET", "/api/usage"), token = null) { json.decodeFromString(UsageResponse.serializer(), it) }
+
+    suspend fun schedule(server: ServerAddress, token: String): ApiResult<ScheduleResponse> =
+        request(server, Call("GET", "/api/schedule"), token) { json.decodeFromString(ScheduleResponse.serializer(), it) }
+
+    suspend fun createJob(server: ServerAddress, token: String, job: JobRequest): ApiResult<Unit> =
+        request(server, Call("POST", "/api/jobs", json.encodeToString(JobRequest.serializer(), job)), token) { }
+
+    /** [action] is one of run, pause, enable, delete. */
+    suspend fun jobAction(server: ServerAddress, token: String, jobId: String, action: String): ApiResult<Unit> =
+        request(server, Call("POST", "/api/jobs/${encode(jobId)}/${encode(action)}"), token) { }
+
+    suspend fun cancelRun(server: ServerAddress, token: String, runId: String): ApiResult<Unit> =
+        request(server, Call("POST", "/api/runs/${encode(runId)}/cancel"), token) { }
+
+    suspend fun runLog(server: ServerAddress, token: String, runId: String): ApiResult<RunLog> =
+        request(server, Call("GET", "/api/runs/${encode(runId)}/log"), token) { json.decodeFromString(RunLog.serializer(), it) }
+
+    /** One HTTP request: [body], when present, is sent as JSON. */
+    private data class Call(val method: String, val path: String, val body: String? = null)
+
+    private suspend fun <T> request(server: ServerAddress, call: Call, token: String?, decode: (String) -> T): ApiResult<T> = withContext(Dispatchers.IO) {
+        val (method, path, body) = call
         val connection = try {
             URL(server.baseUrl + path).openConnection() as HttpURLConnection
         } catch (e: IOException) {
@@ -55,13 +72,15 @@ class ServerClient(
             connection.setRequestProperty("Accept", "application/json")
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             if (method == "POST") {
+                val bytes = body?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+                if (body != null) connection.setRequestProperty("Content-Type", "application/json")
                 connection.doOutput = true
-                connection.setFixedLengthStreamingMode(0)
-                connection.outputStream.close()
+                connection.setFixedLengthStreamingMode(bytes.size)
+                connection.outputStream.use { it.write(bytes) }
             }
             val status = connection.responseCode
-            val body = (if (status < 400) connection.inputStream else connection.errorStream)?.use { it.readBytes().decodeToString() }.orEmpty()
-            interpret(status, connection.contentType, body, decode)
+            val text = (if (status < 400) connection.inputStream else connection.errorStream)?.use { it.readBytes().decodeToString() }.orEmpty()
+            interpret(json, status, connection.contentType, text, decode)
         } catch (e: IOException) {
             ApiResult.NoRoute(e.message ?: e.javaClass.simpleName)
         } catch (e: SerializationException) {
@@ -71,27 +90,29 @@ class ServerClient(
         }
     }
 
-    private fun <T> interpret(status: Int, contentType: String?, body: String, decode: (String) -> T): ApiResult<T> {
-        // A captive portal answers 200 with HTML; only a JSON body counts as the server.
-        val isJson = contentType?.startsWith("application/json") == true
-        return when {
-            status == HttpURLConnection.HTTP_UNAUTHORIZED -> ApiResult.Unauthorized
-            !isJson -> ApiResult.NoRoute("Unexpected response ($status) — not the LLM Manager server")
-            status !in 200..299 -> ApiResult.Failed(errorMessage(body) ?: "Server error ($status)")
-            else -> ApiResult.Ok(decode(body))
-        }
-    }
-
-    private fun errorMessage(body: String): String? = try {
-        json.decodeFromString(ApiError.serializer(), body).error
-    } catch (_: SerializationException) {
-        null
-    } catch (_: IllegalArgumentException) {
-        null
-    }
-
     private companion object {
         const val CONNECT_TIMEOUT_MS = 6_000
         const val READ_TIMEOUT_MS = 20_000
     }
+}
+
+private fun encode(segment: String): String = URLEncoder.encode(segment, "UTF-8")
+
+private fun <T> interpret(json: Json, status: Int, contentType: String?, body: String, decode: (String) -> T): ApiResult<T> {
+    // A captive portal answers 200 with HTML; only a JSON body counts as the server.
+    val isJson = contentType?.startsWith("application/json") == true
+    return when {
+        status == HttpURLConnection.HTTP_UNAUTHORIZED -> ApiResult.Unauthorized
+        !isJson -> ApiResult.NoRoute("Unexpected response ($status) — not the LLM Manager server")
+        status !in 200..299 -> ApiResult.Failed(errorMessage(json, body) ?: "Server error ($status)")
+        else -> ApiResult.Ok(decode(body))
+    }
+}
+
+private fun errorMessage(json: Json, body: String): String? = try {
+    json.decodeFromString(ApiError.serializer(), body).error
+} catch (_: SerializationException) {
+    null
+} catch (_: IllegalArgumentException) {
+    null
 }

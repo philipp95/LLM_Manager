@@ -116,6 +116,7 @@ class ProjectScanner(
                 lastCommitAt = head?.let { git.run(commonDir, "log", "-1", "--format=%cI", it) }?.trim()?.takeIf { it.isNotEmpty() },
                 changedFiles = if (present) git.run(directory, "status", "--porcelain")?.lines()?.count { it.isNotBlank() } else null,
                 agentRun = branch?.startsWith(AGENT_BRANCH_PREFIX) == true,
+                scheduledRun = branch?.startsWith(RunEngine.RUN_BRANCH_PREFIX + "/") == true,
                 main = index == 0,
                 missing = !present,
                 codex = branch?.let { CodexLauncher.sessionFor(it, running) },

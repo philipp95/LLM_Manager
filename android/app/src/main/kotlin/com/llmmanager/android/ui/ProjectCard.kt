@@ -184,6 +184,7 @@ private fun stateColor(worktree: Worktree): Color = when {
 private fun tags(worktree: Worktree): List<Pair<String, ChipTone>> = listOfNotNull(
     worktree.codex?.let { if (it.running) "Codex live" to ChipTone.Codex else "Codex" to ChipTone.Neutral },
     if (worktree.agentRun) "Agent run" to ChipTone.Agent else null,
+    if (worktree.scheduledRun) "Scheduled run" to ChipTone.Neutral else null,
     if (worktree.main) "main worktree" to ChipTone.Neutral else null,
 )
 

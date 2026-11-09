@@ -1,10 +1,7 @@
 package com.llmmanager.server.api
 
 import java.io.File
-import java.security.SecureRandom
 import java.time.Clock
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import org.slf4j.LoggerFactory
 
 /**
@@ -56,57 +53,22 @@ class CodexLauncher(
     }
 
     private fun start(located: Located, command: String): Result {
-        val id = "${slug(located.project.name)}-${STAMP.format(clock.instant())}-${suffix()}"
-        val branch = BRANCH_PREFIX + id
-        val name = checkNotNull(sessionNameFor(branch))
-        val root = settings.worktreeRoot.absoluteFile
-        val path = File(root, id)
-        val base = baseRevision(located)
-        val failure = when {
-            base == null -> "could not determine a base commit"
-            !(root.isDirectory || root.mkdirs()) -> "cannot create ${root.path}"
-            git.run(located.commonDir, "worktree", "add", "-b", branch, path.path, base) == null -> "git worktree add failed"
-            !sessions.start(name, path, listOf(command) + CODEX_ARGS) -> {
-                // Leave nothing behind for a session that never started.
-                git.run(located.commonDir, "worktree", "remove", "--force", path.path)
-                git.run(located.commonDir, "branch", "-D", branch)
-                "tmux could not start the session"
-            }
-            else -> null
-        }
-        if (failure != null) return Result.Failed(failure)
-        log.info("Started Codex session {} for {} in {}", name, located.project.name, path)
-        return Result.Started(CodexSession(name, true, "tmux attach -t $name"), branch, path.path)
+        val worktrees = Worktrees(git, settings.worktreeRoot, clock)
+        val made = worktrees.create(located, BRANCH_PREFIX.trimEnd('/'))
+        if (made is Worktrees.Result.Failed) return Result.Failed(made.reason)
+        val created = (made as Worktrees.Result.Ok).worktree
+        val name = checkNotNull(sessionNameFor(created.branch))
+        val started = sessions.start(name, created.path, listOf(command) + CODEX_ARGS)
+        // Leave nothing behind for a session that never started.
+        if (!started) worktrees.discard(located, created) else log.info("Started Codex session {} for {} in {}", name, located.project.name, created.path)
+        return if (started) Result.Started(CodexSession(name, true, "tmux attach -t $name"), created.branch, created.path.path)
+        else Result.Failed("tmux could not start the session")
     }
-
-    /**
-     * Checkouts start from what the person is working on (the main worktree's HEAD,
-     * including unpushed commits); mirrors start from the remote default branch.
-     */
-    private fun baseRevision(located: Located): String? =
-        if (located.project.kind == Project.Kind.CHECKOUT) {
-            located.project.worktrees.firstOrNull { it.main }?.head
-        } else {
-            located.project.defaultBranch?.let { default ->
-                listOf("refs/remotes/origin/$default", "refs/heads/$default").firstOrNull { ref ->
-                    git.run(located.commonDir, "rev-parse", "--verify", "--quiet", ref) != null
-                }
-            }
-        }
-
-    private fun slug(name: String): String =
-        name.substringAfterLast('/').lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(SLUG_CHARS).ifEmpty { "project" }
-
-    private fun suffix(): String = "%04x".format(random.nextInt(SUFFIX_RANGE))
 
     companion object {
         const val BRANCH_PREFIX = "codex/"
         const val SESSION_PREFIX = "codex-"
-        private const val SLUG_CHARS = 32
-        private const val SUFFIX_RANGE = 0x10000
         private val CODEX_ARGS = listOf("--sandbox", "workspace-write", "--ask-for-approval", "on-request")
-        private val STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC)
-        private val random = SecureRandom()
         private val log = LoggerFactory.getLogger(CodexLauncher::class.java)
 
         /** `codex/<id>` maps to tmux session `codex-<id>`; anything else has no session. */
@@ -120,10 +82,13 @@ class CodexLauncher(
             sessionNameFor(branch)?.let { CodexSession(it, it in running, "tmux attach -t $it") }
 
         /** The codex binary on PATH, else the npm user-prefix location; null when absent. */
-        fun findCodex(): String? {
+        fun findCodex(): String? = findBinary("codex")
+
+        /** [name] on PATH, else in ~/.local/bin; null when absent. */
+        fun findBinary(name: String): String? {
             val onPath = System.getenv("PATH").orEmpty().split(File.pathSeparator)
-                .map { File(it, "codex") }.firstOrNull { it.canExecute() }
-            val userLocal = File(System.getProperty("user.home"), ".local/bin/codex").takeIf { it.canExecute() }
+                .map { File(it, name) }.firstOrNull { it.canExecute() }
+            val userLocal = File(System.getProperty("user.home"), ".local/bin/$name").takeIf { it.canExecute() }
             return (onPath ?: userLocal)?.absolutePath
         }
     }

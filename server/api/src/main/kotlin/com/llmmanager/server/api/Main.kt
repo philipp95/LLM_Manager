@@ -10,6 +10,8 @@ import com.github.ajalt.clikt.parameters.types.restrictTo
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import org.slf4j.LoggerFactory
 
 fun main(args: Array<String>) = ApiServer().main(args)
@@ -28,6 +30,11 @@ class ApiServer : CliktCommand(name = "api") {
         .default(File(System.getProperty("user.home"), "agent-work/codex").path)
     private val apk by option("--apk", help = "Android APK offered for download at ${ApkFile.URL}")
         .default(File(System.getProperty("user.home"), "LLM_Manager/android/app/build/outputs/apk/release/app-release.apk").path)
+    private val claude by option("--claude", help = "Claude Code CLI for scheduled runs. Default: `claude` on PATH or ~/.local/bin/claude")
+    private val stateDir by option("--state-dir", help = "Schedules, run history and run logs")
+        .default(File(System.getProperty("user.home"), ".local/share/llm-manager").path)
+    private val runWorktrees by option("--run-worktrees", help = "Where scheduled runs get their worktrees")
+        .default(File(System.getProperty("user.home"), "agent-work/runs").path)
     private val tokenFile by option("--token-file", help = "Access token for launching sessions; created if missing")
         .default(File(System.getProperty("user.home"), ".config/llm-manager/api-token").path)
 
@@ -38,9 +45,25 @@ class ApiServer : CliktCommand(name = "api") {
         val codexPath = codex ?: CodexLauncher.findCodex()
         val launcher = CodexLauncher(scanner, sessions, CodexLauncher.Settings(File(codexWorktrees), codexPath))
         val token = ApiToken.loadOrCreate(File(tokenFile))
+        val schedule = schedule(scanner, sessions, codexPath)
         val log = LoggerFactory.getLogger(ApiServer::class.java)
         log.info("Dashboard on http://{}:{}/ scanning {}", address.hostAddress, port, projects)
-        log.info("Codex: {}. Launch token in {}", codexPath ?: "not found, launching disabled", tokenFile)
-        embeddedServer(Netty, port = port, host = address.hostAddress) { dashboardModule(scanner, launcher, token, ApkFile(File(apk))) }.start(wait = true)
+        log.info("Codex: {}. Launch token in {}. State in {}", codexPath ?: "not found, launching disabled", tokenFile, stateDir)
+        embeddedServer(Netty, port = port, host = address.hostAddress) {
+            dashboardModule(scanner, launcher, token, ApkFile(File(apk)), schedule)
+        }.start(wait = true)
+    }
+
+    /** Scheduling: persistent jobs and runs, ticking in the background for the server's lifetime. */
+    private fun schedule(scanner: ProjectScanner, sessions: SessionHost, codexPath: String?): ScheduleApi {
+        val state = File(stateDir)
+        val store = StateStore(state)
+        val usage = UsageReader(File(System.getProperty("user.home")), state)
+        val commands = AgentCommands(claude ?: CodexLauncher.findBinary("claude"), codexPath)
+        val workspace = Workspace(scanner, sessions, commands)
+        val engine = RunEngine(store, workspace, File(runWorktrees))
+        val scheduler = Scheduler(store, engine, sessions, limitResetHint = usage::resetHint)
+        scheduler.launch(CoroutineScope(SupervisorJob()))
+        return ScheduleApi(JobService(store, scheduler, workspace, SessionCatalog()), store, usage)
     }
 }

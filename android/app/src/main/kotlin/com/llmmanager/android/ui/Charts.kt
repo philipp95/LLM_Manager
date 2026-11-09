@@ -49,6 +49,7 @@ fun ColumnChart(
     onSelect: (Int?) -> Unit,
     description: String,
     modifier: Modifier = Modifier,
+    formatTick: (Int) -> String = { it.toString() },
 ) {
     val measurer = rememberTextMeasurer()
     val days = labels.size
@@ -73,7 +74,7 @@ fun ColumnChart(
             val ticks = if (max >= 4 && max % 2 == 0) listOf(0, max / 2, max) else listOf(0, max)
             ticks.forEach { tick ->
                 drawLine(Palette.line, Offset(left, y(tick.toFloat())), Offset(size.width, y(tick.toFloat())), 1.dp.toPx())
-                label(measurer, tick.toString(), Offset(left - 6.dp.toPx(), y(tick.toFloat())), alignEnd = true)
+                label(measurer, formatTick(tick), Offset(left - 6.dp.toPx(), y(tick.toFloat())), alignEnd = true)
             }
             selected?.let {
                 drawRoundRect(Color.White.copy(alpha = 0.06f), Offset(left + it * band, top), Size(band, plotH), CornerRadius(4.dp.toPx()))
@@ -97,7 +98,7 @@ fun ColumnChart(
     }
 }
 
-private val PLOT_LEFT = 26.dp
+private val PLOT_LEFT = 32.dp
 
 /** The day band under [x], or null left of the plot. */
 internal fun dayAt(x: Float, width: Float, left: Float, days: Int): Int? {

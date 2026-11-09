@@ -14,6 +14,7 @@ import com.llmmanager.android.data.SettingsStore
 import com.llmmanager.android.ui.DashboardScreen
 import com.llmmanager.android.ui.DashboardViewModel
 import com.llmmanager.android.ui.LlmManagerTheme
+import com.llmmanager.android.ui.ScheduleViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,7 +31,10 @@ class MainActivity : ComponentActivity() {
                         initializer { DashboardViewModel(settings, ServerClient(), BuildConfig.DEFAULT_SERVER_URL) }
                     },
                 )
-                DashboardScreen(viewModel)
+                val scheduleViewModel: ScheduleViewModel = viewModel(
+                    factory = viewModelFactory { initializer { ScheduleViewModel(settings, ServerClient()) } },
+                )
+                DashboardScreen(viewModel, scheduleViewModel)
             }
         }
     }

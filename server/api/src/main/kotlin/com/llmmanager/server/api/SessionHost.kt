@@ -10,6 +10,9 @@ interface SessionHost {
     /** Starts [command] detached in [directory] under [name]; false if it could not be started. */
     fun start(name: String, directory: File, command: List<String>): Boolean
 
+    /** Ends session [name] and everything running in it. */
+    fun stop(name: String): Boolean = false
+
     /** For a server that does not launch anything. */
     object None : SessionHost {
         override fun list(): Set<String> = emptySet()
@@ -25,6 +28,9 @@ class TmuxSessions(private val binary: String = "tmux") : SessionHost {
             ?.lines()?.filter { it.isNotBlank() }?.toSet()
             ?: emptySet()
     }
+
+    override fun stop(name: String): Boolean =
+        SessionNames.isValid(name) && Processes.run(listOf(binary, "kill-session", "-t", "=$name")) != null
 
     override fun start(name: String, directory: File, command: List<String>): Boolean {
         require(SessionNames.isValid(name)) { "Invalid session name" }

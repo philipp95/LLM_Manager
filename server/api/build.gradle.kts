@@ -4,14 +4,15 @@ plugins {
     application
 }
 
-// Read-only by design: this module inspects git state and serves it over HTTP.
-// It deliberately does not depend on :server:runner, which starts agents.
 dependencies {
+    // SecretRedactor: agent output is redacted before it is shown on the phone.
+    implementation(project(":server:runner"))
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.content.negotiation)
     implementation(libs.ktor.serialization.json)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.clikt)
     implementation(libs.slf4j.api)
     runtimeOnly(libs.logback.classic)

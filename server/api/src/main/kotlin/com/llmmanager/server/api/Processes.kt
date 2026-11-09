@@ -58,7 +58,9 @@ object Processes {
  * inspecting a worktree an agent is using never takes `index.lock`.
  */
 class Git(private val binary: String = "git", private val timeoutMillis: Long = 10_000) {
-    fun run(directory: File, vararg args: String): String? =
+    fun run(directory: File, vararg args: String): String? = run(directory, args.asList())
+
+    fun run(directory: File, args: List<String>): String? =
         Processes.run(listOf(binary, "-C", directory.path) + args, timeoutMillis = timeoutMillis, environment = ENVIRONMENT)
 
     private companion object {

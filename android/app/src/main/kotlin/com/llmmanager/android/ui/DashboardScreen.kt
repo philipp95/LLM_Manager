@@ -21,6 +21,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -28,7 +30,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -57,11 +61,13 @@ private const val TAILSCALE_PACKAGE = "com.tailscale.ipn"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel) {
+fun DashboardScreen(viewModel: DashboardViewModel, scheduleViewModel: ScheduleViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val scheduleState by scheduleViewModel.state.collectAsStateWithLifecycle()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val refreshTab: () -> Unit = { refresh(tab, viewModel, scheduleViewModel) }
     val snackbar = remember { SnackbarHostState() }
     val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
     var showSettings by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf<Project?>(null) }
     var started by remember { mutableStateOf<Event.Started?>(null) }
@@ -69,14 +75,15 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
 
     // Poll only while the screen is visible; stops in the background so it never drains the battery.
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
+    LaunchedEffect(lifecycleOwner, tab) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
-                viewModel.refresh()
+                refreshTab()
                 delay(REFRESH_INTERVAL_MS)
             }
         }
     }
+    LaunchedEffect(scheduleViewModel) { scheduleViewModel.events.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -94,31 +101,43 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
         containerColor = Palette.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("LLM Manager", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                        Text(statusLine(state.connection, state.data), color = Palette.muted, fontSize = 12.sp)
+            Column {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("LLM Manager", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                            Text(statusLine(state.connection, state.data), color = Palette.muted, fontSize = 12.sp)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Filled.Lock, contentDescription = "Server and access token", tint = if (state.hasToken) Palette.ok else Palette.text)
+                        }
+                        IconButton(onClick = refreshTab) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Palette.background,
+                        titleContentColor = Palette.text,
+                        actionIconContentColor = Palette.text,
+                    ),
+                )
+                TabRow(selectedTabIndex = tab, containerColor = Palette.background, contentColor = Palette.text) {
+                    listOf("Overview", "Schedule", "Usage").forEachIndexed { index, title ->
+                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
                     }
-                },
-                actions = {
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Filled.Lock, contentDescription = "Server and access token", tint = if (state.hasToken) Palette.ok else Palette.text)
-                    }
-                    IconButton(onClick = viewModel::refresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Palette.background,
-                    titleContentColor = Palette.text,
-                    actionIconContentColor = Palette.text,
-                ),
-            )
+                }
+            }
         },
     ) { padding ->
-        PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.padding(padding).fillMaxSize()) {
-            LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
-                connectionNotice(state.connection, onSettings = { showSettings = true }, onRetry = viewModel::refresh, context = context)
-                state.data?.let { data -> dashboard(data, state.launching, onStart = { confirming = it }, onCopy = copy) }
+        val refreshing = if (tab == 0) state.refreshing else scheduleState.loading
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = refreshTab, modifier = Modifier.padding(padding).fillMaxSize()) {
+            when (tab) {
+                1 -> ScheduleScreen(
+                    scheduleState, state.data?.projects.orEmpty().map { it.id to it.name }, scheduleViewModel,
+                    onNeedToken = { showSettings = true }, onCopy = copy,
+                )
+                2 -> UsageScreen(scheduleState.usage, scheduleState.usageError)
+                else -> OverviewList(state, viewModel, onSettings = { showSettings = true }, onStart = { confirming = it }, onCopy = copy)
             }
         }
     }
@@ -136,6 +155,30 @@ fun DashboardScreen(viewModel: DashboardViewModel) {
         ConfirmStartDialog(project.name, onConfirm = { confirming = null; viewModel.startCodex(project) }, onDismiss = { confirming = null })
     }
     started?.let { event -> StartedDialog(event, onCopy = copy, onDismiss = { started = null }) }
+}
+
+/** Refreshes what tab [tab] shows: 0 overview, 1 schedule, 2 usage. */
+private fun refresh(tab: Int, overview: DashboardViewModel, schedule: ScheduleViewModel) {
+    when (tab) {
+        1 -> schedule.refreshSchedule()
+        2 -> schedule.refreshUsage()
+        else -> overview.refresh()
+    }
+}
+
+@Composable
+private fun OverviewList(
+    state: DashboardViewModel.UiState,
+    viewModel: DashboardViewModel,
+    onSettings: () -> Unit,
+    onStart: (Project) -> Unit,
+    onCopy: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
+        connectionNotice(state.connection, onSettings = onSettings, onRetry = viewModel::refresh, context = context)
+        state.data?.let { data -> dashboard(data, state.launching, onStart = onStart, onCopy = onCopy) }
+    }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.connectionNotice(

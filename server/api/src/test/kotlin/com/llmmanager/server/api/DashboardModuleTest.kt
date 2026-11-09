@@ -4,6 +4,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.request
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -127,6 +128,36 @@ class DashboardModuleTest {
         assertEquals(ApkFile.MEDIA_TYPE, download.contentType()?.withoutParameters()?.toString())
         assertTrue(download.headers[HttpHeaders.ContentDisposition]!!.contains("llm-manager.apk"))
         assertEquals(1234, download.bodyAsText(Charsets.ISO_8859_1).length)
+    }
+
+    @Test
+    fun `scheduling needs the token while usage is open`() = testApplication {
+        val scanner = scanner()
+        val token = ApiToken("t".repeat(40))
+        val state = directory.resolve("state").toFile()
+        val store = StateStore(state)
+        val workspace = Workspace(scanner, SessionHost.None, AgentCommands(null, null))
+        val scheduler = Scheduler(store, RunEngine(store, workspace, directory.resolve("runs").toFile()), SessionHost.None)
+        val jobs = JobService(store, scheduler, workspace, SessionCatalog(directory.resolve("home").toFile()))
+        val api = ScheduleApi(jobs, store, UsageReader(directory.toFile(), state))
+        application { dashboardModule(scanner, token = token, schedule = api) }
+
+        assertEquals(HttpStatusCode.OK, client.get("/api/usage").status)
+        for (path in listOf("/api/schedule", "/api/runs/x/log")) assertEquals(HttpStatusCode.Unauthorized, client.get(path).status, path)
+        for (path in listOf("/api/jobs", "/api/jobs/x/run", "/api/jobs/x/delete", "/api/runs/x/cancel")) {
+            assertEquals(HttpStatusCode.Unauthorized, client.post(path).status, path)
+        }
+        val authorized = client.get("/api/schedule") { header(HttpHeaders.Authorization, "Bearer ${"t".repeat(40)}") }
+        assertEquals(HttpStatusCode.OK, authorized.status)
+        val overview = Json.decodeFromString<ScheduleResponse>(authorized.bodyAsText())
+        assertEquals(mapOf("claude" to false, "codex" to false), overview.agents)
+        val refused = client.post("/api/jobs") {
+            header(HttpHeaders.Authorization, "Bearer ${"t".repeat(40)}")
+            header(HttpHeaders.ContentType, "application/json")
+            setBody("""{"projectId":"${scanner.scan().single().id}","kind":"run","agent":"claude","prompt":"x"}""")
+        }
+        assertEquals(HttpStatusCode.BadRequest, refused.status)
+        assertTrue(refused.bodyAsText().contains("not installed"))
     }
 
     @Test

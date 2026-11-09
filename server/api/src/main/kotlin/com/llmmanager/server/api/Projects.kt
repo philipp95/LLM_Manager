@@ -60,6 +60,8 @@ data class Worktree(
     val changedFiles: Int?,
     /** On an `agent/<run-id>` branch, as created by the runner. */
     val agentRun: Boolean,
+    /** On a `run/<id>` branch, created by a scheduled job. */
+    val scheduledRun: Boolean = false,
     /** The repository's main worktree rather than a linked one. */
     val main: Boolean,
     /** Registered with git but its directory is gone (`git worktree prune` would drop it). */
