@@ -2,6 +2,7 @@ package com.llmmanager.server.api
 
 import java.io.File
 import java.security.MessageDigest
+import java.time.Clock
 
 /**
  * Discovers repositories under the configured [sources] and reports their worktrees.
@@ -15,24 +16,34 @@ class ProjectScanner(
     private val sources: List<String>,
     private val git: Git = Git(),
     private val sessions: SessionHost = SessionHost.None,
+    private val clock: Clock = Clock.systemDefaultZone(),
 ) {
+    /** One consistent view: projects plus analytics computed over the same day window. */
+    data class Snapshot(val projects: List<Project>, val analytics: Analytics)
+
     /** A project together with the git directory that git commands for it must run in. */
     data class Located(val commonDir: File, val project: Project)
 
     /** Projects ordered by most recent commit across their worktrees. */
-    fun scan(): List<Project> = discover().map { it.project }
+    fun scan(): List<Project> = snapshot().projects
+
+    fun snapshot(): Snapshot {
+        val window = ActivityWindow(clock)
+        val projects = discover(window).map { it.project }
+        return Snapshot(projects, Analytics.of(window, projects))
+    }
 
     /** Resolves a client-supplied [id] against this scan only; clients never name paths. */
-    fun locate(id: String): Located? = discover().firstOrNull { it.project.id == id }
+    fun locate(id: String): Located? = discover(ActivityWindow(clock)).firstOrNull { it.project.id == id }
 
-    private fun discover(): List<Located> {
+    private fun discover(window: ActivityWindow): List<Located> {
         val running = sessions.list().orEmpty()
         return candidates()
             .mapNotNull { dir -> git.run(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")?.trim()?.let(::File) }
             .map { it.canonicalFile }
             // A linked worktree resolves to its repository's common dir, so a repo is listed once.
             .distinct()
-            .mapNotNull { dir -> describe(dir, running)?.let { Located(dir, it) } }
+            .mapNotNull { dir -> describe(dir, running, window)?.let { Located(dir, it) } }
             .sortedWith(
                 compareByDescending<Located> { located -> located.project.worktrees.maxOfOrNull { it.lastCommitAt.orEmpty() }.orEmpty() }
                     .thenBy { it.project.name.lowercase() },
@@ -49,7 +60,7 @@ class ProjectScanner(
         }
     }
 
-    private fun describe(commonDir: File, running: Set<String>): Project? {
+    private fun describe(commonDir: File, running: Set<String>, window: ActivityWindow): Project? {
         val bare = git.run(commonDir, "rev-parse", "--is-bare-repository")?.trim() == "true"
         val worktrees = git.run(commonDir, "worktree", "list", "--porcelain")?.let { parseWorktrees(commonDir, it, running) } ?: return null
         val origin = git.run(commonDir, "config", "--get", "remote.origin.url")?.trim()?.takeIf { it.isNotEmpty() }?.let(RemoteUrl::of)
@@ -64,6 +75,11 @@ class ProjectScanner(
             defaultBranch = defaultBranch(commonDir, bare),
             worktrees = worktrees.sortedWith(
                 compareByDescending<Worktree> { it.main }.thenByDescending { it.lastCommitAt.orEmpty() },
+            ),
+            // Not `--since`: git stops walking at the first older commit, which drops
+            // newer ones behind it when dates are skewed. Filter by day ourselves instead.
+            commitsPerDay = window.count(
+                git.run(commonDir, "log", "--all", "--max-count=$MAX_COMMITS_SCANNED", "--format=%cI")?.lines()?.filter { it.isNotBlank() }.orEmpty(),
             ),
         )
     }
@@ -102,14 +118,10 @@ class ProjectScanner(
                 agentRun = branch?.startsWith(AGENT_BRANCH_PREFIX) == true,
                 main = index == 0,
                 missing = !present,
-                codex = branch?.let { codexSession(it, running) },
+                codex = branch?.let { CodexLauncher.sessionFor(it, running) },
+                startedAt = branch?.let { RunStart.of(it, directory.takeIf { present }) },
             )
         }
-
-    private fun codexSession(branch: String, running: Set<String>): CodexSession? {
-        val name = CodexLauncher.sessionNameFor(branch) ?: return null
-        return CodexSession(name, name in running, "tmux attach -t $name")
-    }
 
     private fun fallbackName(path: File, origin: RemoteUrl?, bare: Boolean): String {
         val fromOrigin = origin?.display?.trimEnd('/')?.substringAfterLast('/')?.substringAfterLast(':')?.removeSuffix(".git")
@@ -122,6 +134,7 @@ class ProjectScanner(
     companion object {
         const val AGENT_BRANCH_PREFIX = "agent/"
         private const val ID_HEX_CHARS = 16
+        private const val MAX_COMMITS_SCANNED = 5000
 
         fun projectId(commonDir: File): String =
             MessageDigest.getInstance("SHA-256").digest(commonDir.canonicalPath.toByteArray(Charsets.UTF_8))

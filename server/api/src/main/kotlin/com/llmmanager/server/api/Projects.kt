@@ -10,7 +10,13 @@ data class ProjectsResponse(
     /** Whether the server found a Codex CLI to launch. */
     val codexAvailable: Boolean,
     val projects: List<Project>,
+    val analytics: Analytics,
+    /** Present when an Android APK is available from [AndroidApp.url]. */
+    val androidApp: AndroidApp? = null,
 )
+
+@Serializable
+data class AndroidApp(val url: String, val sizeBytes: Long, val builtAt: String)
 
 /** One git repository this machine works on, identified by its common git directory. */
 @Serializable
@@ -27,6 +33,8 @@ data class Project(
     val gitHubUrl: String?,
     val defaultBranch: String?,
     val worktrees: List<Worktree>,
+    /** Commits reachable from any ref, per day; aligned with [Analytics.days]. */
+    val commitsPerDay: List<Int> = emptyList(),
 ) {
     @Serializable
     enum class Kind {
@@ -58,6 +66,8 @@ data class Worktree(
     val missing: Boolean,
     /** Set for worktrees on a `codex/<id>` branch created by [CodexLauncher]. */
     val codex: CodexSession? = null,
+    /** When a Codex session or agent run began (ISO-8601); null for other worktrees or when unknown. */
+    val startedAt: String? = null,
 )
 
 @Serializable

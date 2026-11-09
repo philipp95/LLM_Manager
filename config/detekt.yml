@@ -13,3 +13,12 @@ style:
 complexity:
   LongParameterList:
     ignoreDataClasses: true
+    ignoreAnnotated: ['Composable']
+  # Compose UI reads top to bottom; splitting a screen for line count hurts more than it helps.
+  LongMethod:
+    ignoreAnnotated: ['Composable']
+
+naming:
+  # Composables are PascalCase by convention.
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The dashboard server is plain HTTP reachable only over Tailscale, whose WireGuard
+  tunnel encrypts the traffic. Android cannot scope cleartext to an IP range, so it is
+  permitted here and restricted in code: ServerAddress accepts only Tailscale
+  addresses (100.64.0.0/10) and *.ts.net names, and the app has no other network use.
+-->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

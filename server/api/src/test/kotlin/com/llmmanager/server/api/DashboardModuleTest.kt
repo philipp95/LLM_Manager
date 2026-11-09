@@ -110,6 +110,26 @@ class DashboardModuleTest {
     }
 
     @Test
+    fun `apk is offered and served only once it exists`() = testApplication {
+        val apkFile = directory.resolve("app-release.apk").toFile()
+        val scanner = scanner()
+        application { dashboardModule(scanner, apk = ApkFile(apkFile)) }
+
+        assertEquals(null, Json.decodeFromString<ProjectsResponse>(client.get("/api/projects").bodyAsText()).androidApp)
+        assertEquals(HttpStatusCode.NotFound, client.get(ApkFile.URL).status)
+
+        apkFile.writeBytes(ByteArray(1234) { 7 })
+        val offered = Json.decodeFromString<ProjectsResponse>(client.get("/api/projects").bodyAsText()).androidApp!!
+        assertEquals(ApkFile.URL, offered.url)
+        assertEquals(1234, offered.sizeBytes)
+        val download = client.get(ApkFile.URL)
+        assertEquals(HttpStatusCode.OK, download.status)
+        assertEquals(ApkFile.MEDIA_TYPE, download.contentType()?.withoutParameters()?.toString())
+        assertTrue(download.headers[HttpHeaders.ContentDisposition]!!.contains("llm-manager.apk"))
+        assertEquals(1234, download.bodyAsText(Charsets.ISO_8859_1).length)
+    }
+
+    @Test
     fun `readiness reports JSON`() = testApplication {
         application { dashboardModule(ProjectScanner(emptyList())) }
 

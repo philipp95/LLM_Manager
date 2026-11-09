@@ -9,7 +9,7 @@ a separate computer; the phone is the control interface.
 
 ## What is implemented
 
-The repository currently contains five Kotlin/JVM modules:
+The repository currently contains five Kotlin/JVM modules and an Android app:
 
 - `core/protocol`: serializable IDs, usage, and a proposed WebSocket envelope.
 - `server/domain`: framework-independent run specifications and statuses.
@@ -21,8 +21,11 @@ The repository currently contains five Kotlin/JVM modules:
   token-protected route starts an interactive Codex session in a new worktree
   inside tmux, which the user attaches to over SSH; Codex's own sandbox and
   approval prompts govern what it does. It does not depend on the runner.
+  It also reports 30-day activity analytics and serves the Android APK.
+- `android/app`: a Compose client for that API, restricted to Tailscale hosts,
+  with the access token encrypted under an Android Keystore key.
 
-There is no OpenClaw plugin, database, Android module, or pairing service. The
+There is no OpenClaw plugin, database, push notification, or pairing service. The
 dashboard's static bearer token is a stopgap, not the pairing, per-device
 identity, and approval design listed below; there is no API that edits files,
 removes worktrees, or pushes. Protocol types and unused catalog entries

@@ -115,6 +115,10 @@ class CodexLauncher(
                 ?.let { SESSION_PREFIX + it.removePrefix(BRANCH_PREFIX) }
                 ?.takeIf(SessionNames::isValid)
 
+        /** The session for a `codex/<id>` worktree, live when tmux lists it in [running]. */
+        fun sessionFor(branch: String, running: Set<String>): CodexSession? =
+            sessionNameFor(branch)?.let { CodexSession(it, it in running, "tmux attach -t $it") }
+
         /** The codex binary on PATH, else the npm user-prefix location; null when absent. */
         fun findCodex(): String? {
             val onPath = System.getenv("PATH").orEmpty().split(File.pathSeparator)

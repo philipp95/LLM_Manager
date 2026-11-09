@@ -9,6 +9,7 @@ import io.ktor.server.application.createApplicationPlugin
 import io.ktor.server.application.install
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -26,7 +27,12 @@ import kotlinx.serialization.json.Json
  * starting a Codex session, requires [token]; there is no route that edits files,
  * deletes worktrees, or pushes.
  */
-fun Application.dashboardModule(scanner: ProjectScanner, launcher: CodexLauncher? = null, token: ApiToken? = null) {
+fun Application.dashboardModule(
+    scanner: ProjectScanner,
+    launcher: CodexLauncher? = null,
+    token: ApiToken? = null,
+    apk: ApkFile? = null,
+) {
     val page = DashboardResources.page()
 
     install(ContentNegotiation) {
@@ -39,9 +45,9 @@ fun Application.dashboardModule(scanner: ProjectScanner, launcher: CodexLauncher
             call.respondText(page, ContentType.Text.Html.withParameter("charset", "utf-8"))
         }
         get("/api/projects") {
-            val projects = withContext(Dispatchers.IO) { scanner.scan() }
+            val snapshot = withContext(Dispatchers.IO) { scanner.snapshot() }
             val now = OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-            call.respond(ProjectsResponse(now, launcher?.available == true, projects))
+            call.respond(ProjectsResponse(now, launcher?.available == true, snapshot.projects, snapshot.analytics, apk?.describe()))
         }
         post("/api/projects/{id}/codex") {
             if (launcher == null || token == null) {
@@ -66,6 +72,15 @@ fun Application.dashboardModule(scanner: ProjectScanner, launcher: CodexLauncher
                 is CodexLauncher.Result.Failed -> HttpStatusCode.InternalServerError to "Could not start Codex: ${result.reason}"
             }
             call.respond(status, ApiError(message))
+        }
+        get(ApkFile.URL) {
+            val file = apk?.file?.takeIf { it.isFile }
+            if (file == null) {
+                call.respond(HttpStatusCode.NotFound, ApiError("The Android app has not been built on this server"))
+                return@get
+            }
+            call.response.headers.append(HttpHeaders.ContentDisposition, "attachment; filename=\"llm-manager.apk\"")
+            call.respondFile(file)
         }
         // Shape-checked by clients so a captive portal's 200 HTML is not mistaken for the server.
         get("/readyz") {

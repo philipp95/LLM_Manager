@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Four-point spark, the same mark as the web dashboard's logo, inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M54,30 L59.7,46.8 L76.5,51 L59.7,56.7 L54,73.5 L48.3,56.7 L31.5,51 L48.3,45.6 Z" />
+</vector>

@@ -28,9 +28,23 @@ Java fixture processes. They do not invoke Claude Code or access remote repos.
 
 ## Android SDK
 
-Android modules are deliberately absent. No SDK or Android Studio is required
-for this prototype. Install them and establish the Android build configuration
-when the app milestone begins.
+Only `android/app` needs the SDK; it is skipped when neither `ANDROID_HOME`,
+`ANDROID_SDK_ROOT`, nor `sdk.dir` in `local.properties` points at one, so server
+work still needs no SDK. Android Studio is not required. Command-line install
+without root (Linux):
+
+```sh
+SDK=$HOME/Android/Sdk; mkdir -p $SDK/cmdline-tools
+curl -LO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+python3 -m zipfile -e commandlinetools-linux-11076708_latest.zip /tmp/clt
+mv /tmp/clt/cmdline-tools $SDK/cmdline-tools/latest && chmod +x $SDK/cmdline-tools/latest/bin/*
+yes | $SDK/cmdline-tools/latest/bin/sdkmanager --sdk_root=$SDK --licenses
+$SDK/cmdline-tools/latest/bin/sdkmanager --sdk_root=$SDK "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+echo "sdk.dir=$SDK" >> local.properties
+```
+
+Running the license step accepts the Android SDK License Agreement. With the SDK
+configured, `check` also runs the app's lint and unit tests.
 
 ## Claude Code
 

@@ -26,6 +26,8 @@ class ApiServer : CliktCommand(name = "api") {
     private val codex by option("--codex", help = "Codex CLI to launch. Default: `codex` on PATH or ~/.local/bin/codex")
     private val codexWorktrees by option("--codex-worktrees", help = "Where Codex worktrees are created")
         .default(File(System.getProperty("user.home"), "agent-work/codex").path)
+    private val apk by option("--apk", help = "Android APK offered for download at ${ApkFile.URL}")
+        .default(File(System.getProperty("user.home"), "LLM_Manager/android/app/build/outputs/apk/release/app-release.apk").path)
     private val tokenFile by option("--token-file", help = "Access token for launching sessions; created if missing")
         .default(File(System.getProperty("user.home"), ".config/llm-manager/api-token").path)
 
@@ -39,6 +41,6 @@ class ApiServer : CliktCommand(name = "api") {
         val log = LoggerFactory.getLogger(ApiServer::class.java)
         log.info("Dashboard on http://{}:{}/ scanning {}", address.hostAddress, port, projects)
         log.info("Codex: {}. Launch token in {}", codexPath ?: "not found, launching disabled", tokenFile)
-        embeddedServer(Netty, port = port, host = address.hostAddress) { dashboardModule(scanner, launcher, token) }.start(wait = true)
+        embeddedServer(Netty, port = port, host = address.hostAddress) { dashboardModule(scanner, launcher, token, ApkFile(File(apk))) }.start(wait = true)
     }
 }

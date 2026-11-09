@@ -2,8 +2,9 @@
 
 A project for steering coding agents from an Android app, with execution on a
 separate computer. **The current implementation is a Kotlin/JVM CLI prototype**
-for Claude Code, plus a dashboard served over Tailscale that lists projects and
-can start interactive Codex sessions in tmux. There is no Android app yet.
+for Claude Code, plus a dashboard served over Tailscale that lists projects,
+charts their activity, and can start interactive Codex sessions in tmux, with a
+native Android app for the same dashboard.
 
 ## Requirements
 
@@ -99,7 +100,47 @@ npm install -g --prefix ~/.local @openai/codex
 ~/.local/bin/codex login --device-auth
 ```
 
-Options: `--codex`, `--codex-worktrees`, `--token-file`.
+Options: `--codex`, `--codex-worktrees`, `--token-file`, `--apk`.
+
+### Analytics
+
+The dashboard charts the last 30 days in the server's time zone: commits per day
+across all refs of every project, Codex sessions and agent runs started per day,
+and the busiest projects by commits. Each project card also shows a 14-day trend.
+Session counts come from worktrees that still exist; removing a worktree removes
+it from the history.
+
+## Android app
+
+`android/app` is a Kotlin/Compose client for the same API: overview, analytics,
+project cards, and Start Codex. It accepts only Tailscale addresses
+(100.64.0.0/10 or `*.ts.net`), sends the access token only to that server with
+redirects disabled, and keeps the token encrypted under an Android Keystore key,
+excluded from backups and device transfer. The server is plain HTTP inside the
+tailnet, whose WireGuard tunnel encrypts it; see
+`android/app/src/main/res/xml/network_security_config.xml`.
+
+The module is built only where an Android SDK is configured (see
+[environment setup](docs/environment-setup.md)). Machine-specific values go in the
+untracked `local.properties`:
+
+```properties
+sdk.dir=/home/you/Android/Sdk
+llmmanager.serverUrl=http://100.x.y.z:8080          # prefilled in the app
+llmmanager.signing.storeFile=/home/you/.config/llm-manager/android-release.jks
+llmmanager.signing.storePassword=...
+llmmanager.signing.keyAlias=llm-manager
+```
+
+```sh
+bash ./gradlew :android:app:assembleRelease
+```
+
+Without a signing key the release build is signed with the debug key. Keep the
+release keystore: Android only installs updates signed with the same key. When
+`android/app/build/outputs/apk/release/app-release.apk` exists, the dashboard
+shows **Get the Android app** and serves it at `/download/llm-manager.apk`; allow
+your browser to install apps when Android asks.
 
 ## Layout
 
@@ -109,7 +150,8 @@ Options: `--codex`, `--codex-worktrees`, `--token-file`.
 | `server/domain` | Run specifications and statuses |
 | `server/runner` | Claude Code harness, parsing, redaction, process and worktree lifetime |
 | `server/spike` | Local CLI demonstrating one run |
-| `server/api` | Ktor dashboard over Tailscale: project overview, Codex sessions in tmux |
+| `server/api` | Ktor dashboard over Tailscale: project overview, analytics, Codex sessions in tmux |
+| `android/app` | Compose app for the dashboard (built only when an Android SDK is configured) |
 
 Shared agent skills live in `.agents/skills/`. `AGENTS.md` and `CLAUDE.md` direct
 coding agents to that single library. Skills are loaded as needed for each task.
