@@ -9,16 +9,20 @@ a separate computer; the phone is the control interface.
 
 ## What is implemented
 
-The repository currently contains four Kotlin/JVM modules:
+The repository currently contains five Kotlin/JVM modules:
 
 - `core/protocol`: serializable IDs, usage, and a proposed WebSocket envelope.
 - `server/domain`: framework-independent run specifications and statuses.
 - `server/runner`: a Claude Code process harness, sanitized JSONL events,
   bounded process execution, and Git worktree management.
 - `server/spike`: a local CLI that demonstrates one agent run.
+- `server/api`: a read-only Ktor dashboard listing repositories and their
+  worktrees. It binds only to the Tailscale IPv4 or loopback, exposes GET routes
+  only, and does not depend on the runner.
 
-There is no Ktor server, OpenClaw plugin, database, Android module, pairing
-service, or externally reachable API. Protocol types and unused catalog entries
+There is no OpenClaw plugin, database, Android module, pairing service, or API
+that can start runs or change state. The dashboard relies on tailnet membership
+for access control; it has no authentication of its own. Protocol types and unused catalog entries
 are preparation, not implemented transport or storage.
 
 ## Current execution model

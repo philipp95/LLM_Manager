@@ -20,6 +20,7 @@ include(":core:protocol")
 include(":server:domain")
 include(":server:runner")
 include(":server:spike")   // M0: CLI harness spike, no Ktor, no Android
+include(":server:api")     // read-only dashboard over the tailnet
 
 // Android modules are deliberately absent until the Android SDK is installed.
 // See docs/environment-setup.md.

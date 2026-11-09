@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0f1115">
+<meta name="referrer" content="no-referrer">
+<title>LLM Manager</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #171a21; --line: #262b35; --text: #e6e8eb; --muted: #8b93a1;
+    --accent: #7aa2f7; --ok: #6cc28a; --warn: #e0af68; --bad: #f7768e; --agent: #bb9af7;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  header {
+    position: sticky; top: 0; z-index: 1; background: rgba(15, 17, 21, .92);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  }
+  h1 { font-size: 17px; margin: 0; flex: 1; }
+  .status { font-size: 12px; color: var(--muted); }
+  button {
+    font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 14px; min-height: 40px;
+  }
+  button:active { background: var(--line); }
+  main { padding: 12px 16px 32px; display: grid; gap: 12px; max-width: 760px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; overflow: hidden; }
+  .card h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .card h2 a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .meta + .meta { margin-top: 2px; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+  }
+  .badge.agent { color: var(--agent); border-color: rgba(187, 154, 247, .4); }
+  .badge.clean { color: var(--ok); border-color: rgba(108, 194, 138, .4); }
+  .badge.dirty { color: var(--warn); border-color: rgba(224, 175, 104, .4); }
+  .badge.bad { color: var(--bad); border-color: rgba(247, 118, 142, .4); }
+  ul { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--line); }
+  li { padding: 10px 0; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+  li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .branch { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; flex: 1; min-width: 0; }
+  .empty, .error { text-align: center; color: var(--muted); padding: 32px 16px; }
+  .error strong { color: var(--bad); display: block; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LLM Manager</h1>
+  <span class="status" id="status" aria-live="polite">Loading…</span>
+  <button id="refresh" type="button">Refresh</button>
+</header>
+<main id="projects"></main>
+<script>
+"use strict";
+(() => {
+  const list = document.getElementById("projects");
+  const status = document.getElementById("status");
+  const REFRESH_MS = 30000;
+  let inFlight = false;
+
+  // Repository data is untrusted: build nodes and set textContent, never innerHTML.
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v !== null && v !== undefined) node.setAttribute(k, v);
+    }
+    for (const c of children) {
+      if (c === null || c === undefined || c === false) continue;
+      node.append(c instanceof Node ? c : String(c));
+    }
+    return node;
+  }
+
+  const badge = (text, kind) => el("span", { class: "badge" + (kind ? " " + kind : "") }, text);
+
+  function relative(iso) {
+    if (!iso) return "no commits";
+    const seconds = Math.round((Date.now() - Date.parse(iso)) / 1000);
+    if (!Number.isFinite(seconds)) return iso;
+    const units = [["y", 31536000], ["mo", 2592000], ["d", 86400], ["h", 3600], ["m", 60]];
+    for (const [label, size] of units) {
+      if (Math.abs(seconds) >= size) return Math.floor(seconds / size) + label + " ago";
+    }
+    return "just now";
+  }
+
+  function changes(worktree) {
+    if (worktree.missing) return badge("missing", "bad");
+    if (worktree.changedFiles === null) return badge("status ?", "bad");
+    if (worktree.changedFiles === 0) return badge("clean", "clean");
+    return badge(worktree.changedFiles + (worktree.changedFiles === 1 ? " file" : " files") + " changed", "dirty");
+  }
+
+  function worktreeItem(w) {
+    const label = w.branch || ("detached @ " + (w.head ? w.head.slice(0, 8) : "?"));
+    const time = el("span", { title: w.lastCommitAt || "" }, relative(w.lastCommitAt));
+    return el("li", null,
+      el("div", { class: "row" },
+        el("span", { class: "branch" }, label),
+        w.agentRun ? badge("agent run", "agent") : null,
+        w.main ? badge("main") : null,
+        changes(w)),
+      el("div", { class: "meta" }, "Last commit ", time),
+      el("div", { class: "meta" }, w.path));
+  }
+
+  function card(p) {
+    // gitHubUrl is built server-side from a validated owner/repo; still only accept GitHub.
+    const safeUrl = typeof p.gitHubUrl === "string" && p.gitHubUrl.startsWith("https://github.com/") ? p.gitHubUrl : null;
+    const title = safeUrl ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, p.name) : el("span", null, p.name);
+    const agents = p.worktrees.filter((w) => w.agentRun).length;
+    return el("section", { class: "card" },
+      el("h2", null, title, badge(p.kind), agents ? badge(agents + (agents === 1 ? " run" : " runs"), "agent") : null),
+      el("div", { class: "meta" }, "Default branch: ", p.defaultBranch || "unknown"),
+      p.originUrl ? el("div", { class: "meta" }, p.originUrl) : null,
+      el("div", { class: "meta" }, p.path),
+      p.worktrees.length ? el("ul", null, ...p.worktrees.map(worktreeItem)) : el("div", { class: "meta" }, "No worktrees"));
+  }
+
+  function showError(title, detail) {
+    list.replaceChildren(el("div", { class: "error" }, el("strong", null, title), detail));
+    status.textContent = "Offline";
+  }
+
+  async function load() {
+    if (inFlight) return;
+    inFlight = true;
+    status.textContent = "Refreshing…";
+    try {
+      const response = await fetch("/api/projects", { cache: "no-store", headers: { Accept: "application/json" } });
+      // A captive portal answers 200 with HTML; only trust a JSON body of the expected shape.
+      const type = response.headers.get("Content-Type") || "";
+      if (!response.ok || !type.includes("application/json")) throw new Error("Unexpected response (" + response.status + ")");
+      const body = await response.json();
+      if (!body || !Array.isArray(body.projects)) throw new Error("Unexpected response shape");
+      list.replaceChildren(...(body.projects.length
+        ? body.projects.map(card)
+        : [el("div", { class: "empty" }, "No git repositories found in the configured folders.")]));
+      status.textContent = "Updated " + new Date(body.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch (error) {
+      showError("Can't reach the server", "Is Tailscale connected? " + error.message);
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  document.getElementById("refresh").addEventListener("click", load);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+  setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
+  load();
+})();
+</script>
+</body>
+</html>

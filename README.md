@@ -2,7 +2,8 @@
 
 A project for steering coding agents from an Android app, with execution on a
 separate computer. **The current implementation is a Kotlin/JVM CLI prototype**
-for Claude Code. There is no Android app or network server yet.
+for Claude Code, plus a read-only dashboard served over Tailscale. There is no
+Android app yet, and nothing reachable over the network can start or change a run.
 
 ## Requirements
 
@@ -17,12 +18,12 @@ an Android SDK, provider credentials, or a live agent.
 
 ```powershell
 # Windows PowerShell
-.\gradlew.bat check :server:spike:installDist
+.\gradlew.bat check :server:spike:installDist :server:api:installDist
 ```
 
 ```sh
 # Linux/macOS
-bash ./gradlew check :server:spike:installDist
+bash ./gradlew check :server:spike:installDist :server:api:installDist
 ```
 
 `check` runs tests and Detekt static analysis. Tests cover JSON parsing,
@@ -48,6 +49,31 @@ is removed. Run branches remain in the cache for recovery. Use `--timeout` for
 a deadline in seconds (default 1800, range 1–604800). Permission modes are
 `acceptEdits` (default), `plan`, and `bypass`.
 
+## Run the read-only dashboard
+
+```sh
+server/api/build/install/api/bin/api
+```
+
+It binds to this machine's Tailscale IPv4 (`tailscale ip -4`) on port 8080 and
+refuses to start if Tailscale is not up. It never binds to `0.0.0.0`; only a
+Tailscale address (100.64.0.0/10) or loopback is accepted via `--host`. Open
+`http://<tailscale-ip>:8080/` on a device in your tailnet; `GET /api/projects`
+returns the same data as JSON, and `GET /readyz` reports readiness.
+
+Projects are the git repositories in `~/agent-work/mirrors/*`, `~/LLM_Manager`,
+and `~/repos/*`. Override the list with `--projects` or `LLM_MANAGER_PROJECTS`
+(entries separated by `:` on Linux/macOS, `;` on Windows; a trailing `/*` means
+each child folder). Folders that do not exist are skipped. For each project the
+dashboard shows its origin (credentials stripped, linked to GitHub), default
+branch, and every worktree with branch, last commit time, and changed-file
+count. Git is queried with `GIT_OPTIONAL_LOCKS=0` so inspection never rewrites
+an index an agent is using.
+
+There is no authentication beyond tailnet membership: anyone on your tailnet can
+read paths, branch names, and remotes. Restrict it with Tailscale ACLs if the
+tailnet is shared.
+
 ## Layout
 
 | Module | Responsibility |
@@ -56,6 +82,7 @@ a deadline in seconds (default 1800, range 1–604800). Permission modes are
 | `server/domain` | Run specifications and statuses |
 | `server/runner` | Claude Code harness, parsing, redaction, process and worktree lifetime |
 | `server/spike` | Local CLI demonstrating one run |
+| `server/api` | Read-only Ktor dashboard and `/api/projects` over Tailscale |
 
 Shared agent skills live in `.agents/skills/`. `AGENTS.md` and `CLAUDE.md` direct
 coding agents to that single library. Skills are loaded as needed for each task.
