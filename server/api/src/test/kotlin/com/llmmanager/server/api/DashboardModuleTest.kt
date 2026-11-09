@@ -1,9 +1,12 @@
 package com.llmmanager.server.api
 
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.request.request
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -22,12 +25,12 @@ class DashboardModuleTest {
     @TempDir
     lateinit var directory: Path
 
-    private fun scanner(): ProjectScanner {
+    private fun scanner(sessions: SessionHost = SessionHost.None): ProjectScanner {
         val repo = directory.resolve("repos/demo").toFile().also { it.mkdirs() }
         git(repo, "init", "-b", "main")
         git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "initial")
         git(repo, "remote", "add", "origin", "https://github.com/acme/demo.git")
-        return ProjectScanner(listOf("${directory.resolve("repos")}/*"))
+        return ProjectScanner(listOf("${directory.resolve("repos")}/*"), sessions = sessions)
     }
 
     @Test
@@ -75,6 +78,35 @@ class DashboardModuleTest {
                 assertFalse(status.value in 200..299, "$method $path returned $status")
             }
         }
+    }
+
+    @Test
+    fun `starting codex requires the token and a known project`() = testApplication {
+        val token = ApiToken("t".repeat(40))
+        val sessions = object : SessionHost {
+            val started = mutableListOf<String>()
+            override fun list() = started.toSet()
+            override fun start(name: String, directory: File, command: List<String>) = started.add(name)
+        }
+        val scanner = scanner(sessions)
+        val launcher = CodexLauncher(scanner, sessions, CodexLauncher.Settings(directory.resolve("codex").toFile(), "/opt/codex"))
+        application { dashboardModule(scanner, launcher, token) }
+        val id = scanner.scan().single().id
+
+        assertEquals(HttpStatusCode.Unauthorized, client.post("/api/projects/$id/codex").status)
+        assertEquals(HttpStatusCode.Unauthorized, client.post("/api/projects/$id/codex") { header(HttpHeaders.Authorization, "Bearer wrong") }.status)
+        assertTrue(sessions.started.isEmpty())
+        val unknown = client.post("/api/projects/nope/codex") { header(HttpHeaders.Authorization, "Bearer ${"t".repeat(40)}") }
+        assertEquals(HttpStatusCode.NotFound, unknown.status)
+
+        val response = client.post("/api/projects/$id/codex") { header(HttpHeaders.Authorization, "Bearer ${"t".repeat(40)}") }
+
+        assertEquals(HttpStatusCode.Created, response.status)
+        val body = Json.decodeFromString<LaunchResponse>(response.bodyAsText())
+        assertEquals(sessions.started.single(), body.session.name)
+        val listed = Json.decodeFromString<ProjectsResponse>(client.get("/api/projects").bodyAsText())
+        assertTrue(listed.codexAvailable)
+        assertTrue(listed.projects.single().worktrees.any { it.codex?.running == true })
     }
 
     @Test

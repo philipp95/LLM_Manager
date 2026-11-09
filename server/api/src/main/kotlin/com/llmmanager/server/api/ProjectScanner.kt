@@ -1,6 +1,7 @@
 package com.llmmanager.server.api
 
 import java.io.File
+import java.security.MessageDigest
 
 /**
  * Discovers repositories under the configured [sources] and reports their worktrees.
@@ -12,15 +13,31 @@ import java.io.File
  */
 class ProjectScanner(
     private val sources: List<String>,
-    private val git: GitReader = GitReader(),
+    private val git: Git = Git(),
+    private val sessions: SessionHost = SessionHost.None,
 ) {
-    fun scan(): List<Project> = candidates()
-        .mapNotNull { dir -> git.query(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")?.trim()?.let(::File) }
-        .map { it.canonicalFile }
-        // A linked worktree resolves to its repository's common dir, so a repo is listed once.
-        .distinct()
-        .mapNotNull(::describe)
-        .sortedBy { it.name.lowercase() }
+    /** A project together with the git directory that git commands for it must run in. */
+    data class Located(val commonDir: File, val project: Project)
+
+    /** Projects ordered by most recent commit across their worktrees. */
+    fun scan(): List<Project> = discover().map { it.project }
+
+    /** Resolves a client-supplied [id] against this scan only; clients never name paths. */
+    fun locate(id: String): Located? = discover().firstOrNull { it.project.id == id }
+
+    private fun discover(): List<Located> {
+        val running = sessions.list().orEmpty()
+        return candidates()
+            .mapNotNull { dir -> git.run(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")?.trim()?.let(::File) }
+            .map { it.canonicalFile }
+            // A linked worktree resolves to its repository's common dir, so a repo is listed once.
+            .distinct()
+            .mapNotNull { dir -> describe(dir, running)?.let { Located(dir, it) } }
+            .sortedWith(
+                compareByDescending<Located> { located -> located.project.worktrees.maxOfOrNull { it.lastCommitAt.orEmpty() }.orEmpty() }
+                    .thenBy { it.project.name.lowercase() },
+            )
+    }
 
     private fun candidates(): List<File> = sources.flatMap { source ->
         val wildcard = source.endsWith("/*") || source.endsWith("\\*")
@@ -32,12 +49,13 @@ class ProjectScanner(
         }
     }
 
-    private fun describe(commonDir: File): Project? {
-        val bare = git.query(commonDir, "rev-parse", "--is-bare-repository")?.trim() == "true"
-        val worktrees = git.query(commonDir, "worktree", "list", "--porcelain")?.let { parseWorktrees(commonDir, it) } ?: return null
-        val origin = git.query(commonDir, "config", "--get", "remote.origin.url")?.trim()?.takeIf { it.isNotEmpty() }?.let(RemoteUrl::of)
+    private fun describe(commonDir: File, running: Set<String>): Project? {
+        val bare = git.run(commonDir, "rev-parse", "--is-bare-repository")?.trim() == "true"
+        val worktrees = git.run(commonDir, "worktree", "list", "--porcelain")?.let { parseWorktrees(commonDir, it, running) } ?: return null
+        val origin = git.run(commonDir, "config", "--get", "remote.origin.url")?.trim()?.takeIf { it.isNotEmpty() }?.let(RemoteUrl::of)
         val path = if (bare) commonDir else worktrees.firstOrNull { it.main }?.let { File(it.path) } ?: commonDir.parentFile
         return Project(
+            id = projectId(commonDir),
             name = origin?.gitHubSlug ?: fallbackName(path, origin, bare),
             kind = if (bare) Project.Kind.MIRROR else Project.Kind.CHECKOUT,
             path = path.path,
@@ -52,16 +70,16 @@ class ProjectScanner(
 
     private fun defaultBranch(commonDir: File, bare: Boolean): String? {
         // A bare clone's HEAD is the remote's default branch at clone time.
-        if (bare) return git.query(commonDir, "symbolic-ref", "--short", "HEAD")?.trim()
-        git.query(commonDir, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")?.trim()
+        if (bare) return git.run(commonDir, "symbolic-ref", "--short", "HEAD")?.trim()
+        git.run(commonDir, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")?.trim()
             ?.takeIf { it.isNotEmpty() }?.let { return it.removePrefix("origin/") }
         // Without origin/HEAD, fall back to the conventional names that actually exist.
         return CONVENTIONAL_DEFAULTS.firstOrNull { name ->
-            listOf("refs/remotes/origin/$name", "refs/heads/$name").any { git.query(commonDir, "rev-parse", "--verify", "--quiet", it) != null }
+            listOf("refs/remotes/origin/$name", "refs/heads/$name").any { git.run(commonDir, "rev-parse", "--verify", "--quiet", it) != null }
         }
     }
 
-    private fun parseWorktrees(commonDir: File, porcelain: String): List<Worktree> = porcelain
+    private fun parseWorktrees(commonDir: File, porcelain: String, running: Set<String>): List<Worktree> = porcelain
         .split(Regex("\n\n+"))
         .map { block -> block.lines().filter { it.isNotBlank() } }
         .filter { it.isNotEmpty() }
@@ -79,13 +97,19 @@ class ProjectScanner(
                 branch = branch,
                 head = head,
                 // Commits live in the shared object store, so this works even for a missing worktree.
-                lastCommitAt = head?.let { git.query(commonDir, "log", "-1", "--format=%cI", it) }?.trim()?.takeIf { it.isNotEmpty() },
-                changedFiles = if (present) git.query(directory, "status", "--porcelain")?.lines()?.count { it.isNotBlank() } else null,
+                lastCommitAt = head?.let { git.run(commonDir, "log", "-1", "--format=%cI", it) }?.trim()?.takeIf { it.isNotEmpty() },
+                changedFiles = if (present) git.run(directory, "status", "--porcelain")?.lines()?.count { it.isNotBlank() } else null,
                 agentRun = branch?.startsWith(AGENT_BRANCH_PREFIX) == true,
                 main = index == 0,
                 missing = !present,
+                codex = branch?.let { codexSession(it, running) },
             )
         }
+
+    private fun codexSession(branch: String, running: Set<String>): CodexSession? {
+        val name = CodexLauncher.sessionNameFor(branch) ?: return null
+        return CodexSession(name, name in running, "tmux attach -t $name")
+    }
 
     private fun fallbackName(path: File, origin: RemoteUrl?, bare: Boolean): String {
         val fromOrigin = origin?.display?.trimEnd('/')?.substringAfterLast('/')?.substringAfterLast(':')?.removeSuffix(".git")
@@ -97,6 +121,11 @@ class ProjectScanner(
 
     companion object {
         const val AGENT_BRANCH_PREFIX = "agent/"
+        private const val ID_HEX_CHARS = 16
+
+        fun projectId(commonDir: File): String =
+            MessageDigest.getInstance("SHA-256").digest(commonDir.canonicalPath.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }.take(ID_HEX_CHARS)
         private val CONVENTIONAL_DEFAULTS = listOf("main", "master", "trunk", "develop")
 
         /** The runner's mirrors, this repository, and any checkouts under `~/repos`. */

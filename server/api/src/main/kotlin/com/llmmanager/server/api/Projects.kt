@@ -7,12 +7,16 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ProjectsResponse(
     val generatedAt: String,
+    /** Whether the server found a Codex CLI to launch. */
+    val codexAvailable: Boolean,
     val projects: List<Project>,
 )
 
 /** One git repository this machine works on, identified by its common git directory. */
 @Serializable
 data class Project(
+    /** Opaque, stable handle derived from the git directory; the only way clients refer to a project. */
+    val id: String,
     val name: String,
     val kind: Kind,
     /** Bare mirror directory, or the main checkout's top level. */
@@ -52,4 +56,14 @@ data class Worktree(
     val main: Boolean,
     /** Registered with git but its directory is gone (`git worktree prune` would drop it). */
     val missing: Boolean,
+    /** Set for worktrees on a `codex/<id>` branch created by [CodexLauncher]. */
+    val codex: CodexSession? = null,
+)
+
+@Serializable
+data class CodexSession(
+    /** tmux session name. */
+    val name: String,
+    val running: Boolean,
+    val attachCommand: String,
 )

@@ -1,9 +1,7 @@
 package com.llmmanager.server.api
 
-import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetAddress
-import java.util.concurrent.TimeUnit
 
 /**
  * Where the dashboard listens. It must be reachable only over the tailnet, so the
@@ -33,17 +31,10 @@ object BindAddress {
         return first == 100 && second in 64..127
     }
 
-    private fun queryTailscale(): String? = try {
-        val process = ProcessBuilder("tailscale", "ip", "-4").redirectError(ProcessBuilder.Redirect.DISCARD).start()
-        process.outputStream.close()
-        val finished = process.waitFor(TAILSCALE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        val output = if (finished && process.exitValue() == 0) process.inputStream.bufferedReader().readText() else null
-        process.destroyForcibly()
-        output?.lineSequence()?.map { it.trim() }?.firstOrNull { it.isNotEmpty() }
-    } catch (_: IOException) {
-        null
-    }
+    private fun queryTailscale(): String? =
+        Processes.run(listOf("tailscale", "ip", "-4"), timeoutMillis = TAILSCALE_TIMEOUT_MILLIS)
+            ?.lineSequence()?.map { it.trim() }?.firstOrNull { it.isNotEmpty() }
 
-    private const val TAILSCALE_TIMEOUT_SECONDS = 5L
+    private const val TAILSCALE_TIMEOUT_MILLIS = 5_000L
     private val IPV4_LITERAL = Regex("""(?:\d{1,3}\.){3}\d{1,3}""")
 }

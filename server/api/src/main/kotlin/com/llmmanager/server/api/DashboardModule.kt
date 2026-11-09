@@ -2,6 +2,7 @@ package com.llmmanager.server.api
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.createApplicationPlugin
@@ -10,6 +11,7 @@ import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -20,10 +22,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * The read-only dashboard. Every route is a GET; there is deliberately no way to
- * start a run, write a file, or change git state through this server.
+ * The dashboard. Reads are open to the tailnet. The single state-changing route,
+ * starting a Codex session, requires [token]; there is no route that edits files,
+ * deletes worktrees, or pushes.
  */
-fun Application.dashboardModule(scanner: ProjectScanner) {
+fun Application.dashboardModule(scanner: ProjectScanner, launcher: CodexLauncher? = null, token: ApiToken? = null) {
     val page = DashboardResources.page()
 
     install(ContentNegotiation) {
@@ -37,7 +40,32 @@ fun Application.dashboardModule(scanner: ProjectScanner) {
         }
         get("/api/projects") {
             val projects = withContext(Dispatchers.IO) { scanner.scan() }
-            call.respond(ProjectsResponse(OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME), projects))
+            val now = OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+            call.respond(ProjectsResponse(now, launcher?.available == true, projects))
+        }
+        post("/api/projects/{id}/codex") {
+            if (launcher == null || token == null) {
+                call.respond(HttpStatusCode.NotFound, ApiError("Launching is disabled on this server"))
+                return@post
+            }
+            if (!token.accepts(call.request.headers[HttpHeaders.Authorization])) {
+                call.respond(HttpStatusCode.Unauthorized, ApiError("Missing or wrong access token"))
+                return@post
+            }
+            val id = call.parameters["id"].orEmpty()
+            val result = withContext(Dispatchers.IO) { launcher.launch(id) }
+            if (result is CodexLauncher.Result.Started) {
+                call.respond(HttpStatusCode.Created, LaunchResponse(result.session, result.branch, result.path))
+                return@post
+            }
+            val (status, message) = when (result) {
+                is CodexLauncher.Result.Started -> error("handled above")
+                CodexLauncher.Result.UnknownProject -> HttpStatusCode.NotFound to "Unknown project"
+                CodexLauncher.Result.CodexUnavailable -> HttpStatusCode.ServiceUnavailable to "Codex CLI is not installed on the server"
+                CodexLauncher.Result.TooManyRunning -> HttpStatusCode.TooManyRequests to "Too many Codex sessions are running; exit one first"
+                is CodexLauncher.Result.Failed -> HttpStatusCode.InternalServerError to "Could not start Codex: ${result.reason}"
+            }
+            call.respond(status, ApiError(message))
         }
         // Shape-checked by clients so a captive portal's 200 HTML is not mistaken for the server.
         get("/readyz") {
@@ -48,6 +76,12 @@ fun Application.dashboardModule(scanner: ProjectScanner) {
 
 @Serializable
 private data class Readiness(val status: String)
+
+@Serializable
+data class ApiError(val error: String)
+
+@Serializable
+data class LaunchResponse(val session: CodexSession, val branch: String, val path: String)
 
 private object DashboardResources {
     fun page(): String = checkNotNull(javaClass.getResource("/dashboard/index.html")) { "dashboard page missing" }.readText()

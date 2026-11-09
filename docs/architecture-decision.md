@@ -16,13 +16,16 @@ The repository currently contains five Kotlin/JVM modules:
 - `server/runner`: a Claude Code process harness, sanitized JSONL events,
   bounded process execution, and Git worktree management.
 - `server/spike`: a local CLI that demonstrates one agent run.
-- `server/api`: a read-only Ktor dashboard listing repositories and their
-  worktrees. It binds only to the Tailscale IPv4 or loopback, exposes GET routes
-  only, and does not depend on the runner.
+- `server/api`: a Ktor dashboard listing repositories and their worktrees, bound
+  only to the Tailscale IPv4 or loopback. Reads rely on tailnet membership. One
+  token-protected route starts an interactive Codex session in a new worktree
+  inside tmux, which the user attaches to over SSH; Codex's own sandbox and
+  approval prompts govern what it does. It does not depend on the runner.
 
-There is no OpenClaw plugin, database, Android module, pairing service, or API
-that can start runs or change state. The dashboard relies on tailnet membership
-for access control; it has no authentication of its own. Protocol types and unused catalog entries
+There is no OpenClaw plugin, database, Android module, or pairing service. The
+dashboard's static bearer token is a stopgap, not the pairing, per-device
+identity, and approval design listed below; there is no API that edits files,
+removes worktrees, or pushes. Protocol types and unused catalog entries
 are preparation, not implemented transport or storage.
 
 ## Current execution model

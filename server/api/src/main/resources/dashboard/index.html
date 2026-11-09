@@ -4,140 +4,406 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0f1115">
+<meta name="theme-color" content="#0b0d12">
 <meta name="referrer" content="no-referrer">
 <title>LLM Manager</title>
 <style>
   :root {
-    --bg: #0f1115; --card: #171a21; --line: #262b35; --text: #e6e8eb; --muted: #8b93a1;
-    --accent: #7aa2f7; --ok: #6cc28a; --warn: #e0af68; --bad: #f7768e; --agent: #bb9af7;
-    --radius: 14px;
+    --bg: #0b0d12; --surface: #12151d; --raised: #191d28; --line: #232938; --line-soft: #1c2130;
+    --text: #e8eaf0; --muted: #8a93a6; --faint: #5c6478;
+    --accent: #8b7cf6; --accent-2: #5ec4ff; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --live: #22d3ee;
+    --radius: 18px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
+    margin: 0; color: var(--text); min-height: 100vh;
+    background: radial-gradient(120% 60% at 50% -10%, rgba(139, 124, 246, .18), transparent 60%), var(--bg);
     font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    padding-bottom: env(safe-area-inset-bottom);
   }
+  svg.icon { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
   header {
-    position: sticky; top: 0; z-index: 1; background: rgba(15, 17, 21, .92);
-    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    position: sticky; top: 0; z-index: 5; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    background: rgba(11, 13, 18, .82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 12px;
   }
-  h1 { font-size: 17px; margin: 0; flex: 1; }
-  .status { font-size: 12px; color: var(--muted); }
-  button {
-    font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
-    border-radius: 10px; padding: 8px 14px; min-height: 40px;
+  .logo {
+    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 4px 18px rgba(139, 124, 246, .35);
   }
-  button:active { background: var(--line); }
-  main { padding: 12px 16px 32px; display: grid; gap: 12px; max-width: 760px; margin: 0 auto; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; overflow: hidden; }
-  .card h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .card h2 a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
-  .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-  .meta + .meta { margin-top: 2px; }
-  .badge {
-    display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
-    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+  .title { flex: 1; min-width: 0; }
+  .title h1 { margin: 0; font-size: 17px; letter-spacing: -.01em; }
+  .title .status { font-size: 12px; color: var(--muted); }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none;
+    color: var(--text); background: var(--surface); border: 1px solid var(--line); cursor: pointer;
   }
-  .badge.agent { color: var(--agent); border-color: rgba(187, 154, 247, .4); }
-  .badge.clean { color: var(--ok); border-color: rgba(108, 194, 138, .4); }
-  .badge.dirty { color: var(--warn); border-color: rgba(224, 175, 104, .4); }
-  .badge.bad { color: var(--bad); border-color: rgba(247, 118, 142, .4); }
-  ul { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--line); }
-  li { padding: 10px 0; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
-  li:last-child { border-bottom: 0; padding-bottom: 0; }
-  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .branch { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; flex: 1; min-width: 0; }
-  .empty, .error { text-align: center; color: var(--muted); padding: 32px 16px; }
-  .error strong { color: var(--bad); display: block; margin-bottom: 6px; }
+  .icon-btn:active { transform: scale(.96); }
+  .icon-btn.unlocked { color: var(--ok); }
+  .spin svg { animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  main { max-width: 760px; margin: 0 auto; padding: 14px 14px 40px; display: grid; gap: 14px; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stat { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 14px; padding: 10px 10px 9px; min-width: 0; }
+  .stat b { display: block; font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .stat.live b { color: var(--live); } .stat.agent b { color: var(--accent); } .stat.dirty b { color: var(--warn); }
+
+  .card { background: linear-gradient(180deg, var(--raised), var(--surface)); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .card-head { display: flex; gap: 12px; align-items: center; padding: 14px 14px 10px; }
+  .avatar {
+    width: 42px; height: 42px; border-radius: 12px; flex: none; display: grid; place-items: center;
+    font-weight: 700; font-size: 16px; color: #fff; text-transform: uppercase;
+  }
+  .names { flex: 1; min-width: 0; }
+  .owner { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .repo { font-size: 17px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  a.icon-btn { text-decoration: none; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted);
+    background: rgba(255, 255, 255, .03); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px;
+    max-width: 100%; min-width: 0;
+  }
+  .chip svg.icon { width: 13px; height: 13px; }
+  .chip .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip.mono .t { font-family: var(--mono); }
+  .chip.live { color: var(--live); border-color: rgba(34, 211, 238, .35); background: rgba(34, 211, 238, .08); }
+  .chip.agent { color: var(--accent); border-color: rgba(139, 124, 246, .35); background: rgba(139, 124, 246, .08); }
+  .chip.ok { color: var(--ok); border-color: rgba(74, 222, 128, .3); }
+  .chip.warn { color: var(--warn); border-color: rgba(251, 191, 36, .35); background: rgba(251, 191, 36, .07); }
+  .chip.bad { color: var(--bad); border-color: rgba(248, 113, 113, .35); }
+
+  .wts { border-top: 1px solid var(--line-soft); }
+  .wt { display: grid; grid-template-columns: 4px 1fr; gap: 0 12px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
+  .wt:last-child { border-bottom: 0; }
+  .bar { border-radius: 4px; background: var(--faint); grid-row: span 3; }
+  .bar.ok { background: var(--ok); } .bar.warn { background: var(--warn); } .bar.bad { background: var(--bad); }
+  .bar.live { background: var(--live); box-shadow: 0 0 10px var(--live); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .wt-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .branch { font-family: var(--mono); font-size: 13.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wt-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 5px; }
+  .wt-meta span { display: inline-flex; align-items: center; gap: 4px; }
+  .wt-meta svg.icon { width: 12px; height: 12px; }
+  .wt .chips { padding: 6px 0 0; }
+
+  .attach {
+    margin-top: 8px; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px;
+    background: #07090d; border: 1px solid rgba(34, 211, 238, .25); border-radius: 10px;
+  }
+  .attach code { font-family: var(--mono); font-size: 12.5px; color: var(--live); flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
+  .attach button { height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font: inherit; font-size: 12px; display: inline-flex; gap: 5px; align-items: center; }
+  .ended { margin-top: 6px; font-size: 12px; color: var(--faint); }
+
+  details { border-top: 1px solid var(--line-soft); }
+  summary { cursor: pointer; list-style: none; padding: 10px 14px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  summary::-webkit-details-marker { display: none; }
+  details[open] summary { color: var(--text); }
+  .paths { padding: 0 14px 12px; display: grid; gap: 6px; }
+  .paths div { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+  .paths div b { font-family: system-ui, sans-serif; font-weight: 600; color: var(--faint); margin-right: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+
+  .actions { padding: 12px 14px 14px; border-top: 1px solid var(--line-soft); }
+  .primary {
+    width: 100%; min-height: 46px; border: 0; border-radius: 13px; font: inherit; font-weight: 650; color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(135deg, var(--accent), #6d5df0); box-shadow: 0 6px 20px rgba(109, 93, 240, .3);
+  }
+  .primary:disabled { background: var(--raised); color: var(--faint); box-shadow: none; }
+  .primary:active:not(:disabled) { transform: scale(.985); }
+  .hint { font-size: 12px; color: var(--faint); text-align: center; margin-top: 8px; }
+
+  .empty, .error { text-align: center; color: var(--muted); padding: 40px 16px; }
+  .error strong { color: var(--bad); display: block; margin-bottom: 6px; font-size: 16px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+    max-width: calc(100% - 28px); width: max-content; padding: 11px 16px; border-radius: 12px; font-size: 14px;
+    background: #1d2333; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 20;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.bad { border-color: rgba(248, 113, 113, .5); }
+
+  dialog { background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 18px; padding: 18px; width: min(420px, calc(100% - 28px)); }
+  dialog::backdrop { background: rgba(0, 0, 0, .6); }
+  dialog h2 { margin: 0 0 6px; font-size: 17px; }
+  dialog p { margin: 0 0 12px; color: var(--muted); font-size: 13.5px; }
+  dialog code { font-family: var(--mono); font-size: 12px; color: var(--accent-2); overflow-wrap: anywhere; }
+  dialog input { width: 100%; height: 44px; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 0 12px; font: inherit; font-family: var(--mono); font-size: 13px; }
+  dialog .row { display: flex; gap: 8px; margin-top: 12px; }
+  dialog .row button { flex: 1; min-height: 42px; border-radius: 11px; font: inherit; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+  dialog .row .primary { border: 0; }
+  @media (max-width: 360px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
 <body>
 <header>
-  <h1>LLM Manager</h1>
-  <span class="status" id="status" aria-live="polite">Loading…</span>
-  <button id="refresh" type="button">Refresh</button>
+  <div class="logo" id="logo"></div>
+  <div class="title">
+    <h1>LLM Manager</h1>
+    <div class="status" id="status" aria-live="polite">Loading…</div>
+  </div>
+  <button class="icon-btn" id="lock" type="button" aria-label="Access token"></button>
+  <button class="icon-btn" id="refresh" type="button" aria-label="Refresh"></button>
 </header>
-<main id="projects"></main>
+<main>
+  <section class="stats" id="stats" aria-label="Summary"></section>
+  <div id="projects"></div>
+</main>
+<div class="toast" id="toast" role="status"></div>
+<dialog id="token-dialog">
+  <div>
+    <h2>Access token</h2>
+    <p>Starting Codex needs the server's token. On the server run<br><code>cat ~/.config/llm-manager/api-token</code><br>and paste it here. It is stored only in this browser.</p>
+    <input id="token-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste token">
+    <div class="row">
+      <button id="token-cancel" type="button">Cancel</button>
+      <button id="token-save" type="button" class="primary">Save</button>
+    </div>
+  </div>
+</dialog>
 <script>
 "use strict";
 (() => {
-  const list = document.getElementById("projects");
-  const status = document.getElementById("status");
+  const $ = (id) => document.getElementById(id);
+  const list = $("projects"), stats = $("stats"), status = $("status"), toastEl = $("toast");
+  const TOKEN_KEY = "llm-manager.token";
   const REFRESH_MS = 30000;
-  let inFlight = false;
+  let inFlight = false, codexAvailable = false, toastTimer = 0;
 
-  // Repository data is untrusted: build nodes and set textContent, never innerHTML.
+  const ICONS = {
+    refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
+    link: "M14 3h7v7M10 14 21 3M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5",
+    branch: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9",
+    terminal: "M4 17l6-6-6-6M12 19h8",
+    lock: "M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z",
+    unlock: "M7 11V7a5 5 0 0 1 9.9-1M5 11h14v10H5z",
+    copy: "M9 9h11v11H9zM5 15H4V4h11v1",
+    play: "M7 4l13 8-13 8z",
+    box: "M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8",
+    folder: "M3 6h6l2 2h10v11H3z",
+    clock: "M12 7v5l3 2M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z",
+    check: "M5 12l5 5L20 7",
+    edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
+    bot: "M12 8V4M8 4h8M5 8h14v11H5zM9 13h.01M15 13h.01",
+    alert: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z",
+    spark: "M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z",
+  };
+
+  function icon(name) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("class", "icon");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", ICONS[name]);
+    svg.append(path);
+    return svg;
+  }
+
+  // Repository data is untrusted: build nodes and set text, never innerHTML.
   function el(tag, attrs, ...children) {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs || {})) {
-      if (v !== null && v !== undefined) node.setAttribute(k, v);
+      if (v === null || v === undefined || v === false) continue;
+      if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v === true ? "" : v);
     }
-    for (const c of children) {
+    for (const c of children.flat()) {
       if (c === null || c === undefined || c === false) continue;
       node.append(c instanceof Node ? c : String(c));
     }
     return node;
   }
 
-  const badge = (text, kind) => el("span", { class: "badge" + (kind ? " " + kind : "") }, text);
+  const chip = (text, kind, iconName, mono) =>
+    el("span", { class: ["chip", kind, mono && "mono"].filter(Boolean).join(" ") }, iconName && icon(iconName), el("span", { class: "t" }, text));
 
   function relative(iso) {
     if (!iso) return "no commits";
     const seconds = Math.round((Date.now() - Date.parse(iso)) / 1000);
     if (!Number.isFinite(seconds)) return iso;
-    const units = [["y", 31536000], ["mo", 2592000], ["d", 86400], ["h", 3600], ["m", 60]];
-    for (const [label, size] of units) {
+    for (const [label, size] of [["y", 31536000], ["mo", 2592000], ["d", 86400], ["h", 3600], ["m", 60]]) {
       if (Math.abs(seconds) >= size) return Math.floor(seconds / size) + label + " ago";
     }
     return "just now";
   }
 
-  function changes(worktree) {
-    if (worktree.missing) return badge("missing", "bad");
-    if (worktree.changedFiles === null) return badge("status ?", "bad");
-    if (worktree.changedFiles === 0) return badge("clean", "clean");
-    return badge(worktree.changedFiles + (worktree.changedFiles === 1 ? " file" : " files") + " changed", "dirty");
+  function hue(text) {
+    let h = 0;
+    for (const ch of text) h = (h * 31 + ch.codePointAt(0)) % 360;
+    return h;
   }
 
-  function worktreeItem(w) {
+  function toast(message, bad) {
+    toastEl.textContent = message;
+    toastEl.className = "toast show" + (bad ? " bad" : "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.className = "toast"; }, 3500);
+  }
+
+  function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (_) { return ""; } }
+  function setToken(value) { try { value ? localStorage.setItem(TOKEN_KEY, value) : localStorage.removeItem(TOKEN_KEY); } catch (_) { /* private mode */ } }
+
+  function renderLock() {
+    const btn = $("lock");
+    const has = !!getToken();
+    btn.replaceChildren(icon(has ? "unlock" : "lock"));
+    btn.classList.toggle("unlocked", has);
+    btn.setAttribute("aria-label", has ? "Access token saved" : "Set access token");
+  }
+
+  function askToken() {
+    return new Promise((resolve) => {
+      const dialog = $("token-dialog"), input = $("token-input");
+      input.value = "";
+      dialog.addEventListener("close", () => {
+        if (dialog.returnValue === "save" && input.value.trim()) setToken(input.value.trim());
+        renderLock();
+        resolve(!!getToken() && dialog.returnValue === "save");
+      }, { once: true });
+      dialog.showModal();
+      input.focus();
+    });
+  }
+
+  // navigator.clipboard needs a secure context, which plain http over the tailnet is not.
+  function copy(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(() => true, () => false);
+    const area = el("textarea", { readonly: true, style: "position:fixed;opacity:0" }, text);
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (_) { ok = false; }
+    area.remove();
+    return Promise.resolve(ok);
+  }
+
+  function worktreeState(w) {
+    if (w.codex && w.codex.running) return "live";
+    if (w.missing || w.changedFiles === null) return "bad";
+    return w.changedFiles === 0 ? "ok" : "warn";
+  }
+
+  function changesChip(w) {
+    if (w.missing) return chip("missing", "bad", "alert");
+    if (w.changedFiles === null) return chip("status unknown", "bad", "alert");
+    if (w.changedFiles === 0) return chip("clean", "ok", "check");
+    return chip(w.changedFiles + (w.changedFiles === 1 ? " change" : " changes"), "warn", "edit");
+  }
+
+  function attachBox(session) {
+    if (!session.running) return el("div", { class: "ended" }, "Codex session ended · worktree kept");
+    const button = el("button", { type: "button", onclick: async () => {
+      const ok = await copy(session.attachCommand);
+      toast(ok ? "Copied — paste it in your SSH app" : "Copy failed; long-press the command to select it", !ok);
+    } }, icon("copy"), "Copy");
+    return el("div", { class: "attach" }, el("code", null, session.attachCommand), button);
+  }
+
+  function worktreeRow(w) {
     const label = w.branch || ("detached @ " + (w.head ? w.head.slice(0, 8) : "?"));
-    const time = el("span", { title: w.lastCommitAt || "" }, relative(w.lastCommitAt));
-    return el("li", null,
-      el("div", { class: "row" },
-        el("span", { class: "branch" }, label),
-        w.agentRun ? badge("agent run", "agent") : null,
-        w.main ? badge("main") : null,
-        changes(w)),
-      el("div", { class: "meta" }, "Last commit ", time),
-      el("div", { class: "meta" }, w.path));
+    const tags = [
+      w.codex ? chip(w.codex.running ? "Codex live" : "Codex", w.codex.running ? "live" : null, "spark") : null,
+      w.agentRun ? chip("Agent run", "agent", "bot") : null,
+      w.main ? chip("main worktree", null, "folder") : null,
+    ].filter(Boolean);
+    return el("div", { class: "wt" },
+      el("div", { class: "bar " + worktreeState(w) }),
+      el("div", { class: "wt-top" }, el("span", { class: "branch", title: label }, label), changesChip(w)),
+      el("div", null,
+        el("div", { class: "wt-meta" },
+          el("span", { title: w.lastCommitAt || "" }, icon("clock"), relative(w.lastCommitAt)),
+          w.head ? el("span", null, icon("branch"), w.head.slice(0, 7)) : null),
+        tags.length ? el("div", { class: "chips" }, tags) : null,
+        w.codex ? attachBox(w.codex) : null));
+  }
+
+  function lastActivity(p) {
+    return p.worktrees.map((w) => w.lastCommitAt).filter(Boolean).sort().pop() || null;
+  }
+
+  async function startCodex(project, button) {
+    if (!confirm("Start Codex on " + project.name + " in a new worktree?")) return;
+    if (!getToken() && !(await askToken())) return;
+    button.disabled = true;
+    try {
+      let response = await post(project.id);
+      if (response.status === 401 && await askToken()) response = await post(project.id);
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 201) {
+        toast("Codex started · " + body.session.attachCommand);
+        await load();
+      } else {
+        toast(body.error || ("Failed (" + response.status + ")"), true);
+      }
+    } catch (error) {
+      toast("Can't reach the server: " + error.message, true);
+    } finally {
+      button.disabled = !codexAvailable;
+    }
+  }
+
+  function post(id) {
+    return fetch("/api/projects/" + encodeURIComponent(id) + "/codex", {
+      method: "POST", cache: "no-store", headers: { Authorization: "Bearer " + getToken(), Accept: "application/json" },
+    });
   }
 
   function card(p) {
+    const parts = p.name.split("/");
+    const repo = parts.pop();
+    const owner = parts.join("/");
+    const h = hue(p.name);
     // gitHubUrl is built server-side from a validated owner/repo; still only accept GitHub.
     const safeUrl = typeof p.gitHubUrl === "string" && p.gitHubUrl.startsWith("https://github.com/") ? p.gitHubUrl : null;
-    const title = safeUrl ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, p.name) : el("span", null, p.name);
     const agents = p.worktrees.filter((w) => w.agentRun).length;
+    const live = p.worktrees.filter((w) => w.codex && w.codex.running).length;
+    const button = el("button", { class: "primary", type: "button", disabled: !codexAvailable }, icon("terminal"), "Start Codex");
+    button.addEventListener("click", () => startCodex(p, button));
     return el("section", { class: "card" },
-      el("h2", null, title, badge(p.kind), agents ? badge(agents + (agents === 1 ? " run" : " runs"), "agent") : null),
-      el("div", { class: "meta" }, "Default branch: ", p.defaultBranch || "unknown"),
-      p.originUrl ? el("div", { class: "meta" }, p.originUrl) : null,
-      el("div", { class: "meta" }, p.path),
-      p.worktrees.length ? el("ul", null, ...p.worktrees.map(worktreeItem)) : el("div", { class: "meta" }, "No worktrees"));
+      el("div", { class: "card-head" },
+        el("div", { class: "avatar", style: `background: linear-gradient(135deg, hsl(${h} 70% 55%), hsl(${(h + 40) % 360} 70% 42%))` }, repo.slice(0, 2)),
+        el("div", { class: "names" }, owner ? el("div", { class: "owner" }, owner) : null, el("div", { class: "repo", title: p.name }, repo)),
+        safeUrl ? el("a", { class: "icon-btn", href: safeUrl, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open on GitHub" }, icon("link")) : null),
+      el("div", { class: "chips" },
+        chip(p.defaultBranch || "unknown", null, "branch", true),
+        chip(p.kind === "mirror" ? "mirror" : "checkout", null, p.kind === "mirror" ? "box" : "folder"),
+        chip(relative(lastActivity(p)), null, "clock"),
+        live ? chip(live + " live", "live", "spark") : null,
+        agents ? chip(agents + (agents === 1 ? " run" : " runs"), "agent", "bot") : null),
+      p.worktrees.length ? el("div", { class: "wts" }, p.worktrees.map(worktreeRow)) : null,
+      el("details", null,
+        el("summary", null, icon("folder"), "Paths & origin"),
+        el("div", { class: "paths" },
+          p.originUrl ? el("div", null, el("b", null, "origin"), p.originUrl) : null,
+          el("div", null, el("b", null, "repo"), p.path),
+          p.worktrees.map((w) => el("div", null, el("b", null, w.branch || "detached"), w.path)))),
+      el("div", { class: "actions" }, button,
+        codexAvailable ? null : el("div", { class: "hint" }, "Codex CLI not found on the server")));
   }
 
-  function showError(title, detail) {
-    list.replaceChildren(el("div", { class: "error" }, el("strong", null, title), detail));
-    status.textContent = "Offline";
+  function renderStats(projects) {
+    const wts = projects.flatMap((p) => p.worktrees);
+    const tile = (n, label, kind) => el("div", { class: "stat " + (kind || "") }, el("b", null, n), el("span", null, label));
+    stats.replaceChildren(
+      tile(projects.length, "Projects"),
+      tile(wts.filter((w) => w.codex && w.codex.running).length, "Codex live", "live"),
+      tile(wts.filter((w) => w.agentRun).length, "Agent runs", "agent"),
+      tile(wts.filter((w) => w.changedFiles > 0).length, "Uncommitted", "dirty"));
   }
 
   async function load() {
     if (inFlight) return;
     inFlight = true;
-    status.textContent = "Refreshing…";
+    $("refresh").classList.add("spin");
     try {
       const response = await fetch("/api/projects", { cache: "no-store", headers: { Accept: "application/json" } });
       // A captive portal answers 200 with HTML; only trust a JSON body of the expected shape.
@@ -145,18 +411,33 @@
       if (!response.ok || !type.includes("application/json")) throw new Error("Unexpected response (" + response.status + ")");
       const body = await response.json();
       if (!body || !Array.isArray(body.projects)) throw new Error("Unexpected response shape");
+      codexAvailable = body.codexAvailable === true;
+      renderStats(body.projects);
       list.replaceChildren(...(body.projects.length
         ? body.projects.map(card)
         : [el("div", { class: "empty" }, "No git repositories found in the configured folders.")]));
       status.textContent = "Updated " + new Date(body.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     } catch (error) {
-      showError("Can't reach the server", "Is Tailscale connected? " + error.message);
+      stats.replaceChildren();
+      list.replaceChildren(el("div", { class: "error" }, el("strong", null, "Can't reach the server"), "Is Tailscale connected? " + error.message));
+      status.textContent = "Offline";
     } finally {
       inFlight = false;
+      $("refresh").classList.remove("spin");
     }
   }
 
-  document.getElementById("refresh").addEventListener("click", load);
+  $("token-cancel").addEventListener("click", () => $("token-dialog").close("cancel"));
+  $("token-save").addEventListener("click", () => $("token-dialog").close("save"));
+  $("token-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("token-dialog").close("save"); });
+  $("logo").append(icon("spark"));
+  $("refresh").append(icon("refresh"));
+  $("refresh").addEventListener("click", load);
+  $("lock").addEventListener("click", async () => {
+    if (getToken() && confirm("Forget the saved access token on this device?")) { setToken(""); renderLock(); toast("Token removed"); return; }
+    if (!getToken() && await askToken()) toast("Token saved");
+  });
+  renderLock();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
   setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
   load();

@@ -2,8 +2,8 @@
 
 A project for steering coding agents from an Android app, with execution on a
 separate computer. **The current implementation is a Kotlin/JVM CLI prototype**
-for Claude Code, plus a read-only dashboard served over Tailscale. There is no
-Android app yet, and nothing reachable over the network can start or change a run.
+for Claude Code, plus a dashboard served over Tailscale that lists projects and
+can start interactive Codex sessions in tmux. There is no Android app yet.
 
 ## Requirements
 
@@ -49,10 +49,10 @@ is removed. Run branches remain in the cache for recovery. Use `--timeout` for
 a deadline in seconds (default 1800, range 1–604800). Permission modes are
 `acceptEdits` (default), `plan`, and `bypass`.
 
-## Run the read-only dashboard
+## Run the dashboard
 
 ```sh
-server/api/build/install/api/bin/api
+tmux new-session -d -s api ~/LLM_Manager/server/api/build/install/api/bin/api
 ```
 
 It binds to this machine's Tailscale IPv4 (`tailscale ip -4`) on port 8080 and
@@ -70,9 +70,36 @@ branch, and every worktree with branch, last commit time, and changed-file
 count. Git is queried with `GIT_OPTIONAL_LOCKS=0` so inspection never rewrites
 an index an agent is using.
 
-There is no authentication beyond tailnet membership: anyone on your tailnet can
-read paths, branch names, and remotes. Restrict it with Tailscale ACLs if the
-tailnet is shared.
+Reading needs only tailnet membership: anyone on your tailnet can see paths,
+branch names, and remotes. Restrict it with Tailscale ACLs if the tailnet is
+shared.
+
+### Codex sessions
+
+**Start Codex** on a project creates a new worktree on a `codex/<project>-<time>`
+branch under `~/agent-work/codex/` and runs Codex there in a detached tmux
+session named after the branch. Attach from an SSH session with the
+`tmux attach -t codex-…` command shown on the card; detach with `Ctrl-b d`.
+Checkouts start from the main worktree's current commit (unpushed work
+included); mirrors start from the remote default branch. Existing checkouts and
+agent worktrees are never modified, and nothing is pushed.
+
+Codex is launched with `--sandbox workspace-write --ask-for-approval on-request`
+regardless of `~/.codex/config.toml`. At most four `codex-*` sessions run at
+once. Ending Codex ends the tmux session; the worktree and branch are kept for
+review and are removed by hand (`git worktree remove`, `git branch -D`).
+
+Starting a session requires an access token, created on first start in
+`~/.config/llm-manager/api-token` (mode 600). Paste it once into the page via the
+lock button; it is stored only in that browser. Install and sign in to Codex on
+the server first:
+
+```sh
+npm install -g --prefix ~/.local @openai/codex
+~/.local/bin/codex login --device-auth
+```
+
+Options: `--codex`, `--codex-worktrees`, `--token-file`.
 
 ## Layout
 
@@ -82,7 +109,7 @@ tailnet is shared.
 | `server/domain` | Run specifications and statuses |
 | `server/runner` | Claude Code harness, parsing, redaction, process and worktree lifetime |
 | `server/spike` | Local CLI demonstrating one run |
-| `server/api` | Read-only Ktor dashboard and `/api/projects` over Tailscale |
+| `server/api` | Ktor dashboard over Tailscale: project overview, Codex sessions in tmux |
 
 Shared agent skills live in `.agents/skills/`. `AGENTS.md` and `CLAUDE.md` direct
 coding agents to that single library. Skills are loaded as needed for each task.
