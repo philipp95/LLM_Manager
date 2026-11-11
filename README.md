@@ -71,11 +71,11 @@ rebinding); add names with `--allowed-host`. `GET /readyz` reports readiness.
 Projects are the git repositories in `~/agent-work/mirrors/*`, `~/LLM_Manager`,
 and `~/repos/*`. Override the list with `--projects` or `LLM_MANAGER_PROJECTS`
 (entries separated by `:` on Linux/macOS, `;` on Windows; a trailing `/*` means
-each child folder). Folders that do not exist are skipped. For each project the
-dashboard shows its origin (credentials stripped, linked to GitHub), default
-branch, and every worktree with branch, last commit time, and changed-file
-count. Git is queried with `GIT_OPTIONAL_LOCKS=0` so inspection never rewrites
-an index an agent is using.
+each child folder). Folders that do not exist are skipped. Git is queried with
+`GIT_OPTIONAL_LOCKS=0` so inspection never rewrites an index an agent is using.
+The start script launches git, tmux and agents with `fork()` rather than the
+JDK's spawn helper, so an in-place JDK package upgrade does not leave a running
+server unable to start them.
 
 Everything under `/api` needs the access token, created on first start in
 `~/.config/llm-manager/api-token` (mode 600); paste it once into the page (lock
@@ -83,6 +83,45 @@ icon) or the app. Only the page itself, `/readyz` and the APK download are open.
 Restrict port 8080 to your own devices with Tailscale ACLs as well. The full
 security model, including the admin steps it relies on, is in
 [docs/security.md](docs/security.md).
+
+### Repositories, chat and pull requests
+
+The **Repos** tab is a grid of tiles, one per repository: the forge (GitHub,
+GitLab or Azure DevOps), the name, the first sentence of the README on the
+default branch, the latest merged pull request (number, author, the agent that
+made it and its CI/CD result), the past week's merged and open pull requests,
+and a link to the repository on its forge.
+
+Tap a tile for the repository's screen:
+
+- **Chat**: pick one of the agents installed on the server (Claude, Codex with
+  your ChatGPT plan, Gemini), write what you want, and send. Each message
+  becomes a run on its own new branch. Tick **Cross-review first** and a second
+  agent reviews the commit before the first addresses the review. When the work
+  is done, the server pushes the branch and opens a pull request into the
+  default branch (GitLab: a merge request); the answer links to it. A run that
+  changed nothing opens nothing. Repositories without a forge remote keep the
+  work on the local branch.
+- **Branch history**: the pull requests most recently updated on the forge,
+  with state, branch, author, agent and CI/CD.
+- **Branches**: the worktrees, with push, pull request and merge controls, and
+  Codex in tmux for hands-on work.
+
+Pull request activity is read on the server, cached for five minutes and
+refreshed in the background, so pages never wait on a forge: GitHub through one
+GraphQL query via `gh`, GitLab and Azure DevOps through their REST APIs with the
+tokens below. The agent is this server's own record of the branch, else the
+branch prefix (`claude/`, `codex/`, `gemini/`), else markers agents leave
+(`Co-Authored-By: Claude`, "Generated with Claude Code", Codex and Gemini
+bots). CI/CD is the check status of the merge commit (GitHub), the latest
+merged merge request's pipeline (GitLab) or the pull request's statuses
+(Azure DevOps). When a forge cannot be read, the tile keeps its last data and
+the repository screen says why.
+
+Forge and agent marks are from [Simple Icons](https://simpleicons.org) (CC0);
+the names and logos are trademarks of their owners and only identify the
+service. Simple Icons has no Azure DevOps or OpenAI mark, so those show "ADO"
+and a terminal prompt.
 
 ### Codex sessions
 
@@ -200,16 +239,16 @@ credentials, the card says what is missing.
 
 ### Analytics
 
-The dashboard charts the last 30 days in the server's time zone: commits per day
-across all refs of every project, Codex sessions and agent runs started per day,
-and the busiest projects by commits. Each project card also shows a 14-day trend.
-Session counts come from worktrees that still exist; removing a worktree removes
-it from the history.
+The **Usage** tab charts the last 30 days in the server's time zone: commits per
+day across all refs of every repository, Codex sessions and agent runs started
+per day, and the busiest repositories by commits. Session counts come from
+worktrees that still exist; removing a worktree removes it from the history.
 
 ## Android app
 
-`android/app` is a Kotlin/Compose client for the same API: overview, analytics,
-project cards, and Start Codex. It accepts only Tailscale addresses
+`android/app` is a Kotlin/Compose client for the same API, with the same look:
+the repository grid, each repository's chat, branch history and branches, the
+schedule, and usage with analytics. It accepts only Tailscale addresses
 (100.64.0.0/10 or `*.ts.net`), sends the access token only to that server with
 redirects disabled, and keeps the token encrypted under an Android Keystore key,
 excluded from backups and device transfer. The server is plain HTTP inside the
@@ -246,7 +285,7 @@ your browser to install apps when Android asks.
 | `server/domain` | Run specifications and statuses |
 | `server/runner` | Claude Code harness, parsing, redaction, process and worktree lifetime |
 | `server/spike` | Local CLI demonstrating one run |
-| `server/api` | Ktor dashboard over Tailscale: overview, analytics, Codex sessions, scheduled runs, usage |
+| `server/api` | Ktor dashboard over Tailscale: repositories and pull request insights, chat to pull request, Codex sessions, scheduled runs, usage |
 | `android/app` | Compose app for the dashboard (built only when an Android SDK is configured) |
 
 Shared agent skills live in `.agents/skills/`. `AGENTS.md` and `CLAUDE.md` direct

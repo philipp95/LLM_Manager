@@ -1,8 +1,6 @@
 package com.llmmanager.server.api
 
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -26,7 +24,7 @@ data class ApiOk(val status: String = "ok")
 data class RunLog(val run: Run, val activity: List<ActivityLine>)
 
 /** Usage, schedules, run logs and publishing. Every route needs the access token. */
-fun Route.scheduleRoutes(api: ScheduleApi, token: ApiToken, onChange: () -> Unit = {}) {
+fun Route.scheduleRoutes(api: ScheduleApi, token: ApiToken, onChange: (projectId: String) -> Unit = {}) {
     val usage = TtlCache(USAGE_TTL_MS) { api.usage.read() }
     get("/api/usage") {
         if (!call.authorized(token)) return@get
@@ -40,7 +38,7 @@ fun Route.scheduleRoutes(api: ScheduleApi, token: ApiToken, onChange: () -> Unit
 private const val USAGE_TTL_MS = 10_000L
 
 /** Issue #1: push an agent branch, open its pull request, merge it through the forge. */
-private fun Route.branchRoutes(branches: BranchService, token: ApiToken, onChange: () -> Unit) {
+private fun Route.branchRoutes(branches: BranchService, token: ApiToken, onChange: (projectId: String) -> Unit) {
     post("/api/projects/{id}/branches/{action}") {
         if (!call.authorized(token)) return@post
         val branch = runCatching { call.receive<BranchRequest>() }.getOrNull()?.branch
@@ -56,7 +54,7 @@ private fun Route.branchRoutes(branches: BranchService, token: ApiToken, onChang
                 }
             }
         }
-        onChange()
+        onChange(id)
         when (outcome) {
             is BranchService.Outcome.Ok -> call.respond(BranchResult(outcome.message, outcome.record))
             is BranchService.Outcome.Invalid -> call.respond(HttpStatusCode.BadRequest, ApiError(outcome.reason))

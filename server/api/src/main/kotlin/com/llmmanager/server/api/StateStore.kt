@@ -22,7 +22,6 @@ class StateStore(val dir: File) {
     private var jobs: List<Job> = jobsFile.load()
     private var runs: List<Run> = runsFile.load()
 
-
     @Synchronized fun jobs(): List<Job> = jobs
 
     @Synchronized fun runs(): List<Run> = runs
@@ -88,3 +87,9 @@ class JsonListFile<T>(private val file: File, private val serializer: KSerialize
         Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 }
+
+/**
+ * Applies [change] to the stored run in one step, under the store's own lock, so a concurrent
+ * writer cannot lose the update; null when the run is gone.
+ */
+fun StateStore.updateRun(id: String, change: (Run) -> Run): Run? = synchronized(this) { run(id)?.let(change)?.also(::putRun) }

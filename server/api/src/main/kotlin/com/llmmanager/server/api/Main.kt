@@ -67,13 +67,16 @@ class ApiServer : CliktCommand(name = "api") {
             CodexLauncher.Settings(File(codexWorktrees), codexPath, scriptDir = File(state, "sessions"), sandbox = sandbox),
         )
         val workspace = Workspace(scanner, sessions, commands, sandbox = sandbox)
-        val schedule = schedule(state, workspace)
+        val credentials = ForgeCredentials(File(tokenFile).absoluteFile.parentFile, CodexLauncher.findBinary("gh"))
+        val store = StateStore(state).also { it.pruneRunDirs() }
+        val insights = InsightsService(InsightSources(credentials), agentForBranch = { projectId, branch -> agentOf(store, projectId, branch) })
+        val schedule = schedule(store, workspace, credentials, onPublished = { insights.invalidate(it.projectId) })
         val hosts = BindAddress.allowedHosts(address, port, BindAddress.tailscaleNames(), allowedHost)
         val log = LoggerFactory.getLogger(ApiServer::class.java)
         log.info("Dashboard on http://{}:{}/ scanning {}", address.hostAddress, port, projects)
         log.info("Codex: {}. Token in {}. State in {}. Answering for {}", codexPath ?: "not found", tokenFile, stateDir, hosts)
         embeddedServer(Netty, port = port, host = address.hostAddress) {
-            dashboardModule(scanner, token, DashboardServices(launcher, ApkFile(File(apk)), schedule), allowedHosts = hosts)
+            dashboardModule(scanner, token, DashboardServices(launcher, ApkFile(File(apk)), schedule, insights), allowedHosts = hosts)
         }.start(wait = true)
     }
 
@@ -94,14 +97,18 @@ class ApiServer : CliktCommand(name = "api") {
     }
 
     /** Scheduling and publishing: persistent jobs and runs, ticking in the background for the server's lifetime. */
-    private fun schedule(state: File, workspace: Workspace): ScheduleApi {
-        val store = StateStore(state).also { it.pruneRunDirs() }
-        val usage = UsageReader(File(System.getProperty("user.home")), state)
+    private fun schedule(store: StateStore, workspace: Workspace, credentials: ForgeCredentials, onPublished: (Run) -> Unit): ScheduleApi {
+        val usage = UsageReader(File(System.getProperty("user.home")), store.dir)
         val engine = RunEngine(store, workspace, File(runWorktrees))
-        val scheduler = Scheduler(store, engine, workspace.sessions, limitResetHint = usage::resetHint)
+        val branches = BranchService(store, BranchStore(store.dir), workspace, ForgeClient(credentials), credentials)
+        val publisher = { run: Run -> branches.publish(run).also { onPublished(run) } }
+        val scheduler = Scheduler(store, engine, workspace.sessions, hooks = FollowUpHooks(usage::resetHint, publisher))
         scheduler.launch(CoroutineScope(SupervisorJob()))
-        val credentials = ForgeCredentials(File(tokenFile).absoluteFile.parentFile, CodexLauncher.findBinary("gh"))
-        val branches = BranchService(store, BranchStore(state), workspace, ForgeClient(credentials), credentials)
         return ScheduleApi(JobService(store, scheduler, workspace, SessionCatalog()), store, usage, branches)
     }
+
+    /** The agent this server ran on [branch]: the first run's, or Codex for an interactive `codex/` session. */
+    private fun agentOf(store: StateStore, projectId: String, branch: String): Agent? =
+        store.runs().filter { it.projectId == projectId && it.branch == branch }.minByOrNull { it.createdAt }?.agent
+            ?: Agent.CODEX.takeIf { branch.startsWith(CodexLauncher.BRANCH_PREFIX) }
 }

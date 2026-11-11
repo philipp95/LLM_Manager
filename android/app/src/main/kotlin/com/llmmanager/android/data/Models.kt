@@ -17,6 +17,8 @@ data class ProjectsResponse(
 data class Project(
     val id: String,
     val name: String,
+    /** First sentence of the README on the default branch. */
+    val description: String? = null,
     val kind: String = "checkout",
     val path: String = "",
     val originUrl: String? = null,
@@ -27,6 +29,39 @@ data class Project(
     val defaultBranch: String? = null,
     val worktrees: List<Worktree> = emptyList(),
     val commitsPerDay: List<Int> = emptyList(),
+    /** Pull request activity on the forge, once the server has read it. */
+    val insights: RepoInsights? = null,
+)
+
+/** A pull request (GitLab: merge request) as the dashboard shows it. */
+@Serializable
+data class PullRequestSummary(
+    val number: Long,
+    val title: String = "",
+    val url: String = "",
+    /** open, merged or closed. */
+    val state: String = "open",
+    val author: String? = null,
+    val branch: String? = null,
+    val createdAt: String? = null,
+    val mergedAt: String? = null,
+    /** claude, codex or gemini when the server could tell which agent made it. */
+    val agent: String? = null,
+    /** success, failure or pending; null when the repository has no CI/CD. */
+    val ci: String? = null,
+)
+
+@Serializable
+data class RepoInsights(
+    val latestMerged: PullRequestSummary? = null,
+    val mergedLastWeek: Int = 0,
+    val openCount: Int = 0,
+    /** Most recently updated pull requests, newest first. */
+    val recent: List<PullRequestSummary> = emptyList(),
+    /** Set once the forge has been read successfully. */
+    val fetchedAt: String? = null,
+    /** Why the forge could not be read; earlier data is kept. */
+    val error: String? = null,
 )
 
 @Serializable
@@ -145,6 +180,8 @@ data class Job(
     val enabled: Boolean = true,
     val done: Boolean = false,
     val lastFiredAt: String? = null,
+    /** Push the branch and open a pull request when the work is done. */
+    val publish: Boolean = false,
 )
 
 @Serializable
@@ -153,6 +190,8 @@ data class Schedule(val at: String? = null, val time: String? = null, val days: 
 @Serializable
 data class Run(
     val id: String,
+    val jobId: String? = null,
+    val projectId: String = "",
     val projectName: String = "",
     val agent: String,
     val stage: String,
@@ -162,12 +201,17 @@ data class Run(
     val pipelineId: String? = null,
     val createdAt: String,
     val startedAt: String? = null,
+    val finishedAt: String? = null,
     val summary: String? = null,
     val error: String? = null,
     val notBefore: String? = null,
     val resumeScheduled: Boolean = false,
     val tmuxSession: String? = null,
-)
+    /** What publishing did when the work was done: the pull request it opened, or why not. */
+    val publishNote: String? = null,
+) {
+    val active: Boolean get() = status == "queued" || status == "running"
+}
 
 @Serializable
 data class ResumeTarget(val projectId: String, val projectName: String, val branch: String? = null, val session: ResumableSession)
@@ -188,6 +232,8 @@ data class JobRequest(
     val resume: SessionRef? = null,
     val resumeOnLimitReset: Boolean = true,
     val reviewer: String? = null,
+    /** Push the branch and open a pull request when the work is done. */
+    val publish: Boolean = false,
 )
 
 @Serializable

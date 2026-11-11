@@ -6,9 +6,13 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicLong
+import org.slf4j.LoggerFactory
 
 /** Runs short-lived helper commands (git, tmux, gh) with a deadline and bounded output. */
 object Processes {
+    private val log = LoggerFactory.getLogger(Processes::class.java)
+    private val lastStartFailure = AtomicLong(0)
     /** Outcome of [exec]; exitCode is -1 when the command could not start or timed out. */
     data class Exec(val exitCode: Int, val stdout: String, val stderr: String) {
         val ok: Boolean get() = exitCode == 0
@@ -31,6 +35,7 @@ object Processes {
                 it.environment().putAll(environment)
             }.start()
         } catch (e: IOException) {
+            startFailed(command, e)
             return Exec(-1, "", e.message ?: "could not start ${command.first()}")
         }
         process.outputStream.close()
@@ -57,7 +62,8 @@ object Processes {
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .also { it.environment().putAll(environment) }
                 .start()
-        } catch (_: IOException) {
+        } catch (e: IOException) {
+            startFailed(command, e)
             return null
         }
         process.outputStream.close()
@@ -89,6 +95,14 @@ object Processes {
         return text.toString()
     }
 
+    /** Logged at most once a minute: a server that cannot start git shows no repositories at all. */
+    private fun startFailed(command: List<String>, e: IOException) {
+        val now = System.currentTimeMillis()
+        val last = lastStartFailure.get()
+        if (now - last >= MINUTE_MS && lastStartFailure.compareAndSet(last, now)) log.warn("Could not start {}: {}", command.first(), e.message)
+    }
+
+    private const val MINUTE_MS = 60_000L
     private const val BUFFER_CHARS = 8 * 1024
     private const val MAX_OUTPUT_CHARS = 1024 * 1024
     private val reader = Executors.newVirtualThreadPerTaskExecutor()

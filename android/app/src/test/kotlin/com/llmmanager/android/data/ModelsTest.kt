@@ -36,6 +36,34 @@ class ModelsTest {
     }
 
     @Test
+    fun `decodes a repository's description and pull request insights`() {
+        val body = """
+            {"generatedAt":"2026-11-11T13:00:00Z","projects":[{"id":"p","name":"acme/app","description":"Does one thing well.",
+              "forge":"github","webUrl":"https://github.com/acme/app","worktrees":[],
+              "insights":{"latestMerged":{"number":12,"title":"Add retry","url":"https://github.com/acme/app/pull/12","state":"merged",
+                  "author":"philipp95","branch":"run/app-1","mergedAt":"2026-11-10T08:00:00Z","agent":"claude","ci":"success"},
+                "mergedLastWeek":3,"openCount":1,"recent":[],"fetchedAt":"2026-11-11T12:59:00Z","error":null,"newField":true}}]}
+        """.trimIndent()
+
+        val project = json.decodeFromString(ProjectsResponse.serializer(), body).projects.single()
+
+        assertEquals("Does one thing well.", project.description)
+        val latest = project.insights?.latestMerged
+        assertEquals(12L, latest?.number)
+        assertEquals("claude" to "success", latest?.agent to latest?.ci)
+        assertEquals(3, project.insights?.mergedLastWeek)
+    }
+
+    @Test
+    fun `a chat message asks the server to publish, and an ordinary job does not say so`() {
+        val encoder = Json { ignoreUnknownKeys = true }
+        val chat = encoder.encodeToString(JobRequest.serializer(), JobRequest("p", "run", "gemini", "Add a test", publish = true))
+        val plain = encoder.encodeToString(JobRequest.serializer(), JobRequest("p", "run", "gemini", "Add a test"))
+        assertTrue(chat, chat.contains("\"publish\":true"))
+        assertTrue(plain, !plain.contains("publish"))
+    }
+
+    @Test
     fun `an older server without analytics still decodes`() {
         val response = json.decodeFromString(ProjectsResponse.serializer(), """{"generatedAt":"2026-11-09T13:00:00Z","projects":[]}""")
         assertNull(response.analytics)

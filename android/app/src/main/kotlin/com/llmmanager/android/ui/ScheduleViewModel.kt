@@ -69,13 +69,14 @@ class ScheduleViewModel(private val settings: SettingsStore, private val client:
         }
     }
 
-    fun create(request: JobRequest, onCreated: () -> Unit) = withToken { server, token ->
+    /** Creates a job; [message] replaces the default confirmation ("Started" or "Scheduled"). */
+    fun create(request: JobRequest, message: String? = null, onCreated: () -> Unit) = withToken { server, token ->
         mutableState.update { it.copy(submitting = true) }
         val result = client.createJob(server, token, request)
         mutableState.update { it.copy(submitting = false) }
         if (result is ApiResult.Ok) {
             onCreated()
-            messages.send(if (request.schedule == null) "Started" else "Scheduled")
+            messages.send(message ?: if (request.schedule == null) "Started" else "Scheduled")
             refreshSchedule()
         } else {
             messages.send(describe(result))

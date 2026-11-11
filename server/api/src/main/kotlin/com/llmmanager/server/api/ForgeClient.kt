@@ -16,7 +16,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
@@ -252,7 +251,7 @@ private class AzurePulls(private val credentials: ForgeCredentials, private val 
 }
 
 /** JSON over HTTPS without redirects, so a token is never carried to another host. */
-private class ForgeHttp {
+internal class ForgeHttp {
     private val client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build()
 
     fun request(url: String): HttpRequest.Builder =

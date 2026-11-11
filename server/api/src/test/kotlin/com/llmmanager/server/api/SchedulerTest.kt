@@ -7,10 +7,12 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.condition.DisabledOnOs
 import org.junit.jupiter.api.condition.OS
@@ -50,7 +52,7 @@ class SchedulerTest {
     private fun script(name: String, body: String): String =
         File(root, "bin/$name").apply { parentFile.mkdirs(); writeText("#!/usr/bin/env bash\n$body\n"); setExecutable(true) }.path
 
-    /** Fake Claude: stream-json events; edits a file on work and fix; "LIMIT" in the prompt hits the plan limit. */
+    /** Fake Claude: stream-json events; edits a file unless the prompt says NOCHANGE; "LIMIT" in the prompt hits the plan limit. */
     private fun fakeClaude() = script(
         "claude",
         """
@@ -67,7 +69,7 @@ class SchedulerTest {
           echo '{"type":"result","is_error":true,"result":"Claude usage limit reached","session_id":"'"${'$'}sid"'"}'
           exit 1
         fi
-        echo "change ${'$'}RANDOM" >> claude-work.txt
+        if [[ "${'$'}prompt" != *NOCHANGE* ]]; then echo "change ${'$'}RANDOM" >> claude-work.txt; fi
         echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"claude-work.txt"}}]}}'
         echo '{"type":"result","is_error":false,"result":"Implemented it.","session_id":"'"${'$'}sid"'"}'
         """.trimIndent(),
@@ -106,7 +108,7 @@ class SchedulerTest {
 
     private data class Fixture(val scheduler: Scheduler, val jobs: JobService, val store: StateStore, val repo: File, val projectId: String)
 
-    private fun fixture(): Fixture {
+    private fun fixture(publisher: (Run) -> String = { "Publishing is not configured" }): Fixture {
         val repo = File(root, "repos/app").also { it.mkdirs() }
         git(repo, "init", "-b", "main")
         File(repo, "README.md").writeText("app\n")
@@ -118,7 +120,7 @@ class SchedulerTest {
         val commands = AgentCommands(fakeClaude(), fakeCodex(), gemini = fakeGemini())
         val workspace = Workspace(scanner, sessions, commands)
         val engine = RunEngine(store, workspace, File(root, "runs"), clock = clock)
-        val scheduler = Scheduler(store, engine, sessions, clock = clock)
+        val scheduler = Scheduler(store, engine, sessions, clock = clock, hooks = FollowUpHooks(publisher = publisher))
         val jobs = JobService(store, scheduler, workspace, SessionCatalog(File(root, "home")), clock)
         return Fixture(scheduler, jobs, store, repo, scanner.scan().single().id)
     }
@@ -169,6 +171,25 @@ class SchedulerTest {
         assertEquals("Gemini via LLM Manager", output(File(work.worktree!!), "log", "--format=%an", "-1"))
         val invalid = f.jobs.create(JobRequest(f.projectId, JobKind.PIPELINE, Agent.GEMINI, "x", reviewer = Agent.GEMINI))
         assertEquals("Choose a different agent to review", (invalid as JobService.Created.Invalid).reason)
+    }
+
+    @Test
+    fun `a chat job opens a pull request after its last stage, and only when there is something to publish`() {
+        val published = CopyOnWriteArrayList<Run>()
+        val f = fixture(publisher = { run -> published += run; "Opened pull request #7" })
+
+        f.jobs.create(JobRequest(f.projectId, JobKind.PIPELINE, Agent.CLAUDE, "Add a greeting", publish = true))
+        f.jobs.create(JobRequest(f.projectId, JobKind.RUN, Agent.CLAUDE, "Only explain NOCHANGE", publish = true))
+        f.jobs.create(JobRequest(f.projectId, JobKind.RUN, Agent.CODEX, "Not for a pull request"))
+        repeat(8) { f.scheduler.tick() }
+
+        val fix = awaitRun(f.store) { it.stage == Stage.FIX && it.publishNote != null }
+        assertEquals("Opened pull request #7", fix.publishNote)
+        assertEquals(listOf(fix.id), published.map { it.id }, "published once, after the review was addressed")
+        val runs = f.store.runs()
+        assertEquals("No changes to publish", runs.single { it.prompt.contains("NOCHANGE") }.publishNote)
+        assertNull(runs.single { it.agent == Agent.CODEX && it.stage == Stage.WORK && it.pipelineId == null }.publishNote)
+        assertTrue(runs.filter { it.stage != Stage.FIX && !it.prompt.contains("NOCHANGE") }.all { it.publishNote == null })
     }
 
     @Test
@@ -238,6 +259,15 @@ class SchedulerTest {
         assertTrue(invalid(JobRequest(f.projectId, JobKind.RUN, Agent.CLAUDE, "x", schedule = Schedule(time = "25:00", zone = "UTC"))).contains("time"))
         val stranger = SessionRef(Agent.CLAUDE, "00000000-0000-0000-0000-000000000000", f.repo.path)
         assertTrue(invalid(JobRequest(f.projectId, JobKind.RESUME, Agent.CLAUDE, "", resume = stranger)).contains("not resumable"))
+    }
+
+    private fun awaitRun(store: StateStore, predicate: (Run) -> Boolean): Run {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+        while (System.nanoTime() < deadline) {
+            store.runs().firstOrNull(predicate)?.let { return it }
+            Thread.sleep(50)
+        }
+        error("No run matched: ${store.runs().joinToString { "${it.stage}:${it.status}:${it.publishNote}" }}")
     }
 
     private companion object {

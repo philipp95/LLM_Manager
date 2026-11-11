@@ -19,6 +19,8 @@ data class JobRequest(
     val resume: SessionRef? = null,
     val name: String? = null,
     val resumeOnLimitReset: Boolean = true,
+    /** Push the branch and open a pull request when the work is done (the chat flow). */
+    val publish: Boolean = false,
 )
 
 @Serializable
@@ -85,6 +87,7 @@ class JobService(
             schedule = schedule,
             resume = request.resume,
             resumeOnLimitReset = request.resumeOnLimitReset,
+            publish = request.publish && request.kind != JobKind.RESUME,
             createdAt = now.toString(),
         )
         store.putJob(job)

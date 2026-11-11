@@ -24,6 +24,8 @@ data class Project(
     /** Opaque, stable handle derived from the git directory; the only way clients refer to a project. */
     val id: String,
     val name: String,
+    /** First sentence of the README on the default branch. */
+    val description: String? = null,
     val kind: Kind,
     /** Bare mirror directory, or the main checkout's top level. */
     val path: String,
@@ -39,6 +41,8 @@ data class Project(
     val worktrees: List<Worktree>,
     /** Commits reachable from any ref, per day; aligned with [Analytics.days]. */
     val commitsPerDay: List<Int> = emptyList(),
+    /** Pull request activity on the forge, when it has been read. */
+    val insights: RepoInsights? = null,
 ) {
     @Serializable
     enum class Kind {

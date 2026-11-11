@@ -16,7 +16,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -36,7 +35,6 @@ fun SettingsDialog(
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Palette.raised,
         title = { Text("Server & access") },
         text = {
             Column {
@@ -56,7 +54,7 @@ fun SettingsDialog(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
                 if (hasToken) {
-                    TextButton(onClick = { onForgetToken(); onDismiss() }) { Text("Remove saved token", color = Palette.bad) }
+                    TextButton(onClick = { onForgetToken(); onDismiss() }) { Text("Remove saved token", color = Palette.badInk) }
                 }
             }
         },
@@ -74,7 +72,6 @@ fun SettingsDialog(
 fun ConfirmStartDialog(projectName: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Palette.raised,
         title = { Text("Start Codex?") },
         text = { Text("Codex will start on $projectName in a new worktree and branch. Your checkout is not touched.") },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Start") } },
@@ -87,16 +84,15 @@ fun StartedDialog(event: DashboardViewModel.Event.Started, onCopy: (String) -> U
     val command = event.launch.session.attachCommand
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Palette.raised,
         title = { Text("Codex is running") },
         text = {
             Column {
-                Text("${event.projectName} · ${event.launch.branch}", color = Palette.muted, fontSize = 13.sp)
+                Text("${event.projectName} · ${event.launch.branch}", color = Palette.ink2, fontSize = 13.sp)
                 Text(
-                    command, color = Palette.codexText, fontFamily = FontFamily.Monospace, fontSize = 13.sp,
-                    modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth().background(Color(0xFF07090D), RoundedCornerShape(10.dp)).padding(10.dp),
+                    command, color = Palette.attachText, fontFamily = FontFamily.Monospace, fontSize = 13.sp,
+                    modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth().background(Palette.harbor, RoundedCornerShape(10.dp)).padding(10.dp),
                 )
-                Text("Paste this in your SSH app to attach. Detach with Ctrl-b then d; Codex keeps running.", color = Palette.muted, fontSize = 13.sp)
+                Text("Paste this in your SSH app to attach. Detach with Ctrl-b then d; Codex keeps running.", color = Palette.ink2, fontSize = 13.sp)
             }
         },
         confirmButton = { TextButton(onClick = { onCopy(command); onDismiss() }) { Text("Copy command") } },

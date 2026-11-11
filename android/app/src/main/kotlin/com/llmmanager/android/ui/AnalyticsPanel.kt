@@ -3,7 +3,6 @@ package com.llmmanager.android.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -36,11 +35,11 @@ fun AnalyticsPanel(analytics: Analytics) {
     var sessionDay by remember(analytics) { mutableStateOf<Int?>(null) }
 
     Panel {
-        SectionTitle("Activity · last ${analytics.days.size} days")
+        PanelTitle("Activity · last ${analytics.days.size} days")
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Bottom) {
-            Text("%,d".format(commits), color = Palette.text, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
+            Text("%,d".format(commits), color = Palette.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.width(8.dp))
-            Text(if (commits == 1) "commit across all projects" else "commits across all projects", color = Palette.muted, fontSize = 13.sp,
+            Text(if (commits == 1) "commit across all repositories" else "commits across all repositories", color = Palette.ink2, fontSize = 13.sp,
                 modifier = Modifier.padding(bottom = 6.dp))
         }
         Readout(commitDay?.let { "${longDay(analytics.days[it])} · ${plural(analytics.commitsPerDay[it], "commit", "commits")}" } ?: "Tap a day for details")
@@ -54,10 +53,10 @@ fun AnalyticsPanel(analytics: Analytics) {
         }
 
         Spacer(Modifier.height(18.dp))
-        Text("Sessions started per day", color = Palette.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text("Sessions started per day", color = Palette.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             LegendItem(Palette.codex, "Codex")
-            LegendItem(Palette.agent, "Agent runs")
+            LegendItem(Palette.claude, "Agent runs")
         }
         Readout(
             sessionDay?.let {
@@ -68,30 +67,30 @@ fun AnalyticsPanel(analytics: Analytics) {
         if (codex + agents > 0) {
             ColumnChart(
                 analytics.days,
-                listOf(ChartSeries(analytics.codexStartsPerDay, Palette.codex), ChartSeries(analytics.agentRunsPerDay, Palette.agent)),
+                listOf(ChartSeries(analytics.codexStartsPerDay, Palette.codex), ChartSeries(analytics.agentRunsPerDay, Palette.claude)),
                 sessionDay, { sessionDay = it },
                 "Sessions per day: $codex Codex, $agents agent runs",
             )
         } else {
-            Muted("No Codex sessions or agent runs yet. Start one from a project below.")
+            Muted("No Codex sessions or agent runs yet. Start one from a repository.")
         }
 
         Spacer(Modifier.height(18.dp))
-        Text("Busiest projects", color = Palette.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text("Busiest repositories", color = Palette.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         val top = analytics.busiest.firstOrNull()?.commits ?: 0
         if (top == 0) Muted("No commits in this window.")
         analytics.busiest.forEach { project ->
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(project.name, color = Palette.text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(0.4f))
+                Text(project.name, color = Palette.ink, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(0.4f))
                 Spacer(Modifier.width(10.dp))
-                Box(Modifier.weight(0.6f).height(8.dp).background(Palette.line, RoundedCornerShape(50))) {
+                Box(Modifier.weight(0.6f).height(8.dp).background(Palette.paper2, RoundedCornerShape(50))) {
                     Box(
                         Modifier.fillMaxHeight().fillMaxWidth((project.commits.toFloat() / top).coerceAtLeast(0.03f))
                             .background(Palette.commits, RoundedCornerShape(50)),
                     )
                 }
                 Spacer(Modifier.width(10.dp))
-                Text(project.commits.toString(), color = Palette.muted, fontSize = 12.5.sp)
+                Text(project.commits.toString(), color = Palette.ink2, fontSize = 12.5.sp)
             }
         }
     }
@@ -99,10 +98,5 @@ fun AnalyticsPanel(analytics: Analytics) {
 
 @Composable
 private fun Readout(text: String) {
-    Text(text, color = Palette.muted, fontSize = 12.5.sp, modifier = Modifier.padding(vertical = 4.dp))
-}
-
-@Composable
-fun Muted(text: String) {
-    Column { Text(text, color = Palette.faint, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp)) }
+    Text(text, color = Palette.ink2, fontSize = 12.5.sp, modifier = Modifier.padding(vertical = 4.dp))
 }

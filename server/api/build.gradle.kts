@@ -25,4 +25,8 @@ dependencies {
 application {
     mainClass.set("com.llmmanager.server.api.MainKt")
     applicationName = "api"
+    // Start git, tmux and agents with fork() instead of the JDK's jspawnhelper binary: after an
+    // in-place JDK package upgrade the running JVM rejects the new helper, and every command
+    // (so every repository scan) fails until a restart.
+    applicationDefaultJvmArgs = listOf("-Djdk.lang.Process.launchMechanism=FORK")
 }

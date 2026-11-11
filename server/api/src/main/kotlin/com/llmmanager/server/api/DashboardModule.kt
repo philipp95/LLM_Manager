@@ -39,6 +39,8 @@ class DashboardServices(
     val launcher: CodexLauncher? = null,
     val apk: ApkFile? = null,
     val schedule: ScheduleApi? = null,
+    /** Pull request activity from the forges, cached. */
+    val insights: InsightsService? = null,
 )
 
 /**
@@ -82,7 +84,12 @@ fun Application.dashboardModule(
             call.response.headers.append(HttpHeaders.ContentDisposition, "attachment; filename=\"llm-manager.apk\"")
             call.respondFile(file)
         }
-        services.schedule?.let { scheduleRoutes(it, token, onChange = snapshots::invalidate) }
+        services.schedule?.let {
+            scheduleRoutes(it, token) { projectId ->
+                snapshots.invalidate()
+                services.insights?.invalidate(projectId)
+            }
+        }
         // Shape-checked by clients so a captive portal's 200 HTML is not mistaken for the server.
         get("/readyz") {
             call.respond(Readiness("ready"))
@@ -139,7 +146,8 @@ internal suspend fun ApplicationCall.authorized(token: ApiToken): Boolean {
 /** The overview: projects with analytics, publish state for agent branches, and the APK when built. */
 private fun projectsResponse(scanner: ProjectScanner, services: DashboardServices): ProjectsResponse {
     val snapshot = scanner.snapshot()
-    val projects = services.schedule?.branches?.annotate(snapshot.projects) ?: snapshot.projects
+    val published = services.schedule?.branches?.annotate(snapshot.projects) ?: snapshot.projects
+    val projects = services.insights?.annotate(published) ?: published
     val now = OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
     return ProjectsResponse(now, services.launcher?.available == true, projects, snapshot.analytics, services.apk?.describe())
 }

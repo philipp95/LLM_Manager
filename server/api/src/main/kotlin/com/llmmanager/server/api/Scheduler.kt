@@ -4,6 +4,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job as CoroutineJob
@@ -23,11 +24,10 @@ class Scheduler(
     private val sessions: SessionHost,
     private val clock: Clock = Clock.systemUTC(),
     private val maxConcurrent: Int = 3,
-    /** When a limit-stopped run without a reported reset time may retry. */
-    private val limitResetHint: (Agent) -> Instant? = { null },
+    hooks: FollowUpHooks = FollowUpHooks(),
 ) {
     private val log = LoggerFactory.getLogger(Scheduler::class.java)
-    private val followUps = FollowUps(store, clock, limitResetHint)
+    private val followUps = FollowUps(store, clock, hooks)
 
     fun launch(scope: CoroutineScope, interval: Duration = Duration.ofSeconds(15)): CoroutineJob = scope.launch(Dispatchers.IO) {
         while (isActive) {
@@ -109,22 +109,53 @@ internal fun newRunId(): String = UUID.randomUUID().toString().replace("-", "").
 /** A fresh queued run that carries over the project, worktree, session and pipeline of this one. */
 internal fun Run.requeued(now: Instant): Run = copy(
     id = newRunId(), status = RunStatus.QUEUED, createdAt = now.toString(), startedAt = null, finishedAt = null,
-    summary = null, error = null, limitResetsAt = null, resumeScheduled = false, tmuxSession = null, notBefore = null,
+    summary = null, error = null, limitResetsAt = null, resumeScheduled = false, tmuxSession = null, notBefore = null, publishNote = null,
 )
 
-/** What happens after a run finishes: the next pipeline stage, or a resume after a usage limit. */
+/** What the scheduler asks of the rest of the server once a run has finished. */
+class FollowUpHooks(
+    /** When a limit-stopped run without a reported reset time may retry. */
+    val limitResetHint: (Agent) -> Instant? = { null },
+    /** Pushes a finished run's branch and opens its pull request; returns what happened. */
+    val publisher: (Run) -> String = { "Publishing is not configured" },
+)
+
+/**
+ * What happens after a run finishes: the next pipeline stage, a resume after a usage
+ * limit, or, when the job asked for it and nothing else follows, publishing the branch.
+ */
 private class FollowUps(
     private val store: StateStore,
     private val clock: Clock,
-    private val limitResetHint: (Agent) -> Instant?,
+    private val hooks: FollowUpHooks,
 ) {
     private val log = LoggerFactory.getLogger(Scheduler::class.java)
 
-    /** Queues what follows [run]: the next pipeline stage, or a resume once a usage limit resets. */
+    /** Pushing and opening pull requests talks to the network: never inside the scheduler's tick. */
+    private val publishing = Executors.newSingleThreadExecutor { Thread(it, "publish").apply { isDaemon = true } }
+
+    /** Queues what follows [run]: the next pipeline stage, a resume once a usage limit resets, or publishing. */
     fun after(run: Run) {
         when {
             run.status == RunStatus.LIMITED -> resumeAfterLimit(run)
-            run.status == RunStatus.SUCCEEDED && run.pipelineId != null -> nextStage(run)
+            run.status == RunStatus.SUCCEEDED && run.pipelineId != null -> if (!nextStage(run)) publishIfAsked(run)
+            run.status == RunStatus.SUCCEEDED -> publishIfAsked(run)
+        }
+    }
+
+    /** The job's work is complete: if it asked to publish and produced commits, open the pull request. */
+    private fun publishIfAsked(run: Run) {
+        val job = run.jobId?.let(store::job)
+        if (job?.publish != true || run.branch == null) return
+        val chain = store.runs().filter { it.branch == run.branch && it.jobId == run.jobId }
+        if (chain.none { it.resultCommit != null && it.resultCommit != it.baseCommit }) {
+            store.putRun(run.copy(publishNote = "No changes to publish"))
+            return
+        }
+        publishing.execute {
+            val note = runCatching { hooks.publisher(run) }.getOrElse { "Could not open a pull request: ${it.message}" }
+            store.updateRun(run.id) { it.copy(publishNote = note) }
+            log.info("Run {}: {}", run.id, note)
         }
     }
 
@@ -133,7 +164,7 @@ private class FollowUps(
         if (run.resumeScheduled || job?.resumeOnLimitReset == false) return
         val canResume = run.stage == Stage.REVIEW || (run.sessionId != null && run.worktree != null)
         if (!canResume) return
-        val reset = ScheduleTimes.instant(run.limitResetsAt) ?: limitResetHint(run.agent) ?: Instant.now(clock).plus(FALLBACK_WAIT)
+        val reset = ScheduleTimes.instant(run.limitResetsAt) ?: hooks.limitResetHint(run.agent) ?: Instant.now(clock).plus(FALLBACK_WAIT)
         val retry = if (run.stage == Stage.REVIEW) {
             run
         } else {
@@ -144,7 +175,8 @@ private class FollowUps(
         log.info("Run {} hit a usage limit; resuming after {}", run.id, reset)
     }
 
-    private fun nextStage(run: Run) {
+    /** Queues the pipeline's next stage; false when the pipeline is complete. */
+    private fun nextStage(run: Run): Boolean {
         val pipeline = store.runs().filter { it.pipelineId == run.pipelineId }
         val builder = pipeline.minByOrNull { it.createdAt }?.agent ?: run.agent
         val job = run.jobId?.let(store::job)
@@ -156,6 +188,7 @@ private class FollowUps(
             Stage.FIX -> null
         }
         next?.let(store::putRun)
+        return next != null
     }
 
     /** A review by the other agent, unless the work changed nothing. */

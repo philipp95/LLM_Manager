@@ -68,6 +68,8 @@ data class Job(
     val resume: SessionRef? = null,
     /** When a run stops at a plan limit, continue it automatically once the limit resets. */
     val resumeOnLimitReset: Boolean = true,
+    /** When the work is done (and reviewed, for a pipeline), push the branch and open a pull request. */
+    val publish: Boolean = false,
     val enabled: Boolean = true,
     val createdAt: String,
     val lastFiredAt: String? = null,
@@ -130,4 +132,6 @@ data class Run(
     val notBefore: String? = null,
     /** For a resume after a limit: the stage it continues, so a pipeline carries on afterwards. */
     val continues: Stage? = null,
+    /** What publishing did once the work was done: the pull request opened, or why not. */
+    val publishNote: String? = null,
 )

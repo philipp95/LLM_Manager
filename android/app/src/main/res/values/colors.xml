@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#FF0B0D12</color>
-    <color name="icon_start">#FF8B7CF6</color>
-    <color name="icon_end">#FF5EC4FF</color>
+    <!-- Harbor: the same colours as the Compose theme and the web dashboard. -->
+    <color name="background">#FF13282D</color>
+    <color name="icon_background">#FFD2733A</color>
+    <color name="icon_mark">#FF13282D</color>
 </resources>

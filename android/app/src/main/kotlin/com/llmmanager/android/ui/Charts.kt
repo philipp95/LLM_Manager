@@ -14,10 +14,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -73,11 +70,11 @@ fun ColumnChart(
             fun y(v: Float) = top + plotH - v / max * plotH
             val ticks = if (max >= 4 && max % 2 == 0) listOf(0, max / 2, max) else listOf(0, max)
             ticks.forEach { tick ->
-                drawLine(Palette.line, Offset(left, y(tick.toFloat())), Offset(size.width, y(tick.toFloat())), 1.dp.toPx())
+                drawLine(Palette.paperLine, Offset(left, y(tick.toFloat())), Offset(size.width, y(tick.toFloat())), 1.dp.toPx())
                 label(measurer, formatTick(tick), Offset(left - 6.dp.toPx(), y(tick.toFloat())), alignEnd = true)
             }
             selected?.let {
-                drawRoundRect(Color.White.copy(alpha = 0.06f), Offset(left + it * band, top), Size(band, plotH), CornerRadius(4.dp.toPx()))
+                drawRoundRect(Palette.ink.copy(alpha = 0.07f), Offset(left + it * band, top), Size(band, plotH), CornerRadius(4.dp.toPx()))
             }
             for (day in 0 until days) {
                 val x = left + day * band + (band - barW) / 2
@@ -118,29 +115,13 @@ private fun DrawScope.column(topLeft: Offset, size: Size, color: Color, roundTop
 }
 
 private fun DrawScope.label(measurer: TextMeasurer, text: String, anchor: Offset, alignEnd: Boolean = false, alignStart: Boolean = false) {
-    val layout = measurer.measure(text, TextStyle(color = Palette.faint, fontSize = 10.sp))
+    val layout = measurer.measure(text, TextStyle(color = Palette.ink2, fontSize = 10.sp))
     val x = when {
         alignEnd -> anchor.x - layout.size.width
         alignStart -> anchor.x
         else -> anchor.x - layout.size.width / 2f
     }
     drawText(layout, topLeft = Offset(x, anchor.y - layout.size.height / 2f))
-}
-
-@Composable
-fun Sparkline(values: List<Int>, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        if (values.size < 2) return@Canvas
-        val max = maxOf(1, values.max()).toFloat()
-        val pad = 3.dp.toPx()
-        val step = (size.width - pad * 2) / (values.size - 1)
-        val path = Path()
-        values.forEachIndexed { i, v ->
-            val point = Offset(pad + i * step, size.height - pad - v / max * (size.height - pad * 2))
-            if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
-        }
-        drawPath(path, Palette.commits, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-    }
 }
 
 data class ChartSeries(val values: List<Int>, val color: Color)

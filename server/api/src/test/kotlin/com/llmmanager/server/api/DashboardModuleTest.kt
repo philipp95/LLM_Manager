@@ -11,13 +11,10 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.OutgoingContent
 import io.ktor.http.contentType
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.testing.testApplication
-import io.ktor.utils.io.ByteWriteChannel
-import io.ktor.utils.io.writeStringUtf8
 import java.io.File
 import java.net.ServerSocket
 import java.net.Socket

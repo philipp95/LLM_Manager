@@ -68,6 +68,7 @@ class BranchService(
 
     fun push(projectId: String, branch: String): Outcome = withTarget(projectId, branch) { target -> pushTarget(target) }
 
+
     /** Pushes if needed, then opens (or finds) the pull request into the default branch. */
     fun openPullRequest(projectId: String, branch: String): Outcome = withTarget(projectId, branch) { target ->
         val forge = target.forge ?: return@withTarget Outcome.Invalid("Pull requests need a GitHub, GitLab or Azure DevOps remote")
@@ -153,4 +154,10 @@ class BranchService(
 
         fun isAgentBranch(branch: String): Boolean = AGENT_PREFIXES.any { branch.startsWith(it) } && !branch.contains("..")
     }
+}
+
+/** Pushes [run]'s branch and opens its pull request; says what happened, for the run's record. */
+fun BranchService.publish(run: Run): String = when (val outcome = openPullRequest(run.projectId, checkNotNull(run.branch))) {
+    is BranchService.Outcome.Ok -> outcome.message
+    is BranchService.Outcome.Invalid -> "Could not open a pull request: ${outcome.reason}"
 }

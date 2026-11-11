@@ -1,29 +1,30 @@
 package com.llmmanager.android.ui
 
-import android.content.Context
-import androidx.compose.foundation.layout.Arrangement
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -32,14 +33,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -57,7 +60,7 @@ import java.time.format.DateTimeParseException
 import kotlinx.coroutines.delay
 
 private const val REFRESH_INTERVAL_MS = 30_000L
-private const val TAILSCALE_PACKAGE = "com.tailscale.ipn"
+private val TABS = listOf("Repos", "Schedule", "Usage")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,192 +68,217 @@ fun DashboardScreen(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVi
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scheduleState by scheduleViewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    val refreshTab: () -> Unit = { refresh(tab, viewModel, scheduleViewModel) }
+    // The repository whose screen is open on the Repos tab.
+    var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    val open = openId?.takeIf { tab == 0 }?.let { id -> state.data?.projects?.firstOrNull { it.id == id } }
+    val refreshTab: () -> Unit = { refresh(tab, openId != null, viewModel, scheduleViewModel) }
     val snackbar = remember { SnackbarHostState() }
+    val dialogs = remember { DialogState() }
     val clipboard = LocalClipboardManager.current
-    var showSettings by remember { mutableStateOf(false) }
-    var confirming by remember { mutableStateOf<Project?>(null) }
-    var started by remember { mutableStateOf<Event.Started?>(null) }
     val copy: (String) -> Unit = { clipboard.setText(AnnotatedString(it)) }
 
-    // Poll only while the screen is visible; stops in the background so it never drains the battery.
+    BackHandler(enabled = openId != null) { openId = null }
+    Polling(tab, openId, refreshTab)
+    Events(viewModel, scheduleViewModel, snackbar, dialogs)
+
+    Scaffold(
+        containerColor = Palette.harbor,
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            TopBar(
+                title = open?.name?.substringAfterLast('/') ?: "LLM Manager", status = statusLine(state.connection, state.data),
+                hasToken = state.hasToken, tab = tab, onBack = open?.let { { openId = null } },
+                onSettings = { dialogs.settings = true }, onRefresh = refreshTab, onTab = { tab = it },
+            )
+        },
+    ) { padding ->
+        val refreshing = if (tab == 0) state.refreshing else scheduleState.loading
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = refreshTab, modifier = Modifier.padding(padding).fillMaxSize()) {
+            when {
+                tab == 1 -> ScheduleScreen(
+                    scheduleState, state.data?.projects.orEmpty().map { it.id to it.name }, scheduleViewModel,
+                    onNeedToken = { dialogs.settings = true }, onCopy = copy,
+                )
+                tab == 2 -> UsageScreen(scheduleState.usage, scheduleState.usageError, state.data?.analytics)
+                open != null -> RepoDetail(
+                    open, scheduleState.schedule, state.data?.codexAvailable == true, state.launching == open.id, scheduleState.submitting,
+                    repoActions(open, viewModel, scheduleViewModel, dialogs, copy),
+                )
+                else -> Overview(state, onRetry = viewModel::refresh, onSettings = { dialogs.settings = true }, onOpen = { openId = it.id })
+            }
+        }
+    }
+    DialogHost(dialogs, state, viewModel, scheduleViewModel, copy)
+}
+
+/** Polls what is on screen while the app is in the foreground; stops in the background to spare the battery. */
+@Composable
+private fun Polling(tab: Int, openId: String?, refresh: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner, tab) {
+    val current by rememberUpdatedState(refresh)
+    LaunchedEffect(lifecycleOwner, tab, openId) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
-                refreshTab()
+                current()
                 delay(REFRESH_INTERVAL_MS)
             }
         }
     }
+}
+
+@Composable
+private fun Events(viewModel: DashboardViewModel, scheduleViewModel: ScheduleViewModel, snackbar: SnackbarHostState, dialogs: DialogState) {
     LaunchedEffect(scheduleViewModel) { scheduleViewModel.events.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
                 is Event.Message -> snackbar.showSnackbar(event.text)
-                is Event.Started -> started = event
+                is Event.Started -> dialogs.started = event
                 Event.NeedToken -> {
-                    showSettings = true
-                    snackbar.showSnackbar("Enter the server's access token to start Codex")
+                    dialogs.settings = true
+                    snackbar.showSnackbar("Enter the server's access token first")
                 }
             }
         }
     }
+}
 
-    Scaffold(
-        containerColor = Palette.background,
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("LLM Manager", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                            Text(statusLine(state.connection, state.data), color = Palette.muted, fontSize = 12.sp)
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Filled.Lock, contentDescription = "Server and access token", tint = if (state.hasToken) Palette.ok else Palette.text)
-                        }
-                        IconButton(onClick = refreshTab) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Palette.background,
-                        titleContentColor = Palette.text,
-                        actionIconContentColor = Palette.text,
-                    ),
-                )
-                TabRow(selectedTabIndex = tab, containerColor = Palette.background, contentColor = Palette.text) {
-                    listOf("Overview", "Schedule", "Usage").forEachIndexed { index, title ->
-                        Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
-                    }
-                }
+/** The repository screen's actions, routed to the view models. */
+private fun repoActions(
+    project: Project,
+    viewModel: DashboardViewModel,
+    scheduleViewModel: ScheduleViewModel,
+    dialogs: DialogState,
+    copy: (String) -> Unit,
+) = RepoActions(
+    chat = ChatActions(
+        onSend = { request, onSent ->
+            scheduleViewModel.create(request, message = "${agentLabel(request.agent)} is on it") {
+                onSent()
+                viewModel.refresh()
             }
         },
-    ) { padding ->
-        val refreshing = if (tab == 0) state.refreshing else scheduleState.loading
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = refreshTab, modifier = Modifier.padding(padding).fillMaxSize()) {
-            when (tab) {
-                1 -> ScheduleScreen(
-                    scheduleState, state.data?.projects.orEmpty().map { it.id to it.name }, scheduleViewModel,
-                    onNeedToken = { showSettings = true }, onCopy = copy,
-                )
-                2 -> UsageScreen(scheduleState.usage, scheduleState.usageError)
-                else -> OverviewList(state, viewModel, onSettings = { showSettings = true }, onStart = { confirming = it }, onCopy = copy)
-            }
-        }
-    }
-
-    if (showSettings) {
-        SettingsDialog(
-            serverUrl = state.serverUrl.orEmpty(),
-            hasToken = state.hasToken,
-            onSave = viewModel::saveSettings,
-            onForgetToken = viewModel::forgetToken,
-            onDismiss = { showSettings = false },
-        )
-    }
-    confirming?.let { project ->
-        ConfirmStartDialog(project.name, onConfirm = { confirming = null; viewModel.startCodex(project) }, onDismiss = { confirming = null })
-    }
-    started?.let { event -> StartedDialog(event, onCopy = copy, onDismiss = { started = null }) }
-}
-
-/** Refreshes what tab [tab] shows: 0 overview, 1 schedule, 2 usage. */
-private fun refresh(tab: Int, overview: DashboardViewModel, schedule: ScheduleViewModel) {
-    when (tab) {
-        1 -> schedule.refreshSchedule()
-        2 -> schedule.refreshUsage()
-        else -> overview.refresh()
-    }
-}
+        onLog = { scheduleViewModel.openLog(it.id) },
+        onCancel = { dialogs.cancelling = it },
+        onCopy = copy,
+    ),
+    onStartCodex = { dialogs.confirming = project },
+    onPublish = { branch, action -> viewModel.publish(project, branch, action) },
+)
 
 @Composable
-private fun OverviewList(
+private fun DialogHost(
+    dialogs: DialogState,
     state: DashboardViewModel.UiState,
     viewModel: DashboardViewModel,
-    onSettings: () -> Unit,
-    onStart: (Project) -> Unit,
-    onCopy: (String) -> Unit,
+    scheduleViewModel: ScheduleViewModel,
+    copy: (String) -> Unit,
 ) {
-    val context = LocalContext.current
-    LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
-        connectionNotice(state.connection, onSettings = onSettings, onRetry = viewModel::refresh, context = context)
-        state.data?.let { data -> dashboard(data, state.launching, onStart = onStart, onCopy = onCopy, onPublish = viewModel::publish) }
-    }
-}
-
-private fun androidx.compose.foundation.lazy.LazyListScope.connectionNotice(
-    connection: Connection,
-    onSettings: () -> Unit,
-    onRetry: () -> Unit,
-    context: Context,
-) {
-    val (title, body) = when (connection) {
-        Connection.NotConfigured -> "Set the server address" to "Enter the dashboard's Tailscale address, e.g. http://100.101.102.103:8080."
-        is Connection.NeedsToken -> if (connection.refused) {
-            "Access token refused" to "The server did not accept the saved token. Enter the current one (cat ~/.config/llm-manager/api-token)."
-        } else {
-            "Access token needed" to "The server shares repositories and starts agents only with its access token (cat ~/.config/llm-manager/api-token)."
-        }
-        is Connection.NoRoute -> "Can't reach the server" to "Is Tailscale connected on this phone? (${connection.detail})"
-        is Connection.Failed -> "Something went wrong" to connection.message
-        Connection.Loading, Connection.Online -> return
-    }
-    item(key = "notice") {
-        Panel {
-            Text(title, color = Palette.bad, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-            Text(body, color = Palette.muted, fontSize = 13.5.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                when (connection) {
-                    Connection.NotConfigured, is Connection.NeedsToken -> Button(onClick = onSettings) { Text("Settings") }
-                    is Connection.NoRoute -> {
-                        val tailscale = context.packageManager.getLaunchIntentForPackage(TAILSCALE_PACKAGE)
-                        if (tailscale != null) {
-                            Button(onClick = { context.startActivity(tailscale) }, colors = ButtonDefaults.buttonColors(containerColor = Palette.accent)) {
-                                Text("Open Tailscale")
-                            }
-                        }
-                        OutlinedButton(onClick = onRetry) { Text("Retry") }
-                    }
-                    else -> OutlinedButton(onClick = onRetry) { Text("Retry") }
-                }
-            }
-        }
-    }
-}
-
-private fun androidx.compose.foundation.lazy.LazyListScope.dashboard(
-    data: ProjectsResponse,
-    launching: String?,
-    onStart: (Project) -> Unit,
-    onCopy: (String) -> Unit,
-    onPublish: (Project, String, String) -> Unit,
-) {
-    val worktrees = data.projects.flatMap { it.worktrees }
-    item(key = "stats") {
-        // Two by two: four across truncates the labels at phone widths.
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile(data.projects.size, "Projects", null, Modifier.weight(1f))
-                StatTile(worktrees.count { it.codex?.running == true }, "Codex live", Palette.codex, Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile(worktrees.count { it.agentRun }, "Agent runs", Palette.agent, Modifier.weight(1f))
-                StatTile(worktrees.count { (it.changedFiles ?: 0) > 0 }, "Uncommitted", Palette.warn, Modifier.weight(1f))
-            }
-        }
-    }
-    data.analytics?.let { analytics -> item(key = "analytics") { AnalyticsPanel(analytics) } }
-    if (data.projects.isEmpty()) {
-        item(key = "empty") { Muted("No git repositories found in the server's configured folders.") }
-    }
-    items(data.projects, key = { it.id }) { project ->
-        ProjectCard(
-            project, data.codexAvailable, launching == project.id, onStartCodex = { onStart(project) }, onCopy = onCopy,
-            onPublish = { branch, action -> onPublish(project, branch, action) },
+    val scheduleState by scheduleViewModel.state.collectAsStateWithLifecycle()
+    if (dialogs.settings) {
+        SettingsDialog(
+            serverUrl = state.serverUrl.orEmpty(), hasToken = state.hasToken, onSave = viewModel::saveSettings,
+            onForgetToken = viewModel::forgetToken, onDismiss = { dialogs.settings = false },
         )
+    }
+    dialogs.confirming?.let { project ->
+        ConfirmStartDialog(
+            project.name,
+            onConfirm = {
+                dialogs.confirming = null
+                viewModel.startCodex(project)
+            },
+            onDismiss = { dialogs.confirming = null },
+        )
+    }
+    dialogs.cancelling?.let { run ->
+        AlertDialog(
+            onDismissRequest = { dialogs.cancelling = null },
+            text = { Text("Cancel this run? Its worktree and branch are kept.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    dialogs.cancelling = null
+                    scheduleViewModel.cancel(run.id)
+                }) { Text("Cancel run") }
+            },
+            dismissButton = { TextButton(onClick = { dialogs.cancelling = null }) { Text("Keep running") } },
+        )
+    }
+    dialogs.started?.let { event -> StartedDialog(event, onCopy = copy, onDismiss = { dialogs.started = null }) }
+    scheduleState.log?.let { LogDialog(it, onDismiss = scheduleViewModel::closeLog) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TopBar(
+    title: String,
+    status: String,
+    hasToken: Boolean,
+    tab: Int,
+    onBack: (() -> Unit)?,
+    onSettings: () -> Unit,
+    onRefresh: () -> Unit,
+    onTab: (Int) -> Unit,
+) {
+    Column(Modifier.background(Palette.harbor)) {
+        TopAppBar(
+            navigationIcon = {
+                if (onBack != null) {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "All repositories") }
+                } else {
+                    Box(
+                        Modifier.padding(start = 12.dp, end = 4.dp).size(34.dp).background(Palette.rust, RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Glyphs.anchor, contentDescription = null, tint = Palette.harbor, modifier = Modifier.size(20.dp)) }
+                }
+            },
+            title = {
+                Column {
+                    Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(status, color = Palette.onHarbor2, fontSize = 12.sp)
+                }
+            },
+            actions = {
+                IconButton(onClick = onSettings) {
+                    Icon(Icons.Filled.Lock, contentDescription = "Server and access token", tint = if (hasToken) Palette.ok else Palette.onHarbor)
+                }
+                IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Palette.harbor,
+                titleContentColor = Palette.onHarbor,
+                navigationIconContentColor = Palette.onHarbor,
+                actionIconContentColor = Palette.onHarbor,
+            ),
+        )
+        TabRow(
+            selectedTabIndex = tab, containerColor = Palette.harbor, contentColor = Palette.onHarbor,
+            indicator = { positions -> TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[tab]), color = Palette.rust) },
+            divider = {},
+        ) {
+            TABS.forEachIndexed { index, name ->
+                Tab(
+                    selected = tab == index, onClick = { onTab(index) },
+                    selectedContentColor = Palette.onHarbor, unselectedContentColor = Palette.onHarbor2,
+                    text = { Text(name, fontWeight = FontWeight.SemiBold) },
+                )
+            }
+        }
+    }
+}
+
+/** Refreshes what is on screen: the repositories (and, on a repository, its runs), the schedule, or usage. */
+private fun refresh(tab: Int, repository: Boolean, overview: DashboardViewModel, schedule: ScheduleViewModel) {
+    when (tab) {
+        1 -> schedule.refreshSchedule()
+        2 -> {
+            schedule.refreshUsage()
+            overview.refresh()
+        }
+        else -> {
+            overview.refresh()
+            if (repository) schedule.refreshSchedule()
+        }
     }
 }
 

@@ -12,7 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -69,6 +68,7 @@ private data class Form(
     val time: LocalTime = LocalTime.of(9, 0),
     val days: List<Int> = listOf(1, 2, 3, 4, 5),
     val resumeOnLimit: Boolean = true,
+    val publish: Boolean = false,
 ) {
     val ready: Boolean get() = if (kind == "resume") session != null else project != null
 
@@ -83,7 +83,7 @@ private data class Form(
             val ref = SessionRef(target.session.agent, target.session.sessionId, target.session.worktree)
             JobRequest(target.projectId, kind, target.session.agent, prompt, schedule, ref, resumeOnLimit)
         } else {
-            JobRequest(project?.first.orEmpty(), kind, agent, prompt, schedule, null, resumeOnLimit, reviewer.takeIf { kind == "pipeline" })
+            JobRequest(project?.first.orEmpty(), kind, agent, prompt, schedule, null, resumeOnLimit, reviewer.takeIf { kind == "pipeline" }, publish)
         }
     }
 }
@@ -106,12 +106,12 @@ fun NewJobSheet(
     }
     var picking by remember { mutableStateOf<String?>(null) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Palette.raised) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Palette.paper) {
         Column(
             Modifier.padding(horizontal = 18.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("New job", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Palette.text)
+            Text("New job", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Palette.ink)
             Segmented(listOf("run" to "Run a task", "pipeline" to "Build + review", "resume" to "Resume"), form.kind) { form = form.copy(kind = it) }
             if (form.kind == "resume") {
                 ResumeFields(form, schedule.resumable) { form = it }
@@ -126,14 +126,19 @@ fun NewJobSheet(
             WhenFields(form, onChange = { form = it }, onPick = { picking = it })
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = form.resumeOnLimit, onCheckedChange = { form = form.copy(resumeOnLimit = it) })
-                Text("If a usage limit stops it, continue automatically when the limit resets", color = Palette.text, fontSize = 13.5.sp)
+                Text("If a usage limit stops it, continue automatically when the limit resets", color = Palette.ink, fontSize = 13.5.sp)
             }
-            Muted("Runs work in a new branch and worktree, may edit files and run build/test commands, and never push.")
+            if (form.kind != "resume") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = form.publish, onCheckedChange = { form = form.copy(publish = it) })
+                    Text("When it's done, push the branch and open a pull request", color = Palette.ink, fontSize = 13.5.sp)
+                }
+            }
+            Muted("Runs work in a new branch and worktree, may edit files and run build/test commands. Only the server pushes, and only when asked.")
             Button(
                 onClick = { onSubmit(form.toRequest(ZoneId.systemDefault())) },
                 enabled = !submitting && form.ready,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.accent),
             ) { Text(if (form.whenMode == "now") "Start now" else "Schedule") }
         }
     }
@@ -158,19 +163,19 @@ private fun TaskFields(form: Form, projects: List<Pair<String, String>>, agents:
     }
     val builder = agentLabel(form.agent)
     if (form.kind == "pipeline") {
-        Text("Reviewer", color = Palette.muted, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        Text("Reviewer", color = Palette.ink2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
         Segmented(AGENTS.filter { it.first != form.agent }, form.reviewer) { onChange(form.copy(reviewer = it)) }
         Muted("$builder builds and commits, ${agentLabel(form.reviewer)} reviews the commit, then $builder addresses the review.")
     }
     listOfNotNull(form.agent, form.reviewer.takeIf { form.kind == "pipeline" }).filter { agents[it] == false }.forEach {
-        Text("${agentLabel(it)} is not installed on the server.", color = Palette.bad, fontSize = 12.5.sp)
+        Text("${agentLabel(it)} is not installed on the server.", color = Palette.badInk, fontSize = 12.5.sp)
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun WhenFields(form: Form, onChange: (Form) -> Unit, onPick: (String) -> Unit) {
-    Text("When", color = Palette.muted, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+    Text("When", color = Palette.ink2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
     Segmented(listOf("now" to "Now", "once" to "Once", "daily" to "Repeat"), form.whenMode) { onChange(form.copy(whenMode = it)) }
     if (form.whenMode == "once") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -210,7 +215,7 @@ private fun Segmented(options: List<Pair<String, String>>, selected: String, onS
 private fun <T> Picker(label: String, current: String, options: List<Pair<T, String>>, onPick: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Column {
-        Text(label, color = Palette.muted, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = Palette.ink2, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
         OutlinedButton(onClick = { open = true }, enabled = options.isNotEmpty(), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
             Text(current, maxLines = 1)
         }
@@ -242,7 +247,6 @@ private fun TimeDialog(initial: LocalTime, onDismiss: () -> Unit, onPick: (Local
     val state = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute, is24Hour = true)
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Palette.raised,
         text = { TimePicker(state) },
         confirmButton = { TextButton(onClick = { onPick(LocalTime.of(state.hour, state.minute)) }) { Text("OK") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

@@ -1,6 +1,6 @@
 # Security model
 
-Status: reviewed 2026-11-09. This describes what the code enforces today and what
+Status: reviewed 2026-11-09; pull request insights and chat publishing added 2026-11-11. This describes what the code enforces today and what
 still depends on the machine's configuration.
 
 ## What is being protected
@@ -43,6 +43,9 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 | With bubblewrap: read-only root; secrets, other agents' logins and runtime sockets hidden; only the worktree, the agent's own state and build caches writable; agent config (hooks, settings, MCP servers) read-only | `AgentSandbox` |
 | Server-side git never runs repository-defined programs (fsmonitor, hooks, signing, `ext::`), and runs inside a linked worktree only while its `.git` link points into the repository | `Git.HARDENING`, `WorktreeGuard` |
 | Publishing only for agent branches; pushes never forced; merges through the forge's API so its checks and approvals apply | `BranchService` |
+| A chat message may ask for publishing; the server then pushes that run's own branch and opens a pull request after the run (and its review) finished, on a separate thread, never the default branch | `Scheduler` (`FollowUps`), `BranchService` |
+| Pull request insights use the same host-bound credentials, read only; GitHub via `gh`, with the query passed as an argument | `InsightSources` |
+| Repository and forge text (README sentence, pull request titles, authors, run output) is untrusted: the page and app render it as text, never HTML, and follow only `https://` links built or checked by the server | `index.html`, `android/app` |
 | Secrets redacted from run logs before they reach the phone | `RunOutput` (`SecretRedactor`) |
 | Android: token in Android Keystore (AES-GCM), excluded from backup; only Tailscale hosts accepted; no redirects with the token | `android/app` |
 | Dependencies checked against OSV; Netty and Logback pinned to patched releases | `gradle/libs.versions.toml` |

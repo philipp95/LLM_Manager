@@ -4,247 +4,357 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0b0d12">
+<meta name="theme-color" content="#13282D">
 <meta name="referrer" content="no-referrer">
 <title>LLM Manager</title>
 <style>
+  /*
+   * Harbor: deep-water background, sand-paper tiles, rust for actions, teal as the quiet second colour.
+   * Text on paper uses --ink / --ink-2 (12.2:1 / 5.7:1); status colours have darker "-ink" steps for text.
+   */
   :root {
-    --bg: #0b0d12; --surface: #12151d; --raised: #191d28; --line: #232938; --line-soft: #1c2130;
-    --text: #e8eaf0; --muted: #8a93a6; --faint: #5c6478;
-    --accent: #8b7cf6; --accent-2: #5ec4ff; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --live: #22d3ee;
-    /* Chart series (validated on the card surface): Codex = slot 1, agent runs = slot 2, commits = accent. */
-    --series-codex: #3987e5; --series-agent: #d95926; --series-gemini: #199e70; --series-commits: #9085e9; --grid: #232938;
+    --harbor: #13282D; --harbor-2: #1B353B; --harbor-3: #24434A; --harbor-line: #2C4B52;
+    --on-harbor: #EDE3D1; --on-harbor-2: #A9BDBD;
+    --paper: #F1E7D6; --paper-2: #E7DAC3; --paper-3: #D9C9AD; --paper-line: #D8C9AE; --field: #FBF6EC;
+    --ink: #2B2621; --ink-2: #625850; --ink-3: #857A6E;
+    --rust: #D2733A; --rust-strong: #A9501F; --rust-on-dark: #E58B4F; --teal: #3E7F86; --teal-ink: #2D5F64;
+    --ok: #4F8A5B; --ok-ink: #34623E; --warn: #C9962E; --warn-ink: #7A5810; --bad: #B8483B; --bad-ink: #9C3A2F;
+    /* Chart series, validated as a categorical set on --paper (light): agents keep fixed hues everywhere. */
+    --claude: #C25E28; --codex: #2B5DA8; --gemini: #A23B72; --commits: #3E7F86;
     --radius: 18px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .22), 0 10px 26px rgba(0, 0, 0, .26);
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html { -webkit-text-size-adjust: 100%; }
   body {
-    margin: 0; color: var(--text); min-height: 100vh;
-    background: radial-gradient(120% 60% at 50% -10%, rgba(139, 124, 246, .18), transparent 60%), var(--bg);
+    margin: 0; min-height: 100vh; color: var(--on-harbor);
+    background: radial-gradient(140% 55% at 50% -12%, #21434A 0%, transparent 62%), var(--harbor);
     font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     padding-bottom: env(safe-area-inset-bottom);
   }
+  button { font: inherit; }
+  :focus-visible { outline: 3px solid var(--rust-on-dark); outline-offset: 2px; }
   svg.icon { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  svg.logo { width: 18px; height: 18px; flex: none; fill: currentColor; }
 
+  /* ---------- header ---------- */
   header {
-    position: sticky; top: 0; z-index: 5; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
-    background: rgba(11, 13, 18, .82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    background: rgba(19, 40, 45, .9); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--harbor-line);
   }
-  .logo {
-    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 4px 18px rgba(139, 124, 246, .35);
-  }
+  .mark { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; background: var(--rust); color: var(--harbor); }
+  .mark svg.icon { width: 20px; height: 20px; stroke-width: 2.2; }
   .title { flex: 1; min-width: 0; }
   .title h1 { margin: 0; font-size: 17px; letter-spacing: -.01em; }
-  .title .status { font-size: 12px; color: var(--muted); }
+  .title .status { font-size: 12px; color: var(--on-harbor-2); }
   .icon-btn {
-    width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none;
-    color: var(--text); background: var(--surface); border: 1px solid var(--line); cursor: pointer;
+    width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none; cursor: pointer;
+    color: var(--on-harbor); background: var(--harbor-2); border: 1px solid var(--harbor-line);
   }
   .icon-btn:active { transform: scale(.96); }
-  .icon-btn.unlocked { color: var(--ok); }
+  .icon-btn.unlocked { color: #8CC59A; }
   .spin svg { animation: spin .9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .4; } }
+  .tabs { flex-basis: 100%; display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--harbor-2); border: 1px solid var(--harbor-line); }
+  .tabs button { flex: 1; min-height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--on-harbor-2); font-size: 14px; font-weight: 650; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--paper); color: var(--ink); }
 
-  main { max-width: 760px; margin: 0 auto; padding: 14px 14px 40px; display: grid; gap: 14px; }
+  main { max-width: 1040px; margin: 0 auto; padding: 16px 16px 48px; }
+  .tab { display: grid; gap: 14px; min-width: 0; }
+  #tab-repo, #tab-schedule, #tab-usage { max-width: 760px; margin: 0 auto; width: 100%; }
 
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .stat { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 14px; padding: 10px 10px 9px; min-width: 0; }
-  .stat b { display: block; font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
-  .stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-  .stat i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 1px; }
+  /* ---------- paper surfaces ---------- */
+  .panel, .tile, .list-card, dialog { background: var(--paper); color: var(--ink); color-scheme: light; }
+  .panel { border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); min-width: 0; }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .panel h2, .panel-head h2 { margin: 0; font-size: 12px; font-weight: 750; color: var(--ink-2); text-transform: uppercase; letter-spacing: .08em; }
+  .panel-sub { font-size: 12.5px; color: var(--ink-2); }
+  .muted { color: var(--ink-2); font-size: 13px; }
 
-  .card { background: linear-gradient(180deg, var(--raised), var(--surface)); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .card-head { display: flex; gap: 12px; align-items: center; padding: 14px 14px 10px; }
-  .avatar {
-    width: 42px; height: 42px; border-radius: 12px; flex: none; display: grid; place-items: center;
-    font-weight: 700; font-size: 16px; color: #fff; text-transform: uppercase;
+  /* ---------- repository tiles ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 12px; }
+  .tile {
+    position: relative; border-radius: var(--radius); padding: 12px 12px 10px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 8px; min-width: 0; transition: transform .15s ease;
   }
-  .names { flex: 1; min-width: 0; }
-  .owner { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .repo { font-size: 17px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  a.icon-btn { text-decoration: none; }
+  .tile:hover { transform: translateY(-2px); }
+  .tile:focus-within { outline: 3px solid var(--rust-on-dark); outline-offset: 2px; }
+  .tile-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 30px; }
+  .badge { width: 30px; height: 30px; border-radius: 9px; background: var(--paper-2); color: var(--ink); display: grid; place-items: center; flex: none; }
+  .badge.big { width: 42px; height: 42px; border-radius: 12px; }
+  .badge.big svg.logo, .badge.big svg.icon { width: 24px; height: 24px; }
+  .badge .letters { font-size: 10px; font-weight: 800; letter-spacing: .02em; }
+  .badge.big .letters { font-size: 13px; }
+  .tile-name { margin: 0; font-size: 16px; line-height: 1.2; font-weight: 750; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .tile-open { all: unset; cursor: pointer; }
+  .tile-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+  .tile-owner { font-size: 12px; color: var(--ink-2); margin-top: -6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile-desc {
+    margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); min-height: 4.2em;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .tile-desc.missing { font-style: italic; }
+  .cell { border-top: 1px solid var(--paper-line); padding-top: 7px; display: grid; gap: 4px; min-width: 0; }
+  .cell > * { min-width: 0; }
+  .cell-label { font-size: 10.5px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
+  .cell-note { font-size: 12.5px; color: var(--ink-2); min-height: 38px; }
+  .pr-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .pr-num { font-weight: 750; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .pr-title { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .who {
+    width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 8.5px; font-weight: 800; letter-spacing: .02em;
+    display: inline-grid; place-items: center; flex: none; text-transform: uppercase;
+  }
+  .agent-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; color: var(--ink); }
+  .agent-mark svg.logo { width: 17px; height: 17px; }
+  .agent-mark svg.icon { width: 17px; height: 17px; stroke-width: 2.4; }
+  .ci { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; flex: none; color: #fff; }
+  .ci svg.icon { width: 11px; height: 11px; stroke-width: 3.2; }
+  .ci.success { background: var(--ok); } .ci.failure { background: var(--bad); } .ci.pending { background: var(--warn); }
+  .week { display: flex; gap: 16px; min-height: 38px; }
+  .week b { display: block; font-size: 20px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .week span { font-size: 11.5px; color: var(--ink-2); }
+  .tile-link {
+    position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; margin-top: auto;
+    border-top: 1px solid var(--paper-line); padding: 8px 0 1px; min-height: 34px;
+    font-size: 13px; font-weight: 700; color: var(--rust-strong); text-decoration: none;
+  }
+  .tile-link svg.icon { width: 14px; height: 14px; margin-left: auto; }
+  .tile-link.none { color: var(--ink-2); font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 750; padding: 2px 8px; border-radius: 999px; background: rgba(62, 127, 134, .16); color: var(--teal-ink); white-space: nowrap; }
+  .pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); animation: pulse 2s ease-in-out infinite; }
 
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px; }
+  /* ---------- chips ---------- */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip {
-    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted);
-    background: rgba(255, 255, 255, .03); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px;
-    max-width: 100%; min-width: 0;
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); max-width: 100%; min-width: 0;
+    background: var(--paper-2); border: 1px solid var(--paper-line); border-radius: 999px; padding: 3px 9px; text-decoration: none;
   }
   .chip svg.icon { width: 13px; height: 13px; }
+  .chip svg.logo { width: 13px; height: 13px; }
   .chip .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip.mono .t { font-family: var(--mono); }
-  .chip.live { color: #8fbaf2; border-color: rgba(57, 135, 229, .45); background: rgba(57, 135, 229, .12); }
-  .chip.agent { color: #f0a07e; border-color: rgba(217, 89, 38, .45); background: rgba(217, 89, 38, .12); }
-  .chip.ok { color: var(--ok); border-color: rgba(74, 222, 128, .3); }
-  .chip.warn { color: var(--warn); border-color: rgba(251, 191, 36, .35); background: rgba(251, 191, 36, .07); }
-  .chip.bad { color: var(--bad); border-color: rgba(248, 113, 113, .35); }
+  .chip.ok { color: var(--ok-ink); background: rgba(79, 138, 91, .14); border-color: rgba(79, 138, 91, .35); }
+  .chip.warn { color: var(--warn-ink); background: rgba(201, 150, 46, .18); border-color: rgba(201, 150, 46, .45); }
+  .chip.bad { color: var(--bad-ink); background: rgba(184, 72, 59, .12); border-color: rgba(184, 72, 59, .35); }
+  .chip.running, .chip.live { color: var(--teal-ink); background: rgba(62, 127, 134, .16); border-color: rgba(62, 127, 134, .4); }
+  .chip.running svg.icon { animation: spin 1.2s linear infinite; }
+  .chip.agent { color: var(--ink); }
 
-  .wts { border-top: 1px solid var(--line-soft); }
-  .wt { display: grid; grid-template-columns: 4px 1fr; gap: 0 12px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
-  .wt:last-child { border-bottom: 0; }
-  .bar { border-radius: 4px; background: var(--faint); grid-row: span 3; }
+  /* ---------- repository detail ---------- */
+  .back { all: unset; display: inline-flex; align-items: center; gap: 6px; color: var(--on-harbor); font-weight: 650; cursor: pointer; padding: 4px 2px; justify-self: start; }
+  .back:focus-visible { outline: 3px solid var(--rust-on-dark); }
+  .repo-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .repo-title h1 { margin: 0; font-size: 22px; line-height: 1.15; letter-spacing: -.015em; overflow-wrap: anywhere; }
+  .repo-title .tile-owner { margin: 0; }
+  .repo-desc { margin: 10px 0 0; color: var(--ink-2); font-size: 14px; }
+  .repo-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .repo-stats div { background: var(--paper-2); border-radius: 12px; padding: 8px 10px; min-width: 0; }
+  .repo-stats b { display: block; font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .repo-stats span { font-size: 11.5px; color: var(--ink-2); }
+  .repo-head .chips { margin-top: 12px; }
+  .forge-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-weight: 700; font-size: 14px; color: var(--rust-strong); text-decoration: none; }
+
+  .thread { display: grid; gap: 10px; }
+  .thread-empty { margin: 0; color: var(--ink-2); font-size: 13.5px; }
+  .bubble { border-radius: 16px; padding: 10px 12px; overflow-wrap: anywhere; min-width: 0; }
+  .bubble.me { justify-self: end; max-width: min(88%, 560px); background: var(--harbor-2); color: var(--on-harbor); border-bottom-right-radius: 5px; }
+  .bubble.me .text { white-space: pre-wrap; font-size: 14px; }
+  .bubble.me .meta { color: var(--on-harbor-2); text-align: right; }
+  .bubble.agent { justify-self: start; width: min(92%, 560px); background: var(--paper-2); border-bottom-left-radius: 5px; display: grid; gap: 6px; }
+  .bubble .meta { font-size: 11.5px; color: var(--ink-2); }
+  .bubble .who-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 750; font-size: 13.5px; }
+  .bubble .who-row .grow { flex: 1; }
+  .bubble.agent .text { font-size: 13.5px; white-space: pre-wrap; }
+  .bubble .err { color: var(--bad-ink); font-size: 13px; white-space: pre-wrap; }
+  .stages { display: flex; gap: 4px; flex-wrap: wrap; }
+  .stage { font-size: 11.5px; padding: 1px 7px; border-radius: 6px; background: var(--paper); color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; }
+  .stage svg.icon { width: 11px; height: 11px; stroke-width: 3; }
+  .stage.done { color: var(--ok-ink); } .stage.failed { color: var(--bad-ink); } .stage.active { color: var(--teal-ink); }
+  .stage.active svg.icon { animation: spin 1.2s linear infinite; }
+
+  .composer { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--paper-line); }
+  .agent-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+  .agent-pick button {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px 0 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--paper-line); background: var(--field); color: var(--ink); font-size: 14px; font-weight: 650;
+  }
+  .agent-pick button .agent-mark { color: inherit; }
+  .agent-pick button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .composer textarea {
+    width: 100%; min-height: 92px; resize: vertical; border-radius: 14px; border: 1px solid var(--paper-line);
+    background: var(--field); color: var(--ink); padding: 11px 12px; font: inherit; font-size: 15px;
+  }
+  .composer .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .toggle { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-2); flex: 1 1 220px; cursor: pointer; }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--rust-strong); margin: 1px 0 0; flex: none; }
+  .send {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 20px; margin-left: auto;
+    border: 0; border-radius: 12px; background: var(--rust-strong); color: #FFF8EE; font-weight: 750; cursor: pointer;
+  }
+  .send:disabled { opacity: .55; cursor: default; }
+  .send:active:not(:disabled) { transform: scale(.98); }
+  .composer-hint { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+
+  .wt { display: grid; grid-template-columns: 4px minmax(0, 1fr); gap: 0 12px; padding: 12px 0; border-top: 1px solid var(--paper-line); }
+  .wt > * { min-width: 0; }
+  .wt:first-child { border-top: 0; padding-top: 2px; }
+  .bar { border-radius: 4px; background: var(--paper-3); grid-row: span 3; }
   .bar.ok { background: var(--ok); } .bar.warn { background: var(--warn); } .bar.bad { background: var(--bad); }
-  .bar.live { background: var(--series-codex); box-shadow: 0 0 10px var(--series-codex); animation: pulse 2s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .45; } }
+  .bar.live { background: var(--teal); animation: pulse 2s ease-in-out infinite; }
   .wt-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .branch { font-family: var(--mono); font-size: 13.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wt-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 5px; }
+  .wt-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-top: 5px; }
   .wt-meta span { display: inline-flex; align-items: center; gap: 4px; }
   .wt-meta svg.icon { width: 12px; height: 12px; }
-  .wt .chips { padding: 6px 0 0; }
+  .wt .chips { padding-top: 6px; }
+  .attach { margin-top: 8px; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; background: var(--harbor); border-radius: 10px; }
+  .attach code { font-family: var(--mono); font-size: 12.5px; color: #9FD3D8; flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
+  .attach button { height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--harbor-line); background: var(--harbor-2); color: var(--on-harbor); font-size: 12px; display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+  .ended { margin-top: 6px; font-size: 12px; color: var(--ink-2); }
+  .publish { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .publish .note { font-size: 12px; color: var(--ink-2); flex-basis: 100%; }
+  .codex-start { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--paper-line); }
+  .codex-start .muted { flex: 1 1 200px; }
 
-  .attach {
-    margin-top: 8px; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px;
-    background: #07090d; border: 1px solid rgba(57, 135, 229, .35); border-radius: 10px;
+  .pr-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--paper-line); color: inherit; text-decoration: none; }
+  .pr-row:first-child { border-top: 0; padding-top: 2px; }
+  .state { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; }
+  .state svg.icon { width: 14px; height: 14px; }
+  .state.merged { background: var(--teal); } .state.open { background: var(--ok); } .state.closed { background: var(--ink-3); }
+  .pr-head { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+  .pr-name { font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pr-meta { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pr-tags { display: flex; gap: 5px; align-items: center; }
+  .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 10px 12px; border-radius: 12px; background: rgba(201, 150, 46, .16); color: var(--warn-ink); overflow-wrap: anywhere; }
+  .notice svg.icon { margin-top: 2px; }
+  .panel details summary { cursor: pointer; list-style: none; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); display: flex; gap: 6px; align-items: center; }
+  .panel details summary::-webkit-details-marker { display: none; }
+  .paths { display: grid; gap: 6px; margin-top: 10px; }
+  .paths div { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+  .paths div b { font-family: system-ui, sans-serif; font-weight: 700; color: var(--ink); margin-right: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+
+  /* ---------- buttons and lists ---------- */
+  .small-btn {
+    min-height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--paper-line); background: var(--field); color: var(--ink);
+    font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-decoration: none;
   }
-  .attach code { font-family: var(--mono); font-size: 12.5px; color: #8fbaf2; flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
-  .attach button { height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font: inherit; font-size: 12px; display: inline-flex; gap: 5px; align-items: center; }
-  .ended { margin-top: 6px; font-size: 12px; color: var(--faint); }
+  .small-btn.danger { color: var(--bad-ink); }
+  .small-btn.go { background: var(--rust-strong); border-color: transparent; color: #FFF8EE; font-weight: 650; }
+  .small-btn:disabled { opacity: .55; cursor: default; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .section-head h2 { margin: 0; font-size: 12px; font-weight: 750; color: var(--on-harbor-2); text-transform: uppercase; letter-spacing: .08em; }
+  .list-card { border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+  .item { padding: 12px 14px; border-top: 1px solid var(--paper-line); display: grid; gap: 6px; }
+  .item:first-child { border-top: 0; }
+  .item .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .item .name { font-weight: 650; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+  .meta.with-icon { display: flex; gap: 6px; align-items: flex-start; }
+  .meta.with-icon svg.icon { width: 13px; height: 13px; margin-top: 2px; }
+  .err { font-size: 12.5px; color: var(--bad-ink); overflow-wrap: anywhere; }
+  .actions-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+  .list-card .empty { padding: 22px 14px; color: var(--ink-2); }
+  .empty, .error { text-align: center; color: var(--on-harbor-2); padding: 40px 16px; }
+  .error strong { color: #F0A496; display: block; margin-bottom: 6px; font-size: 16px; }
+  .panel .error { color: var(--ink-2); padding: 24px 8px; } .panel .error strong { color: var(--bad-ink); }
+  .hint-text { font-size: 12.5px; color: var(--ink-2); }
+  .sandbox-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-  details { border-top: 1px solid var(--line-soft); }
-  summary { cursor: pointer; list-style: none; padding: 10px 14px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-  summary::-webkit-details-marker { display: none; }
-  details[open] summary { color: var(--text); }
-  .paths { padding: 0 14px 12px; display: grid; gap: 6px; }
-  .paths div { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
-  .paths div b { font-family: system-ui, sans-serif; font-weight: 600; color: var(--faint); margin-right: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-
-  .actions { padding: 12px 14px 14px; border-top: 1px solid var(--line-soft); }
-  .primary {
-    width: 100%; min-height: 46px; border: 0; border-radius: 13px; font: inherit; font-weight: 650; color: #fff; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    background: linear-gradient(135deg, var(--accent), #6d5df0); box-shadow: 0 6px 20px rgba(109, 93, 240, .3);
+  .app-banner {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius); text-decoration: none;
+    color: var(--on-harbor); background: var(--harbor-2); border: 1px solid var(--harbor-line);
   }
-  .primary:disabled { background: var(--raised); color: var(--faint); box-shadow: none; }
-  .primary:active:not(:disabled) { transform: scale(.985); }
-  .hint { font-size: 12px; color: var(--faint); text-align: center; margin-top: 8px; }
+  .app-banner div { flex: 1; min-width: 0; }
+  .app-banner b { display: block; font-size: 15px; }
+  .app-banner span { font-size: 12px; color: var(--on-harbor-2); }
 
-  .panel { background: linear-gradient(180deg, var(--raised), var(--surface)); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
-  .panel h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  /* ---------- charts and meters (on paper) ---------- */
   .hero { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 2px; }
-  .hero b { font-size: 34px; font-weight: 650; letter-spacing: -.02em; line-height: 1; }
-  .hero span { color: var(--muted); font-size: 13px; }
-  .readout { font-size: 12.5px; color: var(--muted); min-height: 18px; margin-bottom: 6px; }
-  .readout strong { color: var(--text); font-weight: 600; }
+  .hero b { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .hero span { color: var(--ink-2); font-size: 13px; }
+  .readout { font-size: 12.5px; color: var(--ink-2); min-height: 18px; margin-bottom: 6px; }
+  .readout strong { color: var(--ink); font-weight: 650; }
   .chart { width: 100%; display: block; touch-action: pan-y; }
-  .chart text { fill: var(--faint); font-size: 10px; font-family: system-ui, sans-serif; }
-  .chart .hl { fill: rgba(255, 255, 255, .06); }
+  .chart text { fill: var(--ink-2); font-size: 10px; font-family: system-ui, sans-serif; }
+  .chart .hl { fill: rgba(43, 38, 33, .07); }
   .section { margin-top: 18px; }
-  .section h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
-  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+  .section h3 { margin: 0 0 4px; font-size: 14px; font-weight: 650; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin: 2px 0 6px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
   .rank { display: grid; grid-template-columns: minmax(0, 38%) 1fr auto; gap: 6px 10px; align-items: center; margin-top: 8px; }
   .rank .n { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rank .track { height: 8px; border-radius: 999px; background: var(--grid); overflow: hidden; }
-  .rank .fill { height: 100%; border-radius: 999px; background: var(--series-commits); }
-  .rank .v { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
-  .muted { color: var(--faint); font-size: 13px; }
+  .rank .track { height: 8px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+  .rank .fill { height: 100%; border-radius: 999px; background: var(--commits); }
+  .rank .v { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right; }
   .table-wrap { max-height: 260px; overflow: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-  th, td { text-align: right; padding: 5px 6px; border-bottom: 1px solid var(--line-soft); }
+  th, td { text-align: right; padding: 5px 6px; border-bottom: 1px solid var(--paper-line); }
   th:first-child, td:first-child { text-align: left; }
-  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
-  .panel details { border-top: 0; margin-top: 10px; }
-  .panel summary { padding: 6px 0; }
-  .spark { display: flex; align-items: center; gap: 10px; padding: 0 14px 12px; color: var(--muted); font-size: 12px; }
-  .spark svg { flex: 1; height: 28px; min-width: 0; }
-  .app-banner {
-    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius); text-decoration: none; color: var(--text);
-    background: linear-gradient(135deg, rgba(139, 124, 246, .22), rgba(94, 196, 255, .12)); border: 1px solid rgba(139, 124, 246, .4);
-  }
-  .app-banner .logo { width: 38px; height: 38px; }
-  .app-banner div { flex: 1; min-width: 0; }
-  .app-banner b { display: block; font-size: 15px; }
-  .app-banner span { font-size: 12px; color: var(--muted); }
-  /* tabs */
-  header { flex-wrap: wrap; row-gap: 10px; }
-  .tabs { flex-basis: 100%; display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
-  .tabs button { flex: 1; min-height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; }
-  .tabs button[aria-selected="true"] { background: var(--raised); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 2px 8px rgba(0,0,0,.3); }
-  .tab { display: grid; gap: 14px; }
-  .tab[hidden] { display: none; }
-  .chip.claude { color: #f0a07e; border-color: rgba(217, 89, 38, .45); background: rgba(217, 89, 38, .12); }
-  .chip.codex { color: #8fbaf2; border-color: rgba(57, 135, 229, .45); background: rgba(57, 135, 229, .12); }
-  .chip.gemini { color: #6fd3ad; border-color: rgba(25, 158, 112, .45); background: rgba(25, 158, 112, .12); }
-  .publish { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
-  .publish a.chip { text-decoration: none; }
-  .publish .note { font-size: 12px; color: var(--faint); flex-basis: 100%; }
-  .chip.running { color: var(--accent); border-color: rgba(139, 124, 246, .45); }
-  .chip.running svg { animation: spin 1.2s linear infinite; }
-  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .section-head h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-  .small-btn { min-height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
-  .small-btn.danger { color: var(--bad); }
-  .small-btn.go { background: var(--accent); border-color: transparent; color: #fff; }
-  .item { padding: 12px 14px; border-top: 1px solid var(--line-soft); display: grid; gap: 6px; }
-  .item:first-of-type { border-top: 0; }
-  .item .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .item .name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item .meta { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
-  .item .err { font-size: 12.5px; color: var(--bad); overflow-wrap: anywhere; }
-  .item .actions-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
-  .list-card { background: linear-gradient(180deg, var(--raised), var(--surface)); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .list-card .empty { padding: 22px 14px; }
-  /* meters: the fill carries severity, the track is a lighter step of the same hue */
+  th { color: var(--ink-2); font-weight: 650; position: sticky; top: 0; background: var(--paper); }
+  .panel .table-details { margin-top: 10px; }
+  .panel .table-details summary { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 600; padding: 6px 0; }
   .meter-row { display: grid; grid-template-columns: 72px 1fr auto; gap: 10px; align-items: center; margin-top: 10px; font-size: 13px; }
-  .meter { height: 10px; border-radius: 999px; overflow: hidden; }
+  .meter { height: 10px; border-radius: 999px; overflow: hidden; background: var(--paper-2); }
   .meter > div { height: 100%; border-radius: 999px; }
-  .meter-row .v { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .meter-row .r { grid-column: 2 / 4; font-size: 12px; color: var(--muted); margin-top: -4px; }
-  .agent-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; }
+  .meter-row .v { font-variant-numeric: tabular-nums; font-weight: 650; }
+  .meter-row .r { grid-column: 2 / 4; font-size: 12px; color: var(--ink-2); margin-top: -4px; }
+  .agent-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 750; }
   .agent-title i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-  /* job form */
+
+  /* ---------- dialogs ---------- */
+  dialog { border: 0; border-radius: 18px; padding: 18px; width: min(420px, calc(100% - 28px)); box-shadow: 0 20px 60px rgba(0, 0, 0, .45); }
+  dialog::backdrop { background: rgba(8, 18, 20, .72); }
   dialog.sheet { width: min(560px, calc(100% - 20px)); max-height: calc(100vh - 40px); overflow: auto; }
+  dialog h2 { margin: 0 0 6px; font-size: 17px; }
+  dialog p { margin: 0 0 12px; color: var(--ink-2); font-size: 13.5px; }
+  dialog code { font-family: var(--mono); font-size: 12px; color: var(--teal-ink); overflow-wrap: anywhere; }
+  dialog .section-head h2 { color: var(--ink); font-size: 17px; text-transform: none; letter-spacing: 0; font-weight: 700; }
+  dialog input[type="password"] { width: 100%; height: 44px; border-radius: 11px; border: 1px solid var(--paper-line); background: var(--field); color: var(--ink); padding: 0 12px; font: inherit; font-family: var(--mono); font-size: 13px; }
+  dialog .row { display: flex; gap: 8px; margin-top: 12px; }
+  dialog .row button { flex: 1; min-height: 42px; border-radius: 11px; border: 1px solid var(--paper-line); background: var(--field); color: var(--ink); cursor: pointer; }
+  dialog .row .primary { border: 0; background: var(--rust-strong); color: #FFF8EE; font-weight: 700; }
+  dialog .row .primary:disabled { opacity: .55; }
   .field { display: grid; gap: 6px; margin-top: 14px; }
-  .field > label, .field > span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
-  .seg { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 11px; padding: 3px; }
-  .seg button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 13.5px; }
-  .seg button[aria-pressed="true"] { background: var(--raised); color: var(--text); font-weight: 600; }
+  .field > label, .field > span { font-size: 12.5px; color: var(--ink-2); font-weight: 650; }
+  .seg { display: flex; gap: 4px; background: var(--paper-2); border-radius: 11px; padding: 3px; }
+  .seg button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-2); font-size: 13.5px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--field); color: var(--ink); font-weight: 650; box-shadow: 0 1px 3px rgba(43, 38, 33, .18); }
   dialog select, dialog textarea, dialog input[type="datetime-local"], dialog input[type="time"] {
-    width: 100%; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 10px 12px; font: inherit; font-size: 14px;
+    width: 100%; border-radius: 11px; border: 1px solid var(--paper-line); background: var(--field); color: var(--ink); padding: 10px 12px; font: inherit; font-size: 14px;
   }
   dialog textarea { min-height: 120px; resize: vertical; }
   .days { display: flex; gap: 4px; }
-  .days button { flex: 1; min-height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); font: inherit; font-size: 12.5px; }
-  .days button[aria-pressed="true"] { background: rgba(139, 124, 246, .18); border-color: rgba(139, 124, 246, .5); color: var(--text); }
-  .check { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--text); margin-top: 14px; }
-  .check input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); }
-  .hint-text { font-size: 12.5px; color: var(--faint); }
+  .days button { flex: 1; min-height: 34px; border-radius: 8px; border: 1px solid var(--paper-line); background: var(--field); color: var(--ink-2); font-size: 12.5px; cursor: pointer; }
+  .days button[aria-pressed="true"] { background: rgba(169, 80, 31, .14); border-color: var(--rust-strong); color: var(--ink); font-weight: 650; }
+  .check { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--ink); margin-top: 14px; }
+  .check input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--rust-strong); flex: none; }
   .log { font-family: var(--mono); font-size: 12px; display: grid; gap: 6px; margin-top: 10px; }
-  .log div { overflow-wrap: anywhere; white-space: pre-wrap; padding-left: 10px; border-left: 2px solid var(--line); }
-  .log .tool { color: var(--muted); }
-  .log .error { color: var(--bad); border-left-color: var(--bad); }
-  .log .done { color: var(--ok); border-left-color: var(--ok); }
-  .empty, .error { text-align: center; color: var(--muted); padding: 40px 16px; }
-  .error strong { color: var(--bad); display: block; margin-bottom: 6px; font-size: 16px; }
+  .log div { overflow-wrap: anywhere; white-space: pre-wrap; padding-left: 10px; border-left: 2px solid var(--paper-line); }
+  .log .tool { color: var(--ink-2); }
+  .log .error { color: var(--bad-ink); border-left-color: var(--bad); text-align: left; padding: 0 0 0 10px; }
+  .log .done { color: var(--ok-ink); border-left-color: var(--ok); }
+  dialog details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-2); margin-top: 10px; }
 
   .toast {
-    position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+    position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); z-index: 20;
     max-width: calc(100% - 28px); width: max-content; padding: 11px 16px; border-radius: 12px; font-size: 14px;
-    background: #1d2333; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
-    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 20;
+    background: var(--ink); color: var(--paper); box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
-  .toast.bad { border-color: rgba(248, 113, 113, .5); }
-
-  dialog { background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 18px; padding: 18px; width: min(420px, calc(100% - 28px)); }
-  dialog::backdrop { background: rgba(0, 0, 0, .6); }
-  dialog h2 { margin: 0 0 6px; font-size: 17px; }
-  dialog p { margin: 0 0 12px; color: var(--muted); font-size: 13.5px; }
-  dialog code { font-family: var(--mono); font-size: 12px; color: var(--accent-2); overflow-wrap: anywhere; }
-  dialog input { width: 100%; height: 44px; border-radius: 11px; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 0 12px; font: inherit; font-family: var(--mono); font-size: 13px; }
-  dialog .row { display: flex; gap: 8px; margin-top: 12px; }
-  dialog .row button { flex: 1; min-height: 42px; border-radius: 11px; font: inherit; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
-  dialog .row .primary { border: 0; }
-  /* Four across truncates the labels on phones. */
-  @media (max-width: 520px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .toast.bad { background: var(--bad-ink); color: #FFF8EE; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <header>
-  <div class="logo" id="logo"></div>
+  <div class="mark" id="logo"></div>
   <div class="title">
     <h1>LLM Manager</h1>
     <div class="status" id="status" aria-live="polite">Loading…</div>
@@ -252,18 +362,17 @@
   <button class="icon-btn" id="lock" type="button" aria-label="Access token"></button>
   <button class="icon-btn" id="refresh" type="button" aria-label="Refresh"></button>
   <nav class="tabs" role="tablist" aria-label="Sections">
-    <button role="tab" type="button" data-tab="overview" aria-selected="true">Overview</button>
+    <button role="tab" type="button" data-tab="overview" aria-selected="true">Repos</button>
     <button role="tab" type="button" data-tab="schedule" aria-selected="false">Schedule</button>
     <button role="tab" type="button" data-tab="usage" aria-selected="false">Usage</button>
   </nav>
 </header>
 <main>
   <section class="tab" id="tab-overview">
+    <div class="grid" id="projects"></div>
     <div id="app-slot"></div>
-    <section class="stats" id="stats" aria-label="Summary"></section>
-    <section class="panel" id="analytics" aria-label="Activity" hidden></section>
-    <div id="projects"></div>
   </section>
+  <section class="tab" id="tab-repo" hidden></section>
   <section class="tab" id="tab-schedule" hidden></section>
   <section class="tab" id="tab-usage" hidden></section>
 </main>
@@ -285,10 +394,12 @@
 "use strict";
 (() => {
   const $ = (id) => document.getElementById(id);
-  const list = $("projects"), stats = $("stats"), status = $("status"), toastEl = $("toast");
-  const TOKEN_KEY = "llm-manager.token";
+  const grid = $("projects"), status = $("status"), toastEl = $("toast");
+  const repoTab = $("tab-repo"), scheduleTab = $("tab-schedule"), usageTab = $("tab-usage");
+  const TOKEN_KEY = "llm-manager.token", AGENT_KEY = "llm-manager.agent";
   const REFRESH_MS = 30000;
-  let inFlight = false, codexAvailable = false, toastTimer = 0, projectsCache = [], activeTab = "overview";
+  let inFlight = false, codexAvailable = false, toastTimer = 0, projectsCache = [], lastAnalytics = null, lastUsage = null;
+  let activeTab = "overview", currentRepo = null, scheduleData = null, composer = null, insightRetries = 0, gridScroll = 0;
 
   const ICONS = {
     refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
@@ -305,25 +416,60 @@
     list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
     x: "M6 6l12 12M18 6 6 18",
     loader: "M12 3a9 9 0 1 0 9 9",
-    box: "M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8",
     folder: "M3 6h6l2 2h10v11H3z",
     clock: "M12 7v5l3 2M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z",
     check: "M5 12l5 5L20 7",
     edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
-    bot: "M12 8V4M8 4h8M5 8h14v11H5zM9 13h.01M15 13h.01",
     alert: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z",
-    spark: "M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z",
     download: "M12 3v12M7 10l5 5 5-5M5 21h14",
+    anchor: "M12 22V8M5 12H2a10 10 0 0 0 20 0h-3M12 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+    back: "M19 12H5M12 19l-7-7 7-7",
+    merge: "M18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21V9a9 9 0 0 0 9 9",
+    pr: "M18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM13 6h3a2 2 0 0 1 2 2v7M6 9v12",
+    send: "M3.7 3.1a.5.5 0 0 0-.7.6l2.9 7.6a2 2 0 0 1 0 1.4L3 20.3a.5.5 0 0 0 .7.6l18-8.5a.5.5 0 0 0 0-.9zM6 12h16",
   };
 
+  // Brand marks from Simple Icons (CC0); the names are their owners' trademarks. Azure DevOps and
+  // OpenAI marks are not in the set, so those show lettering and a terminal glyph instead.
+  const BRANDS = {
+    github: "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12",
+    gitlab: "m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z",
+    claude: "m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z",
+    gemini: "M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81",
+  };
+
+  const FORGE = {
+    github: { label: "GitHub", mark: "github" },
+    gitlab: { label: "GitLab", mark: "gitlab", mr: true },
+    "azure-devops": { label: "Azure DevOps", letters: "ADO" },
+  };
+  const AGENTS = ["claude", "codex", "gemini"];
+  const AGENT = {
+    claude: { label: "Claude", pick: "Claude", color: "var(--claude)" },
+    codex: { label: "Codex", pick: "Codex (ChatGPT)", color: "var(--codex)" },
+    gemini: { label: "Gemini", pick: "Gemini", color: "var(--gemini)" },
+  };
+  const defaultReviewer = (agent) => (agent === "claude" ? "codex" : "claude");
+  const STAGE = { work: "Build", review: "Review", fix: "Fix", resume: "Resume" };
+  const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const AVATARS = ["#3E7F86", "#4A5A7A", "#6B6A3A", "#8A4B2E"];
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  function svgEl(tag, attrs) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    return node;
+  }
+
   function icon(name) {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("class", "icon");
-    svg.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", ICONS[name]);
-    svg.append(path);
+    const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "icon", "aria-hidden": "true" });
+    svg.append(svgEl("path", { d: ICONS[name] }));
+    return svg;
+  }
+
+  function brand(name) {
+    const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "logo", "aria-hidden": "true" });
+    svg.append(svgEl("path", { d: BRANDS[name] }));
     return svg;
   }
 
@@ -344,9 +490,16 @@
 
   const chip = (text, kind, iconName, mono) =>
     el("span", { class: ["chip", kind, mono && "mono"].filter(Boolean).join(" ") }, iconName && icon(iconName), el("span", { class: "t" }, text));
+  const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+  const clamp = (text, n) => (text.length > n ? text.slice(0, n) + "…" : text);
+  const httpsOnly = (url) => (typeof url === "string" && url.startsWith("https://") ? url : null);
+  const compact = (n) => (Math.abs(n) >= 10000 ? new Intl.NumberFormat([], { notation: "compact", maximumFractionDigits: 1 }).format(n) : String(n));
+  const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const fmtDay = (iso, opts) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString([], opts || { month: "short", day: "numeric" }); };
+  const niceMax = (v) => { if (v <= 4) return Math.max(v, 1); const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return v; };
 
-  function relative(iso) {
-    if (!iso) return "no commits";
+  function relative(iso, none) {
+    if (!iso) return none || "never";
     const seconds = Math.round((Date.now() - Date.parse(iso)) / 1000);
     if (!Number.isFinite(seconds)) return iso;
     for (const [label, size] of [["y", 31536000], ["mo", 2592000], ["d", 86400], ["h", 3600], ["m", 60]]) {
@@ -355,10 +508,18 @@
     return "just now";
   }
 
-  function hue(text) {
-    let h = 0;
-    for (const ch of text) h = (h * 31 + ch.codePointAt(0)) % 360;
-    return h;
+  function until(iso) {
+    const seconds = Math.round((Date.parse(iso) - Date.now()) / 1000);
+    if (!Number.isFinite(seconds)) return "";
+    if (seconds <= 60) return "now";
+    const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), d = Math.floor(h / 24);
+    return "in " + (d >= 1 ? d + "d " + (h % 24) + "h" : h >= 1 ? h + "h " + m + "m" : m + "m");
+  }
+
+  function splitName(name) {
+    const parts = name.split("/");
+    const repo = parts.pop();
+    return { owner: parts.join("/"), repo };
   }
 
   function toast(message, bad) {
@@ -368,6 +529,46 @@
     toastTimer = setTimeout(() => { toastEl.className = "toast"; }, 3500);
   }
 
+  function stamp() { status.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+  function spin(on) { $("refresh").classList.toggle("spin", on); }
+
+  // ---------- marks ----------
+  function forgeBadge(forge, big) {
+    const f = FORGE[forge];
+    const label = f ? f.label : "Local repository";
+    return el("span", { class: "badge" + (big ? " big" : ""), role: "img", "aria-label": label, title: label },
+      f && f.mark ? brand(f.mark) : f ? el("span", { class: "letters" }, f.letters) : icon("folder"));
+  }
+
+  function agentMark(agent) {
+    const a = AGENT[agent];
+    if (!a) return null;
+    return el("span", { class: "agent-mark", role: "img", "aria-label": a.label, title: a.label },
+      agent === "codex" ? icon("terminal") : brand(agent));
+  }
+
+  function initials(name) {
+    const words = String(name).replace(/\[bot\]$/i, "").split(/[^A-Za-z0-9]+/).filter(Boolean);
+    if (!words.length) return "?";
+    return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
+  }
+
+  function person(name) {
+    if (!name) return null;
+    let h = 0;
+    for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+    return el("span", { class: "who", style: "background:" + AVATARS[h % AVATARS.length], role: "img", "aria-label": name, title: name }, initials(name));
+  }
+
+  function ciMark(ci) {
+    const look = { success: ["check", "passed"], failure: ["x", "failed"], pending: ["clock", "running"] }[ci];
+    if (!look) return null;
+    return el("span", { class: "ci " + ci, role: "img", "aria-label": "CI/CD " + look[1], title: "CI/CD " + look[1] }, icon(look[0]));
+  }
+
+  const prRef = (project, number) => ((FORGE[project.forge] || {}).mr ? "!" : "#") + number;
+
+  // ---------- token ----------
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (_) { return ""; } }
   function setToken(value) { try { value ? localStorage.setItem(TOKEN_KEY, value) : localStorage.removeItem(TOKEN_KEY); } catch (_) { /* private mode */ } }
 
@@ -393,6 +594,38 @@
     });
   }
 
+  /** Without a (valid) token there is nothing to show but how to get one, and the open app download. */
+  function lockedPanel(refused) {
+    status.textContent = "Locked";
+    return el("div", { class: "panel" },
+      el("div", { class: "panel-head" }, el("h2", null, refused ? "Access token refused" : "Access token needed")),
+      el("p", { class: "muted" }, refused
+        ? "The saved token was not accepted. It changes if the server's token file is replaced."
+        : "This dashboard shows repositories and starts agents, so it needs the server's access token."),
+      el("div", { class: "actions-row" },
+        el("button", { class: "small-btn go", type: "button", onclick: async () => { if (await askToken()) refreshActive(); } }, icon("lock"), "Enter token"),
+        el("a", { class: "small-btn", href: "/download/llm-manager.apk", download: "llm-manager.apk" }, icon("download"), "Android app")));
+  }
+
+  /**
+   * Authenticated JSON request to this origin. On 401 it asks for the token once, unless
+   * `prompt: false` (background refreshes must never pop a dialog).
+   */
+  async function api(path, options) {
+    const { prompt = true, ...init } = options || {};
+    const send = () => fetch(path, Object.assign({ cache: "no-store" }, init, {
+      headers: Object.assign({ Accept: "application/json", Authorization: "Bearer " + getToken() }, init.headers || {}),
+    }));
+    let response = await send();
+    if (response.status === 401 && prompt && await askToken()) response = await send();
+    const type = response.headers.get("Content-Type") || "";
+    const json = type.includes("application/json");
+    const body = json ? await response.json().catch(() => ({})) : {};
+    return { ok: response.ok, status: response.status, body, json };
+  }
+
+  const postJson = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
   // navigator.clipboard needs a secure context, which plain http over the tailnet is not.
   function copy(text) {
     if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(() => true, () => false);
@@ -405,6 +638,267 @@
     return Promise.resolve(ok);
   }
 
+  // ---------- repository tiles ----------
+  function latestCell(p) {
+    const ins = p.insights;
+    if (!p.forge) return el("div", { class: "cell-note" }, "Local repository");
+    if (!ins) return el("div", { class: "cell-note" }, "Reading " + FORGE[p.forge].label + "…");
+    const pr = ins.latestMerged;
+    if (!pr) return el("div", { class: "cell-note", title: ins.error || "" }, ins.error && !ins.fetchedAt ? "Can't read pull requests" : "None yet");
+    return el("div", null,
+      el("div", { class: "pr-line" }, el("span", { class: "pr-num" }, prRef(p, pr.number)), person(pr.author), agentMark(pr.agent), ciMark(pr.ci)),
+      el("div", { class: "pr-title", title: pr.title }, pr.title));
+  }
+
+  function weekCell(p) {
+    const ins = p.insights;
+    if (!p.forge || !ins || !ins.fetchedAt) return el("div", { class: "cell-note" }, "—");
+    return el("div", { class: "week" },
+      el("div", null, el("b", null, ins.mergedLastWeek), el("span", null, "merged")),
+      el("div", null, el("b", null, ins.openCount), el("span", null, "open")));
+  }
+
+  function tile(p) {
+    const { owner, repo } = splitName(p.name);
+    const forge = FORGE[p.forge];
+    const link = httpsOnly(p.webUrl || p.gitHubUrl);
+    const live = p.worktrees.some((w) => w.codex && w.codex.running);
+    return el("article", { class: "tile" },
+      el("div", { class: "tile-top" }, forgeBadge(p.forge), live ? el("span", { class: "pill" }, el("i"), "Codex live") : null),
+      el("h2", { class: "tile-name" }, el("button", { class: "tile-open", type: "button", onclick: () => go("repo/" + p.id) }, repo)),
+      owner ? el("div", { class: "tile-owner" }, owner) : null,
+      el("p", { class: "tile-desc" + (p.description ? "" : " missing") }, p.description || "No README description."),
+      el("div", { class: "cell" }, el("div", { class: "cell-label" }, "Latest merged"), latestCell(p)),
+      el("div", { class: "cell" }, el("div", { class: "cell-label" }, "Past week"), weekCell(p)),
+      link
+        ? el("a", { class: "tile-link", href: link, target: "_blank", rel: "noopener noreferrer" }, forge ? forge.label : "Repository", icon("link"))
+        : el("span", { class: "tile-link none" }, "No forge remote"));
+  }
+
+  function renderAppBanner(app) {
+    const slot = $("app-slot");
+    if (!app || typeof app.url !== "string" || !app.url.startsWith("/download/")) { slot.replaceChildren(); return; }
+    const mb = (app.sizeBytes / 1048576).toFixed(1);
+    slot.replaceChildren(el("a", { class: "app-banner", href: app.url, download: "llm-manager.apk" },
+      el("span", { class: "mark" }, icon("download")),
+      el("div", null, el("b", null, "Get the Android app"), el("span", null, mb + " MB · built " + relative(app.builtAt))),
+      icon("link")));
+  }
+
+  function applyProjects(body) {
+    codexAvailable = body.codexAvailable === true;
+    projectsCache = body.projects;
+    lastAnalytics = body.analytics || null;
+    renderAppBanner(body.androidApp);
+  }
+
+  async function fetchProjects() {
+    const result = await api("/api/projects", { prompt: false });
+    if (result.status === 401) return { locked: true };
+    // A captive portal answers 200 with HTML; only trust a JSON body of the expected shape.
+    if (!result.ok || !result.json) throw new Error("Unexpected response (" + result.status + ")");
+    if (!result.body || !Array.isArray(result.body.projects)) throw new Error("Unexpected response shape");
+    applyProjects(result.body);
+    return { body: result.body };
+  }
+
+  async function load() {
+    if (inFlight) return;
+    if (!getToken()) { grid.replaceChildren(lockedPanel(false)); $("app-slot").replaceChildren(); return; }
+    inFlight = true;
+    spin(true);
+    try {
+      const result = await fetchProjects();
+      if (result.locked) { grid.replaceChildren(lockedPanel(true)); return; }
+      const projects = result.body.projects;
+      grid.replaceChildren(...(projects.length
+        ? projects.map(tile)
+        : [el("div", { class: "empty" }, "No git repositories found in the configured folders.")]));
+      // Pull request activity is read in the background on the server; look again shortly.
+      if (projects.some((p) => p.forge && !p.insights) && insightRetries < 3) {
+        insightRetries++;
+        setTimeout(() => { if (activeTab === "overview") load(); }, 4000);
+      }
+      stamp();
+    } catch (error) {
+      grid.replaceChildren(el("div", { class: "error" }, el("strong", null, "Can't reach the server"), "Is Tailscale connected? " + error.message));
+      status.textContent = "Offline";
+    } finally {
+      inFlight = false;
+      spin(false);
+    }
+  }
+
+  // ---------- repository detail ----------
+  function repoHeader(p) {
+    const { owner, repo } = splitName(p.name);
+    const forge = FORGE[p.forge];
+    const link = httpsOnly(p.webUrl || p.gitHubUrl);
+    const ins = p.insights && p.insights.fetchedAt ? p.insights : null;
+    const branches = p.worktrees.filter((w) => !w.main).length;
+    const last = p.worktrees.map((w) => w.lastCommitAt).filter(Boolean).sort().pop() || null;
+    return el("section", { class: "panel repo-head" },
+      el("div", { class: "repo-title" }, forgeBadge(p.forge, true),
+        el("div", { style: "min-width:0" }, owner ? el("div", { class: "tile-owner" }, owner) : null, el("h1", null, repo))),
+      p.description ? el("p", { class: "repo-desc" }, p.description) : null,
+      el("div", { class: "repo-stats" },
+        el("div", null, el("b", null, ins ? ins.mergedLastWeek : "–"), el("span", null, "merged this week")),
+        el("div", null, el("b", null, ins ? ins.openCount : "–"), el("span", null, "open pull requests")),
+        el("div", null, el("b", null, branches), el("span", null, branches === 1 ? "agent branch" : "agent branches"))),
+      el("div", { class: "chips" },
+        chip(p.defaultBranch || "unknown", null, "branch", true),
+        chip("last commit " + relative(last), null, "clock")),
+      link ? el("a", { class: "forge-link", href: link, target: "_blank", rel: "noopener noreferrer" }, "Open on " + (forge ? forge.label : "the forge"), icon("link")) : null);
+  }
+
+  function stageChip(run) {
+    const look = {
+      queued: ["clock", ""], running: ["loader", "active"], succeeded: ["check", "done"], limited: ["alert", "failed"],
+      cancelled: ["x", ""], failed: ["alert", "failed"],
+    }[run.status] || ["clock", ""];
+    return el("span", { class: "stage " + look[1] }, icon(look[0]), STAGE[run.stage]);
+  }
+
+  function runStatus(run) {
+    switch (run.status) {
+      case "queued": return chip(run.notBefore && Date.parse(run.notBefore) > Date.now() ? "waits " + until(run.notBefore) : "queued", null, "clock");
+      case "running": return chip("working", "running", "loader");
+      case "succeeded": return chip("done", "ok", "check");
+      case "limited": return chip(run.resumeScheduled ? "limit · resumes" : "usage limit", "warn", "alert");
+      case "cancelled": return chip("cancelled", null, "x");
+      default: return chip("failed", "bad", "alert");
+    }
+  }
+
+  async function cancelRun(run, after) {
+    if (!confirm("Cancel this run? Its worktree and branch are kept.")) return;
+    const result = await api("/api/runs/" + encodeURIComponent(run.id) + "/cancel", { method: "POST" });
+    toast(result.ok ? "Cancelled" : (result.body.error || "Failed"), !result.ok);
+    after();
+  }
+
+  /** One message and the agent's answer: every run on the same branch (build, review, fix, resumes). */
+  function turn(p, runs) {
+    const first = runs[0], last = runs[runs.length - 1];
+    const latest = (key) => { for (let i = runs.length - 1; i >= 0; i--) if (runs[i][key]) return runs[i][key]; return null; };
+    const summary = latest("summary");
+    const note = latest("publishNote");
+    const active = runs.find((r) => r.status === "queued" || r.status === "running");
+    const wt = first.branch ? p.worktrees.find((w) => w.branch === first.branch) : null;
+    const pr = wt && wt.publish ? wt.publish.pullRequest : null;
+    const prUrl = pr ? httpsOnly(pr.url) : null;
+    const reviewer = runs.find((r) => r.stage === "review");
+    const live = active && active.status === "running" && active.tmuxSession;
+    return [
+      el("div", { class: "bubble me" },
+        el("div", { class: "text" }, clamp(first.prompt, 800)),
+        el("div", { class: "meta" }, fmtTime(first.createdAt))),
+      el("div", { class: "bubble agent" },
+        el("div", { class: "who-row" }, agentMark(first.agent), AGENT[first.agent].label,
+          reviewer ? el("span", { class: "meta" }, "· reviewed by " + AGENT[reviewer.agent].label) : null,
+          el("span", { class: "grow" }), runStatus(active || last)),
+        runs.length > 1 ? el("div", { class: "stages" }, runs.map(stageChip)) : null,
+        summary ? el("div", { class: "text" }, clamp(summary, 700)) : active ? el("div", { class: "meta" }, active.status === "queued" ? "Waiting for a free slot…" : "Working on it…") : null,
+        last.status === "failed" && last.error ? el("div", { class: "err" }, clamp(last.error, 400)) : null,
+        prUrl
+          ? el("div", { class: "publish" }, el("a", { class: "chip " + (pr.state === "merged" || pr.state === "completed" ? "ok" : "running"), href: prUrl, target: "_blank", rel: "noopener noreferrer" },
+              icon("pr"), el("span", { class: "t" }, "Pull request " + prRef(p, pr.number) + " · " + pr.state)))
+          : note ? el("div", { class: "meta with-icon" }, icon("pr"), note) : null,
+        live ? attachBox({ running: true, attachCommand: "tmux attach -t " + active.tmuxSession }) : null,
+        el("div", { class: "meta" }, (first.branch ? first.branch + " · " : "") + "updated " + relative(last.finishedAt || last.startedAt || last.createdAt)),
+        el("div", { class: "actions-row" },
+          el("button", { class: "small-btn", type: "button", onclick: () => openLog(last) }, icon("list"), "Log"),
+          active ? el("button", { class: "small-btn danger", type: "button", onclick: () => cancelRun(active, loadRepo) }, icon("x"), "Cancel") : null)),
+    ];
+  }
+
+  function thread(p) {
+    const runs = ((scheduleData && scheduleData.runs) || []).filter((r) => r.projectId === p.id)
+      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+    const groups = new Map();
+    for (const r of runs) {
+      const key = r.pipelineId || r.branch || r.id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    }
+    const turns = [...groups.values()].slice(-8);
+    if (!turns.length) {
+      return el("p", { class: "thread-empty" }, "No messages yet. Ask an agent below: it works on a new branch of " + splitName(p.name).repo +
+        (p.forge ? " and opens a pull request when it's done." : "."));
+    }
+    return el("div", { class: "thread" }, turns.map((t) => turn(p, t)));
+  }
+
+  function savedAgent() { try { return localStorage.getItem(AGENT_KEY) || "claude"; } catch (_) { return "claude"; } }
+  function saveAgent(agent) { try { localStorage.setItem(AGENT_KEY, agent); } catch (_) { /* private mode */ } }
+
+  /** The chat box. Built once per repository, so a refresh never wipes what is being typed. */
+  function buildComposer(projectId) {
+    const state = { agent: savedAgent(), project: null };
+    const picker = el("div", { class: "agent-pick", role: "group", "aria-label": "Agent" });
+    const text = el("textarea", { rows: "3", "aria-label": "Message to the agent" });
+    const review = el("input", { type: "checkbox" });
+    const reviewText = el("span");
+    const reviewRow = el("label", { class: "toggle" }, review, reviewText);
+    const hint = el("p", { class: "composer-hint" });
+    const send = el("button", { class: "send", type: "button" }, icon("send"), "Send");
+    const available = () => {
+      const known = (scheduleData && scheduleData.agents) || {};
+      return AGENTS.filter((a) => known[a] !== false);
+    };
+    const reviewerFor = (agent) => {
+      const others = available().filter((a) => a !== agent);
+      return others.includes(defaultReviewer(agent)) ? defaultReviewer(agent) : others[0] || null;
+    };
+
+    function render() {
+      const p = state.project;
+      const ok = available();
+      if (!ok.includes(state.agent)) state.agent = ok[0] || "claude";
+      picker.replaceChildren(...ok.map((a) => el("button", {
+        type: "button", "aria-pressed": String(a === state.agent),
+        onclick: () => { state.agent = a; saveAgent(a); render(); },
+      }, agentMark(a), AGENT[a].pick)));
+      text.placeholder = "Ask " + AGENT[state.agent].label + " to change something in " + splitName(p.name).repo + "…";
+      const reviewer = reviewerFor(state.agent);
+      reviewRow.hidden = !reviewer;
+      if (reviewer) reviewText.textContent = "Cross-review first: " + AGENT[reviewer].label + " reviews the change, " + AGENT[state.agent].label + " addresses it";
+      hint.textContent = !ok.length
+        ? "No coding agent is installed on the server."
+        : p.forge
+          ? "Works on a new branch. When it's done, the branch is pushed and a pull request is opened on " + FORGE[p.forge].label + "."
+          : "This repository has no GitHub, GitLab or Azure DevOps remote, so the work stays on a local branch.";
+      send.disabled = !ok.length;
+    }
+
+    async function submit() {
+      const p = state.project;
+      const prompt = text.value.trim();
+      if (!prompt) { toast("Write a message first", true); text.focus(); return; }
+      const reviewer = review.checked ? reviewerFor(state.agent) : null;
+      const request = { projectId: p.id, kind: reviewer ? "pipeline" : "run", agent: state.agent, prompt, publish: !!p.forge, resumeOnLimitReset: true };
+      if (reviewer) request.reviewer = reviewer;
+      send.disabled = true;
+      try {
+        const result = await postJson("/api/jobs", request);
+        if (!result.ok) { toast(result.body.error || "Failed (" + result.status + ")", true); return; }
+        text.value = "";
+        review.checked = false;
+        toast(AGENT[state.agent].label + " is on it");
+        loadRepo();
+      } catch (error) {
+        toast("Can't reach the server: " + error.message, true);
+      } finally {
+        send.disabled = false;
+      }
+    }
+
+    send.addEventListener("click", submit);
+    text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); });
+    const node = el("div", { class: "composer" }, picker, text, el("div", { class: "row" }, reviewRow, send), hint);
+    return { projectId, node, update: (p) => { state.project = p; render(); } };
+  }
+
   function worktreeState(w) {
     if (w.codex && w.codex.running) return "live";
     if (w.missing || w.changedFiles === null) return "bad";
@@ -415,7 +909,7 @@
     if (w.missing) return chip("missing", "bad", "alert");
     if (w.changedFiles === null) return chip("status unknown", "bad", "alert");
     if (w.changedFiles === 0) return chip("clean", "ok", "check");
-    return chip(w.changedFiles + (w.changedFiles === 1 ? " change" : " changes"), "warn", "edit");
+    return chip(plural(w.changedFiles, "change", "changes"), "warn", "edit");
   }
 
   function attachBox(session) {
@@ -427,27 +921,24 @@
     return el("div", { class: "attach" }, el("code", null, session.attachCommand), button);
   }
 
-  /** Push / pull request / merge for an agent branch (issue #1). Merging happens on the forge. */
+  /** Push / pull request / merge for an agent branch. Merging happens on the forge. */
   function publishRow(w, project) {
     const pub = w.publish;
     const pr = pub.pullRequest;
-    const mr = project.forge === "gitlab";
+    const mr = !!(FORGE[project.forge] || {}).mr;
     const act = (action, label, iconName, cls, confirmText) => el("button", { class: "small-btn " + (cls || ""), type: "button", onclick: async (event) => {
       if (confirmText && !confirm(confirmText)) return;
       event.currentTarget.disabled = true;
-      const result = await api("/api/projects/" + encodeURIComponent(project.id) + "/branches/" + action,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branch: w.branch }) });
+      const result = await postJson("/api/projects/" + encodeURIComponent(project.id) + "/branches/" + action, { branch: w.branch });
       toast(result.ok ? result.body.message : (result.body.error || "Failed (" + result.status + ")"), !result.ok);
-      load();
+      refreshActive();
     } }, icon(iconName), label);
     const open = pr && ["open", "opened", "active"].includes(pr.state);
-    const prLink = pr && typeof pr.url === "string" && pr.url.startsWith("https://")
-      ? el("a", { class: "chip " + (pr.state === "merged" || pr.state === "completed" ? "ok" : "running"), href: pr.url, target: "_blank", rel: "noopener noreferrer" },
-          icon("link"), el("span", { class: "t" }, (mr ? "!" : "#") + pr.number + " " + pr.state))
-      : null;
+    const prUrl = pr ? httpsOnly(pr.url) : null;
     return el("div", { class: "publish" },
       pub.upToDate ? chip("pushed", "ok", "check") : act("push", pub.pushed ? "Push update" : "Push", "play"),
-      prLink,
+      prUrl ? el("a", { class: "chip " + (pr.state === "merged" || pr.state === "completed" ? "ok" : "running"), href: prUrl, target: "_blank", rel: "noopener noreferrer" },
+        icon("pr"), el("span", { class: "t" }, (mr ? "!" : "#") + pr.number + " " + pr.state)) : null,
       !pr && !pub.blocked ? act("pull-request", mr ? "Create MR" : "Create PR", "plus", "go") : null,
       open && !pub.blocked ? act("merge", "Merge", "check", null,
         "Merge " + w.branch + " into " + (project.defaultBranch || "the default branch") + "? The forge's required checks and approvals still apply.") : null,
@@ -457,9 +948,8 @@
   function worktreeRow(w, project) {
     const label = w.branch || ("detached @ " + (w.head ? w.head.slice(0, 8) : "?"));
     const tags = [
-      w.codex ? chip(w.codex.running ? "Codex live" : "Codex", w.codex.running ? "live" : null, "spark") : null,
-      w.agentRun ? chip("Agent run", "agent", "bot") : null,
-      w.scheduledRun ? chip("Scheduled run", null, "clock") : null,
+      w.codex ? chip(w.codex.running ? "Codex live" : "Codex", w.codex.running ? "live" : null, "terminal") : null,
+      w.scheduledRun ? chip("agent run", null, "clock") : w.agentRun ? chip("agent branch", null, "branch") : null,
       w.main ? chip("main worktree", null, "folder") : null,
     ].filter(Boolean);
     return el("div", { class: "wt" },
@@ -467,30 +957,23 @@
       el("div", { class: "wt-top" }, el("span", { class: "branch", title: label }, label), changesChip(w)),
       el("div", null,
         el("div", { class: "wt-meta" },
-          el("span", { title: w.lastCommitAt || "" }, icon("clock"), relative(w.lastCommitAt)),
+          el("span", { title: w.lastCommitAt || "" }, icon("clock"), relative(w.lastCommitAt, "no commits")),
           w.head ? el("span", null, icon("branch"), w.head.slice(0, 7)) : null),
         tags.length ? el("div", { class: "chips" }, tags) : null,
         w.codex ? attachBox(w.codex) : null,
-        w.publish && w.branch && project ? publishRow(w, project) : null));
-  }
-
-  function lastActivity(p) {
-    return p.worktrees.map((w) => w.lastCommitAt).filter(Boolean).sort().pop() || null;
+        w.publish && w.branch ? publishRow(w, project) : null));
   }
 
   async function startCodex(project, button) {
     if (!confirm("Start Codex on " + project.name + " in a new worktree?")) return;
-    if (!getToken() && !(await askToken())) return;
     button.disabled = true;
     try {
-      let response = await post(project.id);
-      if (response.status === 401 && await askToken()) response = await post(project.id);
-      const body = await response.json().catch(() => ({}));
-      if (response.status === 201) {
-        toast("Codex started · " + body.session.attachCommand);
-        await load();
+      const result = await api("/api/projects/" + encodeURIComponent(project.id) + "/codex", { method: "POST" });
+      if (result.status === 201) {
+        toast("Codex started · " + result.body.session.attachCommand);
+        refreshActive();
       } else {
-        toast(body.error || ("Failed (" + response.status + ")"), true);
+        toast(result.body.error || ("Failed (" + result.status + ")"), true);
       }
     } catch (error) {
       toast("Can't reach the server: " + error.message, true);
@@ -499,62 +982,338 @@
     }
   }
 
-  function post(id) {
-    return fetch("/api/projects/" + encodeURIComponent(id) + "/codex", {
-      method: "POST", cache: "no-store", headers: { Authorization: "Bearer " + getToken(), Accept: "application/json" },
-    });
-  }
-
-  function card(p) {
-    const parts = p.name.split("/");
-    const repo = parts.pop();
-    const owner = parts.join("/");
-    const h = hue(p.name);
-    // The server builds webUrl from validated parts; still only follow https links.
-    const link = p.webUrl || p.gitHubUrl;
-    const safeUrl = typeof link === "string" && link.startsWith("https://") ? link : null;
-    const forgeName = { github: "GitHub", gitlab: "GitLab", "azure-devops": "Azure DevOps" }[p.forge];
-    const agents = p.worktrees.filter((w) => w.agentRun).length;
-    const live = p.worktrees.filter((w) => w.codex && w.codex.running).length;
-    const button = el("button", { class: "primary", type: "button", disabled: !codexAvailable }, icon("terminal"), "Start Codex");
+  function branchesPanel(p) {
+    const button = el("button", { class: "small-btn", type: "button", disabled: !codexAvailable }, icon("terminal"), "Start Codex");
     button.addEventListener("click", () => startCodex(p, button));
-    return el("section", { class: "card" },
-      el("div", { class: "card-head" },
-        el("div", { class: "avatar", style: `background: linear-gradient(135deg, hsl(${h} 70% 55%), hsl(${(h + 40) % 360} 70% 42%))` }, repo.slice(0, 2)),
-        el("div", { class: "names" }, owner ? el("div", { class: "owner" }, owner) : null, el("div", { class: "repo", title: p.name }, repo)),
-        safeUrl ? el("a", { class: "icon-btn", href: safeUrl, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open on " + (forgeName || "the forge") }, icon("link")) : null),
-      el("div", { class: "chips" },
-        chip(p.defaultBranch || "unknown", null, "branch", true),
-        chip(p.kind === "mirror" ? "mirror" : "checkout", null, p.kind === "mirror" ? "box" : "folder"),
-        forgeName ? chip(forgeName, null, "link") : null,
-        chip(relative(lastActivity(p)), null, "clock"),
-        live ? chip(live + " live", "live", "spark") : null,
-        agents ? chip(agents + (agents === 1 ? " run" : " runs"), "agent", "bot") : null),
-      Array.isArray(p.commitsPerDay) && p.commitsPerDay.length
-        ? (() => { const last = p.commitsPerDay.slice(-14); const n = last.reduce((x, y) => x + y, 0);
-            return el("div", { class: "spark" }, el("span", null, "14d"), sparkline(last), el("span", null, plural(n, "commit", "commits"))); })()
-        : null,
-      p.worktrees.length ? el("div", { class: "wts" }, p.worktrees.map((w) => worktreeRow(w, p))) : null,
-      el("details", null,
-        el("summary", null, icon("folder"), "Paths & origin"),
-        el("div", { class: "paths" },
-          p.originUrl ? el("div", null, el("b", null, "origin"), p.originUrl) : null,
-          el("div", null, el("b", null, "repo"), p.path),
-          p.worktrees.map((w) => el("div", null, el("b", null, w.branch || "detached"), w.path)))),
-      el("div", { class: "actions" }, button,
-        codexAvailable ? null : el("div", { class: "hint" }, "Codex CLI not found on the server")));
+    return el("section", { class: "panel" },
+      el("div", { class: "panel-head" }, el("h2", null, "Branches"), el("span", { class: "panel-sub" }, plural(p.worktrees.length, "worktree", "worktrees"))),
+      el("div", null, p.worktrees.map((w) => worktreeRow(w, p))),
+      el("div", { class: "codex-start" },
+        el("span", { class: "muted" }, codexAvailable ? "Or work with Codex yourself: a new worktree with Codex in tmux, to attach over SSH." : "Codex CLI not found on the server."),
+        button));
   }
 
-  // ---- charts: inline SVG, sized to the container in CSS pixels ----
-  const SVG_NS = "http://www.w3.org/2000/svg";
-  function svgEl(tag, attrs) {
-    const node = document.createElementNS(SVG_NS, tag);
-    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
-    return node;
+  function prRow(p, pr) {
+    const look = { merged: ["merge", "merged " + relative(pr.mergedAt)], open: ["pr", "opened " + relative(pr.createdAt)], closed: ["x", "closed"] }[pr.state] || ["pr", pr.state];
+    const parts = [
+      el("span", { class: "state " + pr.state, role: "img", "aria-label": pr.state }, icon(look[0])),
+      el("div", { style: "min-width:0" },
+        el("div", { class: "pr-head" }, el("span", { class: "pr-num" }, prRef(p, pr.number)), el("span", { class: "pr-name", title: pr.title }, pr.title)),
+        el("div", { class: "pr-meta" }, (pr.branch ? pr.branch + " · " : "") + look[1])),
+      el("div", { class: "pr-tags" }, person(pr.author), agentMark(pr.agent), ciMark(pr.ci)),
+    ];
+    const url = httpsOnly(pr.url);
+    return url ? el("a", { class: "pr-row", href: url, target: "_blank", rel: "noopener noreferrer" }, parts) : el("div", { class: "pr-row" }, parts);
   }
-  const fmtDay = (iso, opts) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString([], opts || { month: "short", day: "numeric" }); };
-  const niceMax = (v) => { if (v <= 4) return Math.max(v, 1); const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return v; };
-  const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+  function historyPanel(p) {
+    const ins = p.insights;
+    const forge = FORGE[p.forge];
+    const body = !p.forge
+      ? el("p", { class: "muted" }, "Pull request history needs a GitHub, GitLab or Azure DevOps remote.")
+      : !ins
+        ? el("p", { class: "muted" }, "Reading pull requests from " + forge.label + "…")
+        : [
+            ins.error ? el("div", { class: "notice" }, icon("alert"), el("span", null, "Couldn't read pull requests: " + ins.error)) : null,
+            ins.recent.length ? el("div", null, ins.recent.map((pr) => prRow(p, pr)))
+              : ins.fetchedAt ? el("p", { class: "muted" }, "No pull requests yet.") : null,
+          ];
+    return el("section", { class: "panel" },
+      el("div", { class: "panel-head" }, el("h2", null, "Branch history"),
+        ins && ins.fetchedAt ? el("span", { class: "panel-sub" }, "from " + (forge ? forge.label : "the forge") + " · " + relative(ins.fetchedAt)) : null),
+      body);
+  }
+
+  function pathsPanel(p) {
+    return el("section", { class: "panel" }, el("details", null,
+      el("summary", null, icon("folder"), "Paths & origin"),
+      el("div", { class: "paths" },
+        p.originUrl ? el("div", null, el("b", null, "origin"), p.originUrl) : null,
+        el("div", null, el("b", null, "repo"), p.path),
+        p.worktrees.map((w) => el("div", null, el("b", null, w.branch || "detached"), w.path)))));
+  }
+
+  function renderRepo(p) {
+    if (!composer || composer.projectId !== p.id) composer = buildComposer(p.id);
+    composer.update(p);
+    repoTab.replaceChildren(
+      el("button", { class: "back", type: "button", onclick: () => go("") }, icon("back"), "All repositories"),
+      repoHeader(p),
+      el("section", { class: "panel" },
+        el("div", { class: "panel-head" }, el("h2", null, "Chat"), el("span", { class: "panel-sub" }, "Each message runs on its own branch")),
+        thread(p), composer.node),
+      historyPanel(p),
+      branchesPanel(p),
+      pathsPanel(p));
+  }
+
+  async function loadRepo() {
+    const id = currentRepo;
+    if (!getToken()) { repoTab.replaceChildren(lockedPanel(false)); return; }
+    spin(true);
+    try {
+      const [projects, schedule] = await Promise.all([fetchProjects(), api("/api/schedule", { prompt: false }).catch(() => null)]);
+      if (id !== currentRepo) return;
+      if (projects.locked) { repoTab.replaceChildren(lockedPanel(true)); return; }
+      if (schedule && schedule.ok && schedule.json) scheduleData = schedule.body;
+      const project = projectsCache.find((p) => p.id === id);
+      if (!project) {
+        repoTab.replaceChildren(
+          el("button", { class: "back", type: "button", onclick: () => go("") }, icon("back"), "All repositories"),
+          el("div", { class: "panel" }, el("p", { class: "muted" }, "This repository is no longer in the configured folders.")));
+        return;
+      }
+      renderRepo(project);
+      stamp();
+    } catch (error) {
+      repoTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Can't reach the server"), "Is Tailscale connected? " + error.message));
+      status.textContent = "Offline";
+    } finally {
+      spin(false);
+    }
+  }
+
+  // ---------- navigation ----------
+  function go(hash) {
+    if (location.hash.replace(/^#/, "") === hash) route();
+    else location.hash = hash;
+  }
+
+  function route() {
+    const hash = location.hash.replace(/^#/, "");
+    if (activeTab === "overview") gridScroll = window.scrollY;
+    if (hash.startsWith("repo/")) {
+      currentRepo = hash.slice(5);
+      showTab("repo");
+      window.scrollTo(0, 0);
+      return;
+    }
+    currentRepo = null;
+    composer = null;
+    const tab = hash === "schedule" || hash === "usage" ? hash : "overview";
+    showTab(tab);
+    window.scrollTo(0, tab === "overview" ? gridScroll : 0);
+  }
+
+  function showTab(name) {
+    activeTab = name;
+    const selected = name === "repo" ? "overview" : name;
+    for (const button of document.querySelectorAll(".tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === selected));
+    for (const tab of ["overview", "repo", "schedule", "usage"]) $("tab-" + tab).hidden = tab !== name;
+    refreshActive();
+  }
+
+  function refreshActive() {
+    if (activeTab === "repo") return loadRepo();
+    if (activeTab === "schedule") return loadSchedule();
+    if (activeTab === "usage") return loadUsage();
+    return load();
+  }
+
+  // ---------- schedule ----------
+  function describeSchedule(job) {
+    const sc = job.schedule;
+    if (sc.at) return job.done ? "Ran " + fmtTime(job.lastFiredAt || sc.at) : "Once · " + fmtTime(sc.at);
+    const days = sc.days && sc.days.length && sc.days.length < 7
+      ? (sc.days.join() === "1,2,3,4,5" ? "Mon–Fri" : sc.days.map((d) => DAY_NAMES[d - 1]).join(" "))
+      : "every day";
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return "Daily " + sc.time + " · " + days + (sc.zone && sc.zone !== here ? " (" + sc.zone + ")" : "");
+  }
+
+  const agentChip = (agent, prefix) => el("span", { class: "chip agent" }, agentMark(agent), el("span", { class: "t" }, (prefix || "") + AGENT[agent].label));
+
+  function jobItem(view) {
+    const job = view.job;
+    const agents = job.kind === "pipeline" ? [job.agent, job.reviewer || defaultReviewer(job.agent)] : [job.agent];
+    const action = (path, label, iconName, cls, confirmText) => el("button", { class: "small-btn " + (cls || ""), type: "button", onclick: async () => {
+      if (confirmText && !confirm(confirmText)) return;
+      const result = await api("/api/jobs/" + encodeURIComponent(job.id) + "/" + path, { method: "POST" });
+      toast(result.ok ? label + " ✓" : (result.body.error || "Failed (" + result.status + ")"), !result.ok);
+      loadSchedule();
+    } }, icon(iconName), label);
+    return el("div", { class: "item" },
+      el("div", { class: "row" }, el("span", { class: "name", title: job.name }, job.name),
+        job.publish ? chip("opens a PR", null, "pr") : null,
+        job.enabled ? null : chip("paused", null, "pause")),
+      el("div", { class: "row" },
+        agents.map((a, i) => agentChip(a, job.kind === "pipeline" ? (i === 0 ? "builds: " : "reviews: ") : "")),
+        chip(job.projectName, null, "folder")),
+      el("div", { class: "meta" }, describeSchedule(job) + (view.nextRunAt && job.enabled ? " · next " + until(view.nextRunAt) : "")),
+      el("div", { class: "meta" }, clamp(job.prompt, 160)),
+      el("div", { class: "actions-row" },
+        action("run", "Run now", "play", "go"),
+        job.enabled ? action("pause", "Pause", "pause") : action("enable", "Enable", "play"),
+        action("delete", "Delete", "trash", "danger", "Delete \"" + job.name + "\"? Past runs and their branches stay.")));
+  }
+
+  function runItem(run) {
+    const live = run.status === "running" && run.tmuxSession;
+    return el("div", { class: "item" },
+      el("div", { class: "row" },
+        agentChip(run.agent),
+        el("span", { class: "name" }, STAGE[run.stage] + " · " + run.projectName),
+        runStatus(run)),
+      el("div", { class: "meta" },
+        (run.branch ? run.branch + " · " : "") + (run.startedAt ? "started " + relative(run.startedAt) : "created " + relative(run.createdAt)) +
+        (run.pipelineId ? " · pipeline " + run.pipelineId.slice(0, 6) : "")),
+      run.summary ? el("div", { class: "meta" }, clamp(run.summary, 220)) : null,
+      run.error ? el("div", { class: "err" }, clamp(run.error, 220)) : null,
+      run.publishNote ? el("div", { class: "meta with-icon" }, icon("pr"), run.publishNote) : null,
+      live ? attachBox({ running: true, attachCommand: "tmux attach -t " + run.tmuxSession }) : null,
+      el("div", { class: "actions-row" },
+        el("button", { class: "small-btn", type: "button", onclick: () => openLog(run) }, icon("list"), "Log"),
+        run.status === "queued" || run.status === "running"
+          ? el("button", { class: "small-btn danger", type: "button", onclick: () => cancelRun(run, loadSchedule) }, icon("x"), "Cancel")
+          : null));
+  }
+
+  async function loadSchedule() {
+    if (!getToken()) { scheduleTab.replaceChildren(lockedPanel(false)); return; }
+    spin(true);
+    try {
+      const result = await api("/api/schedule");
+      if (!result.ok) throw new Error(result.body.error || "Failed (" + result.status + ")");
+      scheduleData = result.body;
+      const jobs = scheduleData.jobs, runs = scheduleData.runs;
+      const sandbox = scheduleData.sandbox;
+      const sandboxed = sandbox && Object.values(sandbox.agents || {}).some(Boolean);
+      scheduleTab.replaceChildren(
+        sandbox ? el("div", { class: "panel sandbox-row" },
+          chip(sandboxed ? "Agent sandbox on" : "Agent sandbox off", sandboxed ? "ok" : "warn", sandboxed ? "check" : "alert"),
+          el("span", { class: "hint-text" }, sandbox.note)) : null,
+        el("div", { class: "section-head" }, el("h2", null, "Jobs"),
+          el("button", { class: "small-btn go", type: "button", onclick: () => openJobForm() }, icon("plus"), "New job")),
+        el("div", { class: "list-card" }, jobs.length ? jobs.map(jobItem)
+          : el("div", { class: "empty" }, "No jobs yet. Schedule a run, a build-and-review, or a resume.")),
+        el("div", { class: "section-head" }, el("h2", null, "Recent runs")),
+        el("div", { class: "list-card" }, runs.length ? runs.map(runItem) : el("div", { class: "empty" }, "No runs yet.")));
+      stamp();
+    } catch (error) {
+      scheduleTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Couldn't load the schedule"), error.message));
+    } finally {
+      spin(false);
+    }
+  }
+
+  async function openLog(run) {
+    const dialog = $("log-dialog");
+    const body = el("div", { class: "log" }, el("div", null, "Loading…"));
+    dialog.replaceChildren(
+      el("div", { class: "section-head" }, el("h2", null, STAGE[run.stage] + " · " + AGENT[run.agent].label),
+        el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
+      el("div", { class: "meta" }, run.projectName + (run.branch ? " · " + run.branch : "")),
+      el("details", null, el("summary", null, "Prompt"), el("div", { class: "log" }, el("div", null, run.prompt))),
+      body);
+    dialog.showModal();
+    const result = await api("/api/runs/" + encodeURIComponent(run.id) + "/log");
+    if (!result.ok) { body.replaceChildren(el("div", { class: "error" }, result.body.error || "Failed")); return; }
+    const lines = result.body.activity || [];
+    body.replaceChildren(...(lines.length ? lines.map((l) => el("div", { class: l.kind }, l.text)) : [el("div", null, "No activity recorded yet.")]));
+  }
+
+  function segmented(options, value, onChange) {
+    const group = el("div", { class: "seg", role: "group" });
+    const render = (current) => group.replaceChildren(...options.map(([v, label]) =>
+      el("button", { type: "button", "aria-pressed": String(v === current), onclick: () => { render(v); onChange(v); } }, label)));
+    render(value);
+    return group;
+  }
+
+  async function openJobForm() {
+    if (!projectsCache.length) await load();
+    const form = { kind: "run", agent: "claude", reviewer: "codex", when: "now", days: [1, 2, 3, 4, 5] };
+    const agentOptions = [["claude", "Claude"], ["codex", "Codex"], ["gemini", "Gemini"]];
+    const dialog = $("job-dialog");
+    const agentsOk = (scheduleData && scheduleData.agents) || {};
+    const project = el("select", null, projectsCache.map((p) => el("option", { value: p.id }, p.name)));
+    const resumable = (scheduleData && scheduleData.resumable) || [];
+    const session = el("select", null, resumable.length
+      ? resumable.map((r, i) => el("option", { value: String(i) }, r.projectName + " · " + (r.branch || "detached") + " · " + AGENT[r.session.agent].label + " · " + relative(r.session.updatedAt)))
+      : el("option", { value: "" }, "No resumable sessions in agent worktrees"));
+    const prompt = el("textarea", { placeholder: "What should the agent do?" });
+    const soon = new Date(Date.now() + 3600e3); soon.setMinutes(0, 0, 0);
+    const pad = (n) => String(n).padStart(2, "0");
+    const at = el("input", { type: "datetime-local", value: `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:00` });
+    const time = el("input", { type: "time", value: "09:00" });
+    const resumeOnLimit = el("input", { type: "checkbox", checked: true });
+    const publish = el("input", { type: "checkbox" });
+    const publishRowEl = el("label", { class: "check" }, publish, el("span", null, "When it's done, push the branch and open a pull request"));
+    const daysGroup = el("div", { class: "days" });
+    const renderDays = () => daysGroup.replaceChildren(...DAY_NAMES.map((name, i) => el("button", {
+      type: "button", "aria-pressed": String(form.days.includes(i + 1)),
+      onclick: () => { form.days = form.days.includes(i + 1) ? form.days.filter((d) => d !== i + 1) : [...form.days, i + 1].sort(); renderDays(); },
+    }, name)));
+    renderDays();
+    const agentHint = el("div", { class: "hint-text" });
+    const reviewerSlot = el("div");
+    const renderReviewer = () => {
+      if (form.reviewer === form.agent) form.reviewer = defaultReviewer(form.agent);
+      reviewerSlot.replaceChildren(segmented(agentOptions.filter(([v]) => v !== form.agent), form.reviewer, (v) => { form.reviewer = v; sync(); }));
+    };
+    const fields = {
+      project: el("div", { class: "field" }, el("label", null, "Project"), project),
+      agent: el("div", { class: "field" }, el("span", null, "Agent"), segmented(agentOptions, form.agent, (v) => { form.agent = v; renderReviewer(); sync(); }), agentHint),
+      reviewer: el("div", { class: "field" }, el("span", null, "Reviewer"), reviewerSlot),
+      session: el("div", { class: "field" }, el("label", null, "Session to continue"), session,
+        el("div", { class: "hint-text" }, "Only sessions in agent worktrees can be resumed, never your own checkout.")),
+      prompt: el("div", { class: "field" }, el("label", null, "Task"), prompt),
+      at: el("div", { class: "field" }, el("label", null, "Date and time"), at),
+      daily: el("div", { class: "field" }, el("label", null, "Time"), time, daysGroup),
+    };
+    function sync() {
+      const resume = form.kind === "resume";
+      fields.project.hidden = resume; fields.agent.hidden = resume; fields.session.hidden = !resume; publishRowEl.hidden = resume;
+      prompt.placeholder = resume ? "Optional: what to tell it (default: continue where you left off)" : "What should the agent do?";
+      fields.at.hidden = form.when !== "once"; fields.daily.hidden = form.when !== "daily";
+      fields.reviewer.hidden = form.kind !== "pipeline";
+      const missing = [form.agent, form.kind === "pipeline" ? form.reviewer : null].filter((a) => a && agentsOk[a] === false);
+      agentHint.textContent = (form.kind === "pipeline"
+        ? AGENT[form.agent].label + " builds and commits, " + AGENT[form.reviewer].label + " reviews the commit, then " + AGENT[form.agent].label + " addresses the review. "
+        : "") + missing.map((a) => AGENT[a].label + " is not installed on the server.").join(" ");
+    }
+    const submit = el("button", { class: "primary", type: "button" }, "Create job");
+    submit.addEventListener("click", async () => {
+      const request = { kind: form.kind, agent: form.agent, prompt: prompt.value, resumeOnLimitReset: resumeOnLimit.checked, publish: publish.checked && form.kind !== "resume" };
+      if (form.kind === "pipeline") request.reviewer = form.reviewer;
+      if (form.kind === "resume") {
+        const target = resumable[Number(session.value)];
+        if (!target) { toast("Choose a session to resume", true); return; }
+        request.projectId = target.projectId;
+        request.resume = { agent: target.session.agent, sessionId: target.session.sessionId, worktree: target.session.worktree };
+        request.agent = target.session.agent;
+      } else {
+        request.projectId = project.value;
+      }
+      if (form.when === "once") request.schedule = { at: new Date(at.value).toISOString() };
+      if (form.when === "daily") request.schedule = { time: time.value, days: form.days, zone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+      submit.disabled = true;
+      const result = await postJson("/api/jobs", request);
+      submit.disabled = false;
+      if (!result.ok) { toast(result.body.error || "Failed (" + result.status + ")", true); return; }
+      dialog.close();
+      toast(form.when === "now" ? "Started" : "Scheduled");
+      loadSchedule();
+    });
+    dialog.replaceChildren(
+      el("div", { class: "section-head" }, el("h2", null, "New job"),
+        el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
+      el("div", { class: "field" }, el("span", null, "What"),
+        segmented([["run", "Run a task"], ["pipeline", "Build + review"], ["resume", "Resume"]], form.kind, (v) => { form.kind = v; sync(); })),
+      fields.project, fields.agent, fields.reviewer, fields.session, fields.prompt,
+      el("div", { class: "field" }, el("span", null, "When"), segmented([["now", "Now"], ["once", "Once"], ["daily", "Repeat"]], form.when, (v) => { form.when = v; sync(); })),
+      fields.at, fields.daily,
+      el("label", { class: "check" }, resumeOnLimit, el("span", null, "If a usage limit stops it, continue automatically when the limit resets")),
+      publishRowEl,
+      el("p", { class: "hint-text" }, "Runs work in a new branch and worktree, may edit files and run build/test commands. Only the server pushes, and only when asked."),
+      el("div", { class: "row" }, submit));
+    renderReviewer();
+    sync();
+    dialog.showModal();
+  }
+
+  // ---------- charts: inline SVG on paper, sized to the panel in CSS pixels ----------
+  const chartWidth = () => Math.max(240, usageTab.clientWidth - 28);
 
   // A data-end rounded 4px at the top, square at the baseline.
   function column(x, y, w, h, color, roundTop) {
@@ -574,7 +1333,7 @@
     const y = (v) => top + plotH - (v / max) * plotH;
     // Counts are whole numbers: only show a midline when it lands on one.
     for (const tick of max >= 4 && max % 2 === 0 ? [0, max / 2, max] : [0, max]) {
-      svg.append(svgEl("line", { x1: left, x2: width, y1: y(tick), y2: y(tick), stroke: "var(--grid)", "stroke-width": 1 }));
+      svg.append(svgEl("line", { x1: left, x2: width, y1: y(tick), y2: y(tick), stroke: "var(--paper-line)", "stroke-width": 1 }));
       const label = svgEl("text", { x: left - 6, y: y(tick) + 3, "text-anchor": "end" });
       label.textContent = compact(tick);
       svg.append(label);
@@ -613,39 +1372,24 @@
     return svg;
   }
 
-  function sparkline(values) {
-    const width = 120, height = 28, pad = 5;
-    const max = Math.max(1, ...values);
-    const step = (width - pad * 2) / Math.max(1, values.length - 1);
-    const pts = values.map((v, i) => [pad + i * step, height - pad - (v / max) * (height - pad * 2)]);
-    const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "none", "aria-hidden": "true" });
-    svg.append(svgEl("polyline", { points: pts.map((p) => p.join(",")).join(" "), fill: "none", stroke: "var(--series-commits)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }));
-    return svg;
-  }
-
-  const analytics = $("analytics");
-  let lastAnalytics = null;
-
-  function renderAnalytics(a) {
-    lastAnalytics = a;
-    if (!a || !Array.isArray(a.days) || !a.days.length) { analytics.hidden = true; return; }
-    analytics.hidden = false;
+  function activityPanel(a) {
+    if (!a || !Array.isArray(a.days) || !a.days.length) return null;
     const commits = a.commitsPerDay.reduce((x, y) => x + y, 0);
     const codex = a.codexStartsPerDay.reduce((x, y) => x + y, 0);
     const agents = a.agentRunsPerDay.reduce((x, y) => x + y, 0);
 
     const commitReadout = el("div", { class: "readout" }, "Tap a day for details");
     const commitChart = commits
-      ? columnChart(a.days, [{ values: a.commitsPerDay, color: "var(--series-commits)" }], commitReadout, (i) => plural(a.commitsPerDay[i], "commit", "commits"))
+      ? columnChart(a.days, [{ values: a.commitsPerDay, color: "var(--commits)" }], commitReadout, (i) => plural(a.commitsPerDay[i], "commit", "commits"))
       : el("div", { class: "muted" }, "No commits in the last " + a.days.length + " days.");
 
     const sessionReadout = el("div", { class: "readout" }, plural(codex, "Codex session", "Codex sessions") + " · " + plural(agents, "agent run", "agent runs"));
     const sessionChart = codex + agents
       ? columnChart(a.days, [
-          { values: a.codexStartsPerDay, color: "var(--series-codex)" },
-          { values: a.agentRunsPerDay, color: "var(--series-agent)" },
+          { values: a.codexStartsPerDay, color: "var(--codex)" },
+          { values: a.agentRunsPerDay, color: "var(--claude)" },
         ], sessionReadout, (i) => plural(a.codexStartsPerDay[i], "Codex session", "Codex sessions") + ", " + plural(a.agentRunsPerDay[i], "agent run", "agent runs"))
-      : el("div", { class: "muted" }, "No Codex sessions or agent runs yet. Start one from a project below.");
+      : el("div", { class: "muted" }, "No Codex sessions or agent runs yet.");
 
     const top = a.busiest.length ? a.busiest[0].commits : 0;
     const rank = a.busiest.length
@@ -656,383 +1400,30 @@
       : el("div", { class: "muted" }, "No commits in this window.");
 
     const rows = a.days.map((d, i) => [d, a.commitsPerDay[i], a.codexStartsPerDay[i], a.agentRunsPerDay[i]]).reverse();
-    const table = el("details", null, el("summary", null, "Show as table"),
+    const table = el("details", { class: "table-details" }, el("summary", null, "Show as table"),
       el("div", { class: "table-wrap" }, el("table", null,
         el("thead", null, el("tr", null, el("th", null, "Day"), el("th", null, "Commits"), el("th", null, "Codex"), el("th", null, "Agent runs"))),
         el("tbody", null, rows.map((r) => el("tr", null, el("td", null, fmtDay(r[0], { weekday: "short", month: "short", day: "numeric" })), el("td", null, r[1]), el("td", null, r[2]), el("td", null, r[3])))))));
 
-    analytics.replaceChildren(
+    return el("section", { class: "panel" },
       el("h2", null, "Activity · last " + a.days.length + " days"),
-      el("div", { class: "hero" }, el("b", null, commits.toLocaleString()), el("span", null, commits === 1 ? "commit across all projects" : "commits across all projects")),
+      el("div", { class: "hero" }, el("b", null, commits.toLocaleString()), el("span", null, commits === 1 ? "commit across all repositories" : "commits across all repositories")),
       commitReadout, commitChart,
       el("div", { class: "section" }, el("h3", null, "Sessions started per day"),
         el("div", { class: "legend" },
-          el("span", null, el("i", { style: "background: var(--series-codex)" }), "Codex"),
-          el("span", null, el("i", { style: "background: var(--series-agent)" }), "Agent runs")),
+          el("span", null, el("i", { style: "background: var(--codex)" }), "Codex"),
+          el("span", null, el("i", { style: "background: var(--claude)" }), "Agent runs")),
         sessionReadout, sessionChart),
-      el("div", { class: "section" }, el("h3", null, "Busiest projects"), rank),
+      el("div", { class: "section" }, el("h3", null, "Busiest repositories"), rank),
       table);
   }
 
-  let resizeTimer = 0;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { renderAnalytics(lastAnalytics); if (lastUsage) renderUsage(lastUsage); }, 150);
-  });
-
-  function renderAppBanner(app) {
-    const slot = $("app-slot");
-    if (!app || typeof app.url !== "string" || !app.url.startsWith("/download/")) { slot.replaceChildren(); return; }
-    const mb = (app.sizeBytes / 1048576).toFixed(1);
-    slot.replaceChildren(el("a", { class: "app-banner", href: app.url, download: "llm-manager.apk" },
-      el("div", { class: "logo" }, icon("download")),
-      el("div", null, el("b", null, "Get the Android app"), el("span", null, mb + " MB · built " + relative(app.builtAt))),
-      icon("link")));
-  }
-
-  function renderStats(projects) {
-    const wts = projects.flatMap((p) => p.worktrees);
-    const tile = (n, label, color) => el("div", { class: "stat" }, el("b", null, n),
-      el("span", null, color ? el("i", { style: "background:" + color }) : null, label));
-    stats.replaceChildren(
-      tile(projects.length, "Projects"),
-      tile(wts.filter((w) => w.codex && w.codex.running).length, "Codex live", "var(--series-codex)"),
-      tile(wts.filter((w) => w.agentRun).length, "Agent runs", "var(--series-agent)"),
-      tile(wts.filter((w) => w.changedFiles > 0).length, "Uncommitted", "var(--warn)"));
-  }
-
-  /** Without a (valid) token there is nothing to show but how to get one, and the open app download. */
-  function renderLocked(refused) {
-    stats.replaceChildren();
-    analytics.hidden = true;
-    $("app-slot").replaceChildren();
-    list.replaceChildren(el("div", { class: "panel" },
-      el("div", { class: "section-head" }, el("h2", null, refused ? "Access token refused" : "Access token needed")),
-      el("p", { class: "muted" }, refused
-        ? "The saved token was not accepted. It changes if the server's token file is replaced."
-        : "This dashboard shows repositories and starts agents, so it needs the server's access token."),
-      el("div", { class: "actions-row" },
-        el("button", { class: "small-btn go", type: "button", onclick: async () => { if (await askToken()) load(); } }, icon("lock"), "Enter token"),
-        el("a", { class: "small-btn", href: "/download/llm-manager.apk", download: "llm-manager.apk" }, icon("download"), "Android app"))));
-    status.textContent = "Locked";
-  }
-
-  async function load() {
-    if (inFlight) return;
-    if (!getToken()) { renderLocked(false); return; }
-    inFlight = true;
-    $("refresh").classList.add("spin");
-    try {
-      const result = await api("/api/projects", { prompt: false });
-      if (result.status === 401) { renderLocked(true); return; }
-      // A captive portal answers 200 with HTML; only trust a JSON body of the expected shape.
-      if (!result.ok || !result.json) throw new Error("Unexpected response (" + result.status + ")");
-      const body = result.body;
-      if (!body || !Array.isArray(body.projects)) throw new Error("Unexpected response shape");
-      codexAvailable = body.codexAvailable === true;
-      projectsCache = body.projects;
-      renderStats(body.projects);
-      renderAnalytics(body.analytics);
-      renderAppBanner(body.androidApp);
-      list.replaceChildren(...(body.projects.length
-        ? body.projects.map(card)
-        : [el("div", { class: "empty" }, "No git repositories found in the configured folders.")]));
-      status.textContent = "Updated " + new Date(body.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    } catch (error) {
-      stats.replaceChildren();
-      analytics.hidden = true;
-      list.replaceChildren(el("div", { class: "error" }, el("strong", null, "Can't reach the server"), "Is Tailscale connected? " + error.message));
-      status.textContent = "Offline";
-    } finally {
-      inFlight = false;
-      $("refresh").classList.remove("spin");
-    }
-  }
-
-
-  // ---------- shared ----------
-  const compact = (n) => (Math.abs(n) >= 10000 ? new Intl.NumberFormat([], { notation: "compact", maximumFractionDigits: 1 }).format(n) : String(n));
-  const chartWidth = () => Math.max(240, document.querySelector("main").clientWidth - 58);
-  const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  const AGENT = {
-    claude: { label: "Claude", chip: "claude", color: "var(--series-agent)" },
-    codex: { label: "Codex", chip: "codex", color: "var(--series-codex)" },
-    gemini: { label: "Gemini", chip: "gemini", color: "var(--series-gemini)" },
-  };
-  const defaultReviewer = (agent) => (agent === "claude" ? "codex" : "claude");
-  const STAGE = { work: "Build", review: "Review", fix: "Fix", resume: "Resume" };
-  const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-  function until(iso) {
-    const seconds = Math.round((Date.parse(iso) - Date.now()) / 1000);
-    if (!Number.isFinite(seconds)) return "";
-    if (seconds <= 60) return "now";
-    const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), d = Math.floor(h / 24);
-    return "in " + (d >= 1 ? d + "d " + (h % 24) + "h" : h >= 1 ? h + "h " + m + "m" : m + "m");
-  }
-
-  /**
-   * Authenticated JSON request to this origin. On 401 it asks for the token once, unless
-   * `prompt: false` (background refreshes must never pop a dialog).
-   */
-  async function api(path, options) {
-    const { prompt = true, ...init } = options || {};
-    const send = () => fetch(path, Object.assign({ cache: "no-store" }, init, {
-      headers: Object.assign({ Accept: "application/json", Authorization: "Bearer " + getToken() }, init.headers || {}),
-    }));
-    let response = await send();
-    if (response.status === 401 && prompt && await askToken()) response = await send();
-    const type = response.headers.get("Content-Type") || "";
-    const json = type.includes("application/json");
-    const body = json ? await response.json().catch(() => ({})) : {};
-    return { ok: response.ok, status: response.status, body, json };
-  }
-
-  function showTab(name) {
-    activeTab = name;
-    for (const button of document.querySelectorAll(".tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
-    for (const tab of ["overview", "schedule", "usage"]) $("tab-" + tab).hidden = tab !== name;
-    try { localStorage.setItem("llm-manager.tab", name); } catch (_) { /* private mode */ }
-    refreshActive();
-  }
-
-  function refreshActive() {
-    if (activeTab === "schedule") return loadSchedule();
-    if (activeTab === "usage") return loadUsage();
-    return load();
-  }
-
-  // ---------- schedule ----------
-  let scheduleData = null;
-  const scheduleTab = $("tab-schedule");
-
-  function describeSchedule(job) {
-    const sc = job.schedule;
-    if (sc.at) return job.done ? "Ran " + fmtTime(job.lastFiredAt || sc.at) : "Once · " + fmtTime(sc.at);
-    const days = sc.days && sc.days.length && sc.days.length < 7
-      ? (sc.days.join() === "1,2,3,4,5" ? "Mon–Fri" : sc.days.map((d) => DAY_NAMES[d - 1]).join(" "))
-      : "every day";
-    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return "Daily " + sc.time + " · " + days + (sc.zone && sc.zone !== here ? " (" + sc.zone + ")" : "");
-  }
-
-  function statusChip(run) {
-    switch (run.status) {
-      case "queued": return chip(run.notBefore && Date.parse(run.notBefore) > Date.now() ? "waits " + until(run.notBefore) : "queued", null, "clock");
-      case "running": return chip("running", "running", "loader");
-      case "succeeded": return chip("done", "ok", "check");
-      case "limited": return chip(run.resumeScheduled ? "limit · resumes" : "usage limit", "warn", "alert");
-      case "cancelled": return chip("cancelled", null, "x");
-      default: return chip("failed", "bad", "alert");
-    }
-  }
-
-  function jobItem(view) {
-    const job = view.job;
-    const agents = job.kind === "pipeline" ? [job.agent, job.reviewer || defaultReviewer(job.agent)] : [job.agent];
-    const action = (path, label, iconName, cls, confirmText) => el("button", { class: "small-btn " + (cls || ""), type: "button", onclick: async () => {
-      if (confirmText && !confirm(confirmText)) return;
-      const result = await api("/api/jobs/" + encodeURIComponent(job.id) + "/" + path, { method: "POST" });
-      toast(result.ok ? label + " ✓" : (result.body.error || "Failed (" + result.status + ")"), !result.ok);
-      loadSchedule();
-    } }, icon(iconName), label);
-    return el("div", { class: "item" },
-      el("div", { class: "row" }, el("span", { class: "name", title: job.name }, job.name),
-        job.enabled ? null : chip("paused", null, "pause")),
-      el("div", { class: "row" },
-        agents.map((a, i) => chip((job.kind === "pipeline" ? (i === 0 ? "builds: " : "reviews: ") : "") + AGENT[a].label, AGENT[a].chip)),
-        chip(job.projectName, null, "folder")),
-      el("div", { class: "meta" }, describeSchedule(job) + (view.nextRunAt && job.enabled ? " · next " + until(view.nextRunAt) : "")),
-      el("div", { class: "meta" }, job.prompt.length > 160 ? job.prompt.slice(0, 160) + "…" : job.prompt),
-      el("div", { class: "actions-row" },
-        action("run", "Run now", "play", "go"),
-        job.enabled ? action("pause", "Pause", "pause") : action("enable", "Enable", "play"),
-        action("delete", "Delete", "trash", "danger", "Delete \"" + job.name + "\"? Past runs and their branches stay.")));
-  }
-
-  function runItem(run) {
-    const live = run.status === "running" && run.tmuxSession;
-    return el("div", { class: "item" },
-      el("div", { class: "row" },
-        chip(AGENT[run.agent].label, AGENT[run.agent].chip),
-        el("span", { class: "name" }, STAGE[run.stage] + " · " + run.projectName),
-        statusChip(run)),
-      el("div", { class: "meta" },
-        (run.branch ? run.branch + " · " : "") + (run.startedAt ? "started " + relative(run.startedAt) : "created " + relative(run.createdAt)) +
-        (run.pipelineId ? " · pipeline " + run.pipelineId.slice(0, 6) : "")),
-      run.summary ? el("div", { class: "meta" }, run.summary.length > 220 ? run.summary.slice(0, 220) + "…" : run.summary) : null,
-      run.error ? el("div", { class: "err" }, run.error.length > 220 ? run.error.slice(0, 220) + "…" : run.error) : null,
-      live ? attachBox({ running: true, attachCommand: "tmux attach -t " + run.tmuxSession }) : null,
-      el("div", { class: "actions-row" },
-        el("button", { class: "small-btn", type: "button", onclick: () => openLog(run) }, icon("list"), "Log"),
-        run.status === "queued" || run.status === "running"
-          ? el("button", { class: "small-btn danger", type: "button", onclick: async () => {
-              if (!confirm("Cancel this run? Its worktree and branch are kept.")) return;
-              const result = await api("/api/runs/" + encodeURIComponent(run.id) + "/cancel", { method: "POST" });
-              toast(result.ok ? "Cancelled" : (result.body.error || "Failed"), !result.ok);
-              loadSchedule();
-            } }, icon("x"), "Cancel")
-          : null));
-  }
-
-  async function loadSchedule() {
-    if (!getToken()) {
-      scheduleTab.replaceChildren(el("div", { class: "panel" },
-        el("div", { class: "section-head" }, el("h2", null, "Schedule")),
-        el("p", { class: "muted" }, "Schedules and run logs need the server's access token."),
-        el("button", { class: "small-btn go", type: "button", onclick: async () => { if (await askToken()) loadSchedule(); } }, icon("lock"), "Enter token")));
-      return;
-    }
-    $("refresh").classList.add("spin");
-    try {
-      const result = await api("/api/schedule");
-      if (!result.ok) throw new Error(result.body.error || "Failed (" + result.status + ")");
-      scheduleData = result.body;
-      const jobs = scheduleData.jobs, runs = scheduleData.runs;
-      const sandbox = scheduleData.sandbox;
-      const sandboxed = sandbox && Object.values(sandbox.agents || {}).some(Boolean);
-      scheduleTab.replaceChildren(
-        sandbox ? el("div", { class: "row" },
-          chip(sandboxed ? "Agent sandbox on" : "Agent sandbox off", sandboxed ? "ok" : "warn", sandboxed ? "check" : "alert"),
-          el("span", { class: "hint-text" }, sandbox.note)) : null,
-        el("div", { class: "section-head" }, el("h2", null, "Jobs"),
-          el("button", { class: "small-btn go", type: "button", onclick: () => openJobForm() }, icon("plus"), "New job")),
-        el("div", { class: "list-card" }, jobs.length ? jobs.map(jobItem)
-          : el("div", { class: "empty" }, "No jobs yet. Schedule a run, a build-and-review, or a resume.")),
-        el("div", { class: "section-head" }, el("h2", null, "Recent runs")),
-        el("div", { class: "list-card" }, runs.length ? runs.map(runItem) : el("div", { class: "empty" }, "No runs yet.")));
-      status.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    } catch (error) {
-      scheduleTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Couldn't load the schedule"), error.message));
-    } finally {
-      $("refresh").classList.remove("spin");
-    }
-  }
-
-  async function openLog(run) {
-    const dialog = $("log-dialog");
-    const body = el("div", { class: "log" }, el("div", null, "Loading…"));
-    dialog.replaceChildren(
-      el("div", { class: "section-head" }, el("h2", null, STAGE[run.stage] + " · " + AGENT[run.agent].label),
-        el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
-      el("div", { class: "meta muted" }, run.projectName + (run.branch ? " · " + run.branch : "")),
-      el("details", null, el("summary", null, "Prompt"), el("div", { class: "log" }, el("div", null, run.prompt))),
-      body);
-    dialog.showModal();
-    const result = await api("/api/runs/" + encodeURIComponent(run.id) + "/log");
-    if (!result.ok) { body.replaceChildren(el("div", { class: "error" }, result.body.error || "Failed")); return; }
-    const lines = result.body.activity || [];
-    body.replaceChildren(...(lines.length ? lines.map((l) => el("div", { class: l.kind }, l.text)) : [el("div", null, "No activity recorded yet.")]));
-  }
-
-  function segmented(options, value, onChange) {
-    const group = el("div", { class: "seg", role: "group" });
-    const render = (current) => group.replaceChildren(...options.map(([v, label]) =>
-      el("button", { type: "button", "aria-pressed": String(v === current), onclick: () => { render(v); onChange(v); } }, label)));
-    render(value);
-    return group;
-  }
-
-  async function openJobForm() {
-    if (!projectsCache.length) await load();
-    const form = { kind: "run", agent: "claude", reviewer: "codex", when: "now", days: [1, 2, 3, 4, 5] };
-    const agentOptions = [["claude", "Claude"], ["codex", "Codex"], ["gemini", "Gemini"]];
-    const dialog = $("job-dialog");
-    const agentsOk = (scheduleData && scheduleData.agents) || {};
-    const project = el("select", null, projectsCache.map((p) => el("option", { value: p.id }, p.name)));
-    const resumable = (scheduleData && scheduleData.resumable) || [];
-    const session = el("select", null, resumable.length
-      ? resumable.map((r, i) => el("option", { value: String(i) }, r.projectName + " · " + (r.branch || "detached") + " · " + AGENT[r.session.agent].label + " · " + relative(r.session.updatedAt)))
-      : el("option", { value: "" }, "No resumable sessions in agent worktrees"));
-    const prompt = el("textarea", { placeholder: "What should the agent do?" });
-    const soon = new Date(Date.now() + 3600e3); soon.setMinutes(0, 0, 0);
-    const pad = (n) => String(n).padStart(2, "0");
-    const at = el("input", { type: "datetime-local", value: `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:00` });
-    const time = el("input", { type: "time", value: "09:00" });
-    const resumeOnLimit = el("input", { type: "checkbox", checked: true });
-    const daysGroup = el("div", { class: "days" });
-    const renderDays = () => daysGroup.replaceChildren(...DAY_NAMES.map((name, i) => el("button", {
-      type: "button", "aria-pressed": String(form.days.includes(i + 1)),
-      onclick: () => { form.days = form.days.includes(i + 1) ? form.days.filter((d) => d !== i + 1) : [...form.days, i + 1].sort(); renderDays(); },
-    }, name)));
-    renderDays();
-    const agentHint = el("div", { class: "hint-text" });
-    const reviewerSlot = el("div");
-    const renderReviewer = () => {
-      if (form.reviewer === form.agent) form.reviewer = defaultReviewer(form.agent);
-      reviewerSlot.replaceChildren(segmented(agentOptions.filter(([v]) => v !== form.agent), form.reviewer, (v) => { form.reviewer = v; sync(); }));
-    };
-    const fields = {
-      project: el("div", { class: "field" }, el("label", null, "Project"), project),
-      agent: el("div", { class: "field" }, el("span", null, "Agent"), segmented(agentOptions, form.agent, (v) => { form.agent = v; renderReviewer(); sync(); }), agentHint),
-      reviewer: el("div", { class: "field" }, el("span", null, "Reviewer"), reviewerSlot),
-      session: el("div", { class: "field" }, el("label", null, "Session to continue"), session,
-        el("div", { class: "hint-text" }, "Only sessions in agent worktrees can be resumed, never your own checkout.")),
-      prompt: el("div", { class: "field" }, el("label", null, "Task"), prompt),
-      at: el("div", { class: "field" }, el("label", null, "Date and time"), at),
-      daily: el("div", { class: "field" }, el("label", null, "Time"), time, daysGroup),
-    };
-    function sync() {
-      const resume = form.kind === "resume";
-      fields.project.hidden = resume; fields.agent.hidden = resume; fields.session.hidden = !resume;
-      prompt.placeholder = resume ? "Optional: what to tell it (default: continue where you left off)" : "What should the agent do?";
-      fields.at.hidden = form.when !== "once"; fields.daily.hidden = form.when !== "daily";
-      fields.reviewer.hidden = form.kind !== "pipeline";
-      const missing = [form.agent, form.kind === "pipeline" ? form.reviewer : null].filter((a) => a && agentsOk[a] === false);
-      agentHint.textContent = (form.kind === "pipeline"
-        ? AGENT[form.agent].label + " builds and commits, " + AGENT[form.reviewer].label + " reviews the commit, then " + AGENT[form.agent].label + " addresses the review. "
-        : "") + missing.map((a) => AGENT[a].label + " is not installed on the server.").join(" ");
-    }
-    const submit = el("button", { class: "primary", type: "button" }, "Create job");
-    submit.addEventListener("click", async () => {
-      const request = { kind: form.kind, agent: form.agent, prompt: prompt.value, resumeOnLimitReset: resumeOnLimit.checked };
-      if (form.kind === "pipeline") request.reviewer = form.reviewer;
-      if (form.kind === "resume") {
-        const target = resumable[Number(session.value)];
-        if (!target) { toast("Choose a session to resume", true); return; }
-        request.projectId = target.projectId;
-        request.resume = { agent: target.session.agent, sessionId: target.session.sessionId, worktree: target.session.worktree };
-        request.agent = target.session.agent;
-      } else {
-        request.projectId = project.value;
-      }
-      if (form.when === "once") request.schedule = { at: new Date(at.value).toISOString() };
-      if (form.when === "daily") request.schedule = { time: time.value, days: form.days, zone: Intl.DateTimeFormat().resolvedOptions().timeZone };
-      submit.disabled = true;
-      const result = await api("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
-      submit.disabled = false;
-      if (!result.ok) { toast(result.body.error || "Failed (" + result.status + ")", true); return; }
-      dialog.close();
-      toast(form.when === "now" ? "Started" : "Scheduled");
-      loadSchedule();
-    });
-    dialog.replaceChildren(
-      el("div", { class: "section-head" }, el("h2", null, "New job"),
-        el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
-      el("div", { class: "field" }, el("span", null, "What"),
-        segmented([["run", "Run a task"], ["pipeline", "Build + review"], ["resume", "Resume"]], form.kind, (v) => { form.kind = v; sync(); })),
-      fields.project, fields.agent, fields.reviewer, fields.session, fields.prompt,
-      el("div", { class: "field" }, el("span", null, "When"), segmented([["now", "Now"], ["once", "Once"], ["daily", "Repeat"]], form.when, (v) => { form.when = v; sync(); })),
-      fields.at, fields.daily,
-      el("label", { class: "check" }, resumeOnLimit, el("span", null, "If a usage limit stops it, continue automatically when the limit resets")),
-      el("p", { class: "hint-text" }, "Runs work in a new branch and worktree, may edit files and run build/test commands, and never push."),
-      el("div", { class: "row" }, submit));
-    renderReviewer();
-    sync();
-    dialog.showModal();
-  }
-
-  // ---------- usage ----------
-  const usageTab = $("tab-usage");
-  let lastUsage = null;
-
   function meter(win) {
     const pct = Math.max(0, Math.min(100, win.usedPercent));
-    const color = pct >= 90 ? "var(--bad)" : pct >= 70 ? "var(--warn)" : "var(--accent)";
-    const track = pct >= 90 ? "rgba(248,113,113,.18)" : pct >= 70 ? "rgba(251,191,36,.18)" : "rgba(139,124,246,.18)";
+    const color = pct >= 90 ? "var(--bad)" : pct >= 70 ? "var(--warn)" : "var(--teal)";
     return el("div", { class: "meter-row" },
       el("span", null, win.label),
-      el("div", { class: "meter", style: "background:" + track, role: "meter", "aria-valuenow": String(Math.round(pct)), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": win.label + " limit used" },
+      el("div", { class: "meter", role: "meter", "aria-valuenow": String(Math.round(pct)), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": win.label + " limit used" },
         el("div", { style: "width:" + pct + "%;background:" + color })),
       el("span", { class: "v" }, Math.round(win.usedPercent) + "%"),
       win.resetsAt ? el("span", { class: "r" }, "resets " + until(win.resetsAt) + " · " + fmtTime(win.resetsAt)) : null);
@@ -1045,7 +1436,7 @@
     const readout = el("div", { class: "readout" }, "Tap a day for details");
     const top = usage.models.length ? usage.models[0].tokens : 0;
     return el("section", { class: "panel" },
-      el("div", { class: "agent-title" }, el("i", { style: "background:" + a.color }), a.label),
+      el("div", { class: "agent-title" }, agentMark(key), a.label),
       el("div", { class: "section" }, el("h3", null, "Plan limits"),
         usage.windows.length ? usage.windows.map(meter) : null,
         usage.windowsAsOf ? el("div", { class: "hint-text", style: "margin-top:8px" }, "As of " + relative(usage.windowsAsOf)) : null,
@@ -1064,44 +1455,56 @@
 
   function renderUsage(data) {
     lastUsage = data;
-    usageTab.replaceChildren(agentPanel("claude", data.claude, data.days), agentPanel("codex", data.codex, data.days),
+    usageTab.replaceChildren(
+      activityPanel(lastAnalytics),
+      agentPanel("claude", data.claude, data.days), agentPanel("codex", data.codex, data.days),
       data.gemini ? agentPanel("gemini", data.gemini, data.days) : null,
-      el("p", { class: "hint-text" }, "From local records on the server: Claude Code and Codex session logs, Claude's status line, and Gemini runs started here. Tokens exclude cache reads."));
+      el("p", { class: "hint-text", style: "color:var(--on-harbor-2)" }, "From local records on the server: Claude Code and Codex session logs, Claude's status line, and Gemini runs started here. Tokens exclude cache reads."));
   }
 
   async function loadUsage() {
-    $("refresh").classList.add("spin");
+    if (!getToken()) { usageTab.replaceChildren(lockedPanel(false)); return; }
+    spin(true);
     try {
-      const result = await api("/api/usage", { prompt: false });
-      if (result.status === 401) throw new Error("Enter the access token (lock icon) to see usage");
+      const [result, projects] = await Promise.all([api("/api/usage", { prompt: false }), fetchProjects().catch(() => null)]);
+      if (result.status === 401 || (projects && projects.locked)) { usageTab.replaceChildren(lockedPanel(true)); return; }
       if (!result.ok || !result.json) throw new Error("Unexpected response (" + result.status + ")");
       renderUsage(result.body);
-      status.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      stamp();
     } catch (error) {
       usageTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Couldn't load usage"), error.message));
     } finally {
-      $("refresh").classList.remove("spin");
+      spin(false);
     }
   }
 
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (activeTab === "usage" && lastUsage) renderUsage(lastUsage); }, 150);
+  });
+
+  // ---------- start ----------
   $("token-cancel").addEventListener("click", () => $("token-dialog").close("cancel"));
   $("token-save").addEventListener("click", () => $("token-dialog").close("save"));
   $("token-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("token-dialog").close("save"); });
-  $("logo").append(icon("spark"));
+  $("logo").append(icon("anchor"));
   $("refresh").append(icon("refresh"));
   $("refresh").addEventListener("click", refreshActive);
-  for (const button of document.querySelectorAll(".tabs button")) button.addEventListener("click", () => showTab(button.dataset.tab));
+  for (const button of document.querySelectorAll(".tabs button")) button.addEventListener("click", () => go(button.dataset.tab === "overview" ? "" : button.dataset.tab));
   $("lock").addEventListener("click", async () => {
     if (getToken() && confirm("Forget the saved access token on this device?")) { setToken(""); renderLock(); toast("Token removed"); refreshActive(); return; }
     if (!getToken() && await askToken()) { toast("Token saved"); refreshActive(); }
   });
   renderLock();
+  window.addEventListener("hashchange", route);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshActive(); });
-  setInterval(() => { if (!document.hidden && !document.querySelector("dialog[open]")) refreshActive(); }, REFRESH_MS);
-  let saved = "overview";
-  try { saved = localStorage.getItem("llm-manager.tab") || "overview"; } catch (_) { /* private mode */ }
-  load();
-  if (saved !== "overview" && ["schedule", "usage"].includes(saved)) showTab(saved);
+  // Background refresh, but never while a dialog is open or something is being typed.
+  setInterval(() => {
+    const typing = document.activeElement && ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement.tagName);
+    if (!document.hidden && !typing && !document.querySelector("dialog[open]")) refreshActive();
+  }, REFRESH_MS);
+  route();
 })();
 </script>
 </body>
