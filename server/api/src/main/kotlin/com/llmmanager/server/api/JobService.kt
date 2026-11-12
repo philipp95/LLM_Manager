@@ -76,7 +76,8 @@ class JobService(
         return ScheduleResponse(
             now = now.toString(),
             agents = Agent.entries.associate { it.name.lowercase() to (commands.available(it) && choices.enabled(it)) },
-            jobs = store.jobs().sortedBy { it.createdAt }.map { JobView(it, ScheduleTimes.next(it, now)?.toString()) },
+            // Chat messages are jobs too, but they belong to their session, not to the schedule.
+            jobs = store.jobs().filter { it.chatId == null }.sortedBy { it.createdAt }.map { JobView(it, ScheduleTimes.next(it, now)?.toString()) },
             runs = store.runs().sortedByDescending { it.createdAt }.take(RECENT_RUNS),
             resumable = resumable(),
             sandbox = workspace.sandbox.status(),

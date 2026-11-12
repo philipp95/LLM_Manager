@@ -12,7 +12,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 
 /** Everything the scheduling and usage routes need. */
-class ScheduleApi(val jobs: JobService, val store: StateStore, val usage: UsageReader, val branches: BranchService? = null)
+class ScheduleApi(
+    val jobs: JobService,
+    val store: StateStore,
+    val usage: UsageReader,
+    val branches: BranchService? = null,
+    val chats: ChatService? = null,
+)
 
 @Serializable
 data class BranchRequest(val branch: String)
@@ -33,6 +39,7 @@ fun Route.scheduleRoutes(api: ScheduleApi, access: Access, onChange: (projectId:
     jobRoutes(api, access)
     runRoutes(api, access)
     api.branches?.let { branchRoutes(it, access, onChange) }
+    api.chats?.let { chatRoutes(it, access, onChange) }
 }
 
 private const val USAGE_TTL_MS = 10_000L

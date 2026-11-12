@@ -252,6 +252,8 @@ data class Run(
     val tmuxSession: String? = null,
     /** What publishing did when the work was done: the pull request it opened, or why not. */
     val publishNote: String? = null,
+    /** The chat session the run belongs to. */
+    val chatId: String? = null,
 ) {
     val active: Boolean get() = status == "queued" || status == "running"
 }

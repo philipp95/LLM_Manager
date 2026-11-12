@@ -66,21 +66,20 @@ private const val SETTINGS_TAB = 3
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(
-    viewModel: DashboardViewModel,
-    scheduleViewModel: ScheduleViewModel,
-    settingsViewModel: SettingsViewModel,
-    signInViewModel: SignInViewModel,
-) {
+fun DashboardScreen(models: ViewModels) {
+    val viewModel = models.dashboard
+    val scheduleViewModel = models.schedule
+    val settingsViewModel = models.settings
+    val signInViewModel = models.signIn
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scheduleState by scheduleViewModel.state.collectAsStateWithLifecycle()
     val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
+    val chatState by models.chats.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     // The repository whose screen is open on the Repos tab.
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     val open = openId?.takeIf { tab == 0 }?.let { id -> state.data?.projects?.firstOrNull { it.id == id } }
-    val models = ViewModels(viewModel, scheduleViewModel, settingsViewModel, signInViewModel)
-    val refreshTab: () -> Unit = { refresh(tab, openId != null, models) }
+    val refreshTab: () -> Unit = { refresh(tab, openId, models) }
     val snackbar = remember { SnackbarHostState() }
     val dialogs = remember { DialogState() }
     val clipboard = LocalClipboardManager.current
@@ -90,6 +89,7 @@ fun DashboardScreen(
     Polling(tab, openId, refreshTab)
     Events(viewModel, scheduleViewModel, snackbar, dialogs)
     SettingsEvents(settingsViewModel, signInViewModel, scheduleViewModel, snackbar)
+    LaunchedEffect(models.chats) { models.chats.events.collect { snackbar.showSnackbar(it) } }
 
     Scaffold(
         containerColor = Palette.harbor,
@@ -123,7 +123,7 @@ fun DashboardScreen(
                     onRetry = settingsViewModel::load,
                 )
                 open != null -> RepoDetail(
-                    open, scheduleState.schedule, state.data?.codexAvailable == true, state.launching == open.id, scheduleState.submitting,
+                    open, scheduleState.schedule, chatState, state.data?.codexAvailable == true, state.launching == open.id,
                     repoActions(open, models, dialogs, copy),
                 )
                 else -> Overview(
@@ -179,9 +179,10 @@ private fun Events(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVie
 private fun repoActions(project: Project, models: ViewModels, dialogs: DialogState, copy: (String) -> Unit) = RepoActions(
     chat = ChatActions(
         onSend = { request, onSent ->
-            models.schedule.create(request, message = "${agentLabel(request.agent)} is on it") {
-                onSent()
+            models.chats.send(request) { sent ->
+                onSent(sent)
                 models.dashboard.refresh()
+                models.schedule.refreshSchedule()
             }
         },
         onLog = { models.schedule.openLog(it.id) },
@@ -304,8 +305,8 @@ private fun TopBar(
     }
 }
 
-/** Refreshes what is on screen: the repositories (and, on a repository, its runs), the schedule, usage, or settings. */
-private fun refresh(tab: Int, repository: Boolean, models: ViewModels) {
+/** Refreshes what is on screen: the repositories (and, on a repository, its sessions), the schedule, usage, or settings. */
+private fun refresh(tab: Int, openId: String?, models: ViewModels) {
     val overview = models.dashboard
     val schedule = models.schedule
     when (tab) {
@@ -317,7 +318,10 @@ private fun refresh(tab: Int, repository: Boolean, models: ViewModels) {
         }
         else -> {
             overview.refresh()
-            if (repository) schedule.refreshSchedule()
+            if (openId != null) {
+                schedule.refreshSchedule()
+                models.chats.load(openId)
+            }
         }
     }
 }

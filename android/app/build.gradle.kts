@@ -21,7 +21,7 @@ val releaseStore = setting("llmmanager.signing.storeFile")?.let(::file)?.takeIf 
  * when updating is derived from it (major * 10000 + minor * 100 + patch), so it always grows
  * with the version: 0.6.0 is 600, 1.2.3 is 10203.
  */
-val appVersion = "0.7.0"
+val appVersion = "0.8.0"
 
 fun versionCodeOf(version: String): Int {
     val parts = version.split('.').map(String::toInt)

@@ -4,13 +4,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.llmmanager.android.data.AndroidApp
-import com.llmmanager.android.data.JobRequest
+import com.llmmanager.android.data.ChatRequest
+import com.llmmanager.android.data.ChatView
+import com.llmmanager.android.data.ScheduleResponse
 import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.Run
 
 /** What the chat needs from the screen around it. */
 class ChatActions(
-    val onSend: (request: JobRequest, onSent: () -> Unit) -> Unit,
+    /** Sends a chat message; [onSent] gets the session it went to. */
+    val onSend: (request: ChatRequest, onSent: (ChatView) -> Unit) -> Unit,
     val onLog: (Run) -> Unit,
     val onCancel: (Run) -> Unit,
     val onCopy: (String) -> Unit,
@@ -25,12 +28,16 @@ class RepoActions(
     val onPublish: (branch: String, action: String) -> Unit,
 )
 
+/** What the message box sends to: the selected session, or a new one; and what the server says about agents. */
+class ComposerTarget(val schedule: ScheduleResponse?, val sessions: List<ChatView>, val session: ChatView?)
+
 /** The screen's view models, handed around together. */
 class ViewModels(
     val dashboard: DashboardViewModel,
     val schedule: ScheduleViewModel,
     val settings: SettingsViewModel,
     val signIn: SignInViewModel,
+    val chats: ChatViewModel,
 )
 
 /** What the sign-in pop-up can do, routed to [SignInViewModel] by the caller. */

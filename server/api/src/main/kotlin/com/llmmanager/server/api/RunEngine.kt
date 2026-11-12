@@ -65,7 +65,7 @@ class RunEngine(
         val script = File(dir, "run.sh").apply { writeText(wrapper(worktree, dir, wrapped, run.agent)) }
         val tmux = "run-${run.id}"
         val started = sessions.start(tmux, worktree, listOf("bash", script.path))
-        if (started) store.putRun(run.copy(status = RunStatus.RUNNING, sessionId = sessionId, tmuxSession = tmux, startedAt = now()))
+        if (started) store.putRun(run.copy(status = RunStatus.RUNNING, sessionId = sessionId, tmuxSession = tmux, startedAt = Instant.now(clock).toString()))
         return started
     }
 
@@ -114,14 +114,30 @@ class RunEngine(
     /** Resolves the worktree: a new one for fresh work, the given one otherwise. */
     private fun prepare(run: Run): Run {
         if (!commands.available(run.agent)) return run.copy(error = "${run.agent.label} CLI is not installed on the server")
-        if (run.worktree != null) {
-            return if (File(run.worktree).isDirectory) run else run.copy(error = "Worktree ${run.worktree} no longer exists")
-        }
+        if (run.worktree != null) return existing(run, File(run.worktree))
         val located = workspace.scanner.locate(run.projectId) ?: return run.copy(error = "Project no longer found")
         return when (val made = Worktrees(git, worktreeRoot, clock).create(located, RUN_BRANCH_PREFIX)) {
             is Worktrees.Result.Failed -> run.copy(error = made.reason)
             is Worktrees.Result.Ok -> run.copy(worktree = made.worktree.path.path, branch = made.worktree.branch, baseCommit = made.worktree.base)
         }
+    }
+
+    /**
+     * A run in a worktree that already exists (a resume, a review, a session's next message):
+     * it works on that worktree's branch, from its current commit. Git runs there only while the
+     * worktree's `.git` link still points into the repository.
+     */
+    private fun existing(run: Run, dir: File): Run {
+        if (!dir.isDirectory) return run.copy(error = "Worktree ${run.worktree} no longer exists")
+        if (run.branch != null && run.baseCommit != null) return run
+        val commonDir = workspace.scanner.locate(run.projectId)?.commonDir
+        if (commonDir == null || !WorktreeGuard.intact(dir, commonDir)) {
+            return run.copy(error = "The worktree's .git link no longer points into its repository; start a new session")
+        }
+        return run.copy(
+            branch = run.branch ?: git.run(dir, "symbolic-ref", "--quiet", "--short", "HEAD")?.trim()?.ifEmpty { null },
+            baseCommit = run.baseCommit ?: git.run(dir, "rev-parse", "HEAD")?.trim()?.ifEmpty { null },
+        )
     }
 
     /**
@@ -145,10 +161,9 @@ class RunEngine(
 
     private fun finish(run: Run): Run {
         File(store.runDir(run.id), "claude.json").delete()
-        return run.copy(finishedAt = now()).also(store::putRun)
+        return run.copy(finishedAt = Instant.now(clock).toString()).also(store::putRun)
     }
 
-    private fun now(): String = Instant.now(clock).toString()
 
     companion object {
         const val RUN_BRANCH_PREFIX = "run"

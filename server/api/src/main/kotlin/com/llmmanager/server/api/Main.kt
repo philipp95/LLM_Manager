@@ -76,7 +76,10 @@ class ApiServer : CliktCommand(name = "api") {
         val accounts = AgentAccounts(commands::binary)
         val signIn = AgentSignIn(TmuxTerminals(), accounts, commands::binary, File(state, "sign-in"))
         val settings = SettingsApi(preferences, accounts, signIn, ForgeAccounts(credentials, preferences))
-        val store = StateStore(state).also { it.pruneRunDirs() }
+        val store = StateStore(state).also {
+            it.pruneRunDirs()
+            it.adoptIntoSessions()
+        }
         val insights = InsightsService(InsightSources(credentials), agentForBranch = { projectId, branch -> agentOf(store, projectId, branch) })
         val schedule = schedule(store, workspace, credentials, settings, onPublished = { insights.invalidate(it.projectId) })
         val hosts = BindAddress.allowedHosts(address, port, BindAddress.tailscaleNames(), allowedHost)
@@ -123,7 +126,8 @@ class ApiServer : CliktCommand(name = "api") {
         val scheduler = Scheduler(store, engine, workspace.sessions, hooks = FollowUpHooks(usage::resetHint, publisher))
         scheduler.launch(CoroutineScope(SupervisorJob()))
         val choices = AgentChoices(preferences::enabled, { settings.accounts.status(it).signedIn }, { preferences.get().defaultAgent })
-        return ScheduleApi(JobService(store, scheduler, workspace, SessionCatalog(), choices = choices), store, usage, branches)
+        val jobs = JobService(store, scheduler, workspace, SessionCatalog(), choices = choices)
+        return ScheduleApi(jobs, store, usage, branches, ChatService(store, scheduler, workspace, choices))
     }
 
     /** The agent this server ran on [branch]: the first run's, or Codex for an interactive `codex/` session. */

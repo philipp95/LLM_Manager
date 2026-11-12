@@ -42,14 +42,14 @@ import com.llmmanager.android.data.ScheduleResponse
 fun RepoDetail(
     project: Project,
     schedule: ScheduleResponse?,
+    chats: ChatViewModel.State,
     codexAvailable: Boolean,
     launching: Boolean,
-    sending: Boolean,
     actions: RepoActions,
 ) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
         item(key = "head") { RepoHeader(project) }
-        item(key = "chat") { ChatPanel(project, schedule, sending, actions.chat) }
+        item(key = "chat") { ChatPanel(project, chats.chats.takeIf { chats.projectId == project.id }, schedule, chats.sending, actions.chat) }
         item(key = "history") { HistoryPanel(project) }
         item(key = "branches") {
             BranchesPanel(project, codexAvailable, launching, actions.onStartCodex, actions.chat.onCopy, actions.onPublish)

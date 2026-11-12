@@ -180,6 +180,21 @@
   .stage.active svg.icon { animation: spin 1.2s linear infinite; }
 
   .composer { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--paper-line); }
+  .sessions { display: grid; gap: 6px; margin-bottom: 14px; }
+  .session {
+    all: unset; box-sizing: border-box; display: grid; gap: 3px; padding: 9px 11px; border-radius: 12px; cursor: pointer; min-width: 0;
+    border: 1px solid var(--paper-line); background: var(--field); color: var(--ink);
+  }
+  .session[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .session:focus-visible { outline: 3px solid var(--rust-on-dark); outline-offset: 2px; }
+  .session.new .session-top { color: var(--rust-strong); }
+  .session-top { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 700; font-size: 14px; }
+  .session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-meta { display: flex; gap: 4px 10px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); min-width: 0; }
+  .session-meta .mono { font-family: var(--mono); overflow-wrap: anywhere; }
+  .sessions .more { justify-self: start; }
+  .session-head { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .branch-pick { display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); font-weight: 650; }
   .agent-pick { display: flex; gap: 6px; flex-wrap: wrap; }
   .agent-pick button {
     display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px 0 10px; border-radius: 999px; cursor: pointer;
@@ -449,6 +464,9 @@
   let inFlight = false, codexAvailable = false, toastTimer = 0, projectsCache = [], lastAnalytics = null, lastUsage = null;
   let activeTab = "overview", currentRepo = null, scheduleData = null, composer = null, insightRetries = 0, gridScroll = 0;
   let pairing = null, pairRefusal = "", lastApp = null;
+  // Sessions of the repository on screen; which one is selected (null: a new session) per repository.
+  let chatData = null;
+  const selectedSession = new Map(), sessionsExpanded = new Set();
 
   const ICONS = {
     refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
@@ -926,21 +944,19 @@
   }
 
   /** One message and the agent's answer: every run on the same branch (build, review, fix, resumes). */
-  function turn(p, runs) {
-    const first = runs[0], last = runs[runs.length - 1];
+  /** One message of a session and what came of it: the run, or a pipeline's build, review and fix. */
+  function turn(p, t) {
+    const runs = t.runs, first = runs[0], last = runs[runs.length - 1];
     const latest = (key) => { for (let i = runs.length - 1; i >= 0; i--) if (runs[i][key]) return runs[i][key]; return null; };
     const summary = latest("summary");
     const note = latest("publishNote");
     const active = runs.find((r) => r.status === "queued" || r.status === "running");
-    const wt = first.branch ? p.worktrees.find((w) => w.branch === first.branch) : null;
-    const pr = wt && wt.publish ? wt.publish.pullRequest : null;
-    const prUrl = pr ? httpsOnly(pr.url) : null;
     const reviewer = runs.find((r) => r.stage === "review");
     const live = active && active.status === "running" && active.tmuxSession;
     return [
       el("div", { class: "bubble me" },
-        el("div", { class: "text" }, clamp(first.prompt, 800)),
-        el("div", { class: "meta" }, fmtTime(first.createdAt))),
+        el("div", { class: "text" }, clamp(t.message, 800)),
+        el("div", { class: "meta" }, fmtTime(t.createdAt))),
       el("div", { class: "bubble agent" },
         el("div", { class: "who-row" }, agentMark(first.agent), AGENT[first.agent].label,
           reviewer ? el("span", { class: "meta" }, "· reviewed by " + AGENT[reviewer.agent].label) : null,
@@ -948,12 +964,9 @@
         runs.length > 1 ? el("div", { class: "stages" }, runs.map(stageChip)) : null,
         summary ? el("div", { class: "text" }, clamp(summary, 700)) : active ? el("div", { class: "meta" }, active.status === "queued" ? "Waiting for a free slot…" : "Working on it…") : null,
         last.status === "failed" && last.error ? el("div", { class: "err" }, clamp(last.error, 400)) : null,
-        prUrl
-          ? el("div", { class: "publish" }, el("a", { class: "chip " + (pr.state === "merged" || pr.state === "completed" ? "ok" : "running"), href: prUrl, target: "_blank", rel: "noopener noreferrer" },
-              icon("pr"), el("span", { class: "t" }, "Pull request " + prRef(p, pr.number) + " · " + pr.state)))
-          : note ? el("div", { class: "meta with-icon" }, icon("pr"), note) : null,
+        note ? el("div", { class: "meta with-icon" }, icon("pr"), note) : null,
         live ? attachBox({ running: true, attachCommand: "tmux attach -t " + active.tmuxSession }) : null,
-        el("div", { class: "meta" }, (first.branch ? first.branch + " · " : "") + "updated " + relative(last.finishedAt || last.startedAt || last.createdAt)),
+        el("div", { class: "meta" }, "updated " + relative(last.finishedAt || last.startedAt || last.createdAt)),
         el("div", { class: "actions-row" },
           el("button", { class: "small-btn", type: "button", onclick: () => openLog(last) }, icon("list"), "Log"),
           last.status === "failed" && needsSignIn(last.agent)
@@ -964,21 +977,60 @@
     ];
   }
 
-  function thread(p) {
-    const runs = ((scheduleData && scheduleData.runs) || []).filter((r) => r.projectId === p.id)
-      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
-    const groups = new Map();
-    for (const r of runs) {
-      const key = r.pipelineId || r.branch || r.id;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(r);
+  /** The pull request of a session's branch, when the server opened one. */
+  function sessionPullRequest(p, s) {
+    const wt = s.branch ? p.worktrees.find((w) => w.branch === s.branch) : null;
+    const pr = wt && wt.publish ? wt.publish.pullRequest : null;
+    return pr && httpsOnly(pr.url) ? pr : null;
+  }
+
+  function sessionState(s) {
+    const last = s.turns.length ? s.turns[s.turns.length - 1].runs : [];
+    const active = last.find((r) => r.status === "queued" || r.status === "running");
+    return active || last[last.length - 1] || null;
+  }
+
+  /** The list to choose a session from; "New session" starts one on a branch of its own. */
+  function sessionList(p, sessions, selected, onSelect) {
+    const expanded = sessionsExpanded.has(p.id);
+    const shown = expanded || sessions.length <= 6 ? sessions : sessions.slice(0, 5);
+    const row = (s) => {
+      const pr = sessionPullRequest(p, s), state = sessionState(s);
+      return el("button", { class: "session", type: "button", "aria-pressed": String(s.id === selected), onclick: () => onSelect(s.id) },
+        el("span", { class: "session-top" }, agentMark(s.agent), el("span", { class: "session-title" }, s.title), state ? runStatus(state) : null),
+        el("span", { class: "session-meta" },
+          el("span", { class: "mono" }, s.branch || "new branch"),
+          s.sharesBranch ? el("span", null, "shared branch") : null,
+          pr ? el("span", null, (FORGE[p.forge] && FORGE[p.forge].mr ? "MR " : "PR ") + prRef(p, pr.number) + " " + pr.state) : null,
+          el("span", null, relative(s.updatedAt))));
+    };
+    return el("div", { class: "sessions" },
+      el("button", { class: "session new", type: "button", "aria-pressed": String(selected === null), onclick: () => onSelect(null) },
+        el("span", { class: "session-top" }, icon("plus"), el("span", { class: "session-title" }, "New session")),
+        el("span", { class: "session-meta" }, el("span", null, "Starts on a branch of its own"))),
+      shown.map(row),
+      sessions.length > shown.length || expanded && sessions.length > 6
+        ? el("button", { class: "small-btn more", type: "button", onclick: () => {
+            if (expanded) sessionsExpanded.delete(p.id); else sessionsExpanded.add(p.id);
+            renderRepo(p);
+          } }, expanded ? "Show fewer" : "Show all " + sessions.length + " sessions")
+        : null);
+  }
+
+  /** The selected session's conversation, or what a new session does. */
+  function conversation(p, session) {
+    if (!session) {
+      return el("p", { class: "thread-empty" }, "Your message starts a new session on a new branch of " + splitName(p.name).repo +
+        (p.forge ? "; when it's done, the branch is pushed and a pull request is opened." : "."));
     }
-    const turns = [...groups.values()].slice(-8);
-    if (!turns.length) {
-      return el("p", { class: "thread-empty" }, "No messages yet. Ask an agent below: it works on a new branch of " + splitName(p.name).repo +
-        (p.forge ? " and opens a pull request when it's done." : "."));
-    }
-    return el("div", { class: "thread" }, turns.map((t) => turn(p, t)));
+    const pr = sessionPullRequest(p, session);
+    return el("div", { class: "thread" },
+      el("div", { class: "session-head" },
+        el("span", { class: "chip mono" }, icon("branch"), el("span", { class: "t" }, session.branch || "new branch")),
+        session.sharesBranch ? chip("shared with another session", "warn", "alert") : null,
+        pr ? el("a", { class: "chip " + (pr.state === "merged" || pr.state === "completed" ? "ok" : "running"), href: httpsOnly(pr.url), target: "_blank", rel: "noopener noreferrer" },
+          icon("pr"), el("span", { class: "t" }, (FORGE[p.forge] && FORGE[p.forge].mr ? "Merge request " : "Pull request ") + prRef(p, pr.number) + " · " + pr.state)) : null),
+      session.turns.slice(-12).map((t) => turn(p, t)));
   }
 
   function savedAgent() {
@@ -986,14 +1038,20 @@
     try { saved = localStorage.getItem(AGENT_KEY); } catch (_) { saved = null; }
     return saved || (scheduleData && scheduleData.defaultAgent) || "claude";
   }
+  function saveAgent(agent) { try { localStorage.setItem(AGENT_KEY, agent); } catch (_) { /* private mode */ } }
   /** Whether the server says this agent's CLI is not signed in (unknown counts as signed in). */
   const needsSignIn = (agent) => !!(scheduleData && scheduleData.signedIn && scheduleData.signedIn[agent] === false);
-  function saveAgent(agent) { try { localStorage.setItem(AGENT_KEY, agent); } catch (_) { /* private mode */ } }
 
-  /** The chat box. Built once per repository, so a refresh never wipes what is being typed. */
+  /**
+   * The message box. Built once per repository, so a refresh never wipes what is being typed.
+   * With a session selected it continues that session; otherwise it starts a new one, on a new
+   * branch unless "same branch as" names another session.
+   */
   function buildComposer(projectId) {
-    const state = { agent: savedAgent(), project: null };
+    const state = { agent: savedAgent(), project: null, session: null, sessions: [] };
     const picker = el("div", { class: "agent-pick", role: "group", "aria-label": "Agent" });
+    const branchSelect = el("select", { "aria-label": "Branch for the new session" });
+    const branchRow = el("label", { class: "branch-pick" }, el("span", null, "Branch"), branchSelect);
     const text = el("textarea", { rows: "3", "aria-label": "Message to the agent" });
     const review = el("input", { type: "checkbox" });
     const reviewText = el("span");
@@ -1004,65 +1062,92 @@
       const known = (scheduleData && scheduleData.agents) || {};
       return AGENTS.filter((a) => known[a] !== false);
     };
+    const agentNow = () => (state.session ? state.session.agent : state.agent);
     const reviewerFor = (agent) => {
       const others = available().filter((a) => a !== agent);
       return others.includes(defaultReviewer(agent)) ? defaultReviewer(agent) : others[0] || null;
     };
+    branchSelect.addEventListener("change", render);
 
     function render() {
-      const p = state.project;
+      const p = state.project, s = state.session;
       const ok = available();
       if (!ok.includes(state.agent)) state.agent = ok[0] || "claude";
+      const agent = agentNow();
+      picker.hidden = !!s;
       picker.replaceChildren(...ok.map((a) => el("button", {
         type: "button", "aria-pressed": String(a === state.agent),
         onclick: () => { state.agent = a; saveAgent(a); render(); },
       }, agentMark(a), AGENT[a].pick)));
-      text.placeholder = "Ask " + AGENT[state.agent].label + " to change something in " + splitName(p.name).repo + "…";
-      const reviewer = reviewerFor(state.agent);
+      // A new session may share the branch of a session that is still checked out.
+      const shareable = state.sessions.filter((x) => x.branch && x.open);
+      const chosen = branchSelect.value;
+      branchSelect.replaceChildren(el("option", { value: "" }, "A new branch (recommended)"),
+        ...shareable.map((x) => el("option", { value: x.id, selected: x.id === chosen }, "Same branch as “" + clamp(x.title, 40) + "” (" + x.branch + ")")));
+      branchRow.hidden = !!s || !shareable.length;
+      const shared = !s && branchSelect.value ? shareable.find((x) => x.id === branchSelect.value) : null;
+      text.placeholder = s ? "Message " + AGENT[agent].label + " in this session…" : "Ask " + AGENT[agent].label + " to change something in " + splitName(p.name).repo + "…";
+      const reviewer = reviewerFor(agent);
       reviewRow.hidden = !reviewer;
-      if (reviewer) reviewText.textContent = "Cross-review first: " + AGENT[reviewer].label + " reviews the change, " + AGENT[state.agent].label + " addresses it";
-      hint.textContent = !ok.length
-        ? "No coding agent is installed on the server."
-        : needsSignIn(state.agent)
-          ? AGENT[state.agent].label + " is not signed in on the server yet. Sending asks you to sign in first."
-        : p.forge
-          ? "Works on a new branch. When it's done, the branch is pushed and a pull request is opened on " + FORGE[p.forge].label + "."
-          : "This repository has no GitHub, GitLab or Azure DevOps remote, so the work stays on a local branch.";
-      send.disabled = !ok.length;
+      if (reviewer) reviewText.textContent = "Cross-review first: " + AGENT[reviewer].label + " reviews the change, " + AGENT[agent].label + " addresses it";
+      const blocked = s && s.busy ? AGENT[agent].label + " is still working on the last message. Send the next one when it's done."
+        : s && !s.open ? "This session's worktree was removed, so it can't continue. Start a new session." : null;
+      hint.textContent = blocked
+        || (!ok.length ? "No coding agent is installed on the server." : null)
+        || (needsSignIn(agent) ? AGENT[agent].label + " is not signed in on the server yet. Sending asks you to sign in first." : null)
+        || (s ? "Continues this session on " + (s.branch || "its branch") + (p.forge ? "; its pull request is updated when " + AGENT[agent].label + " is done." : ".")
+          : shared ? "This session works on " + shared.branch + " together with “" + clamp(shared.title, 40) + "”: their runs take turns, and both change that branch."
+          : p.forge ? "Starts a new session on a new branch. When it's done, the branch is pushed and a pull request is opened on " + FORGE[p.forge].label + "."
+          : "Starts a new session on a new branch. This repository has no GitHub, GitLab or Azure DevOps remote, so the work stays local.");
+      send.disabled = !ok.length || !!blocked;
     }
 
     async function submit() {
-      const p = state.project;
+      const p = state.project, s = state.session;
       const prompt = text.value.trim();
       if (!prompt) { toast("Write a message first", true); text.focus(); return; }
-      const reviewer = review.checked ? reviewerFor(state.agent) : null;
-      for (const agent of [state.agent, reviewer].filter(Boolean)) {
-        if (!needsSignIn(agent)) continue;
-        if (!(await openSignIn(agent))) { toast(AGENT[agent].label + " needs to be signed in first", true); return; }
-        scheduleData.signedIn[agent] = true;
+      const agent = agentNow();
+      const reviewer = review.checked ? reviewerFor(agent) : null;
+      for (const a of [agent, reviewer].filter(Boolean)) {
+        if (!needsSignIn(a)) continue;
+        if (!(await openSignIn(a))) { toast(AGENT[a].label + " needs to be signed in first", true); return; }
+        scheduleData.signedIn[a] = true;
         render();
       }
-      const request = { projectId: p.id, kind: reviewer ? "pipeline" : "run", agent: state.agent, prompt, publish: !!p.forge, resumeOnLimitReset: true };
+      const request = { projectId: p.id, prompt, agent, publish: !!p.forge };
       if (reviewer) request.reviewer = reviewer;
+      if (s) request.chatId = s.id;
+      else if (branchSelect.value) request.sameBranchAs = branchSelect.value;
       send.disabled = true;
       try {
-        const result = await postJson("/api/jobs", request);
+        const result = await postJson("/api/chats", request);
         if (!result.ok) { toast(result.body.error || "Failed (" + result.status + ")", true); return; }
         text.value = "";
         review.checked = false;
-        toast(AGENT[state.agent].label + " is on it");
+        branchSelect.value = "";
+        selectedSession.set(p.id, result.body.id);
+        toast(AGENT[agent].label + " is on it");
         loadRepo();
       } catch (error) {
         toast("Can't reach the server: " + error.message, true);
       } finally {
         send.disabled = false;
+        render();
       }
     }
 
     send.addEventListener("click", submit);
     text.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); });
-    const node = el("div", { class: "composer" }, picker, text, el("div", { class: "row" }, reviewRow, send), hint);
-    return { projectId, node, update: (p) => { state.project = p; render(); } };
+    const node = el("div", { class: "composer" }, picker, branchRow, text, el("div", { class: "row" }, reviewRow, send), hint);
+    return {
+      projectId, node,
+      update: (p, session, sessions) => {
+        state.project = p;
+        state.session = session;
+        state.sessions = sessions;
+        render();
+      },
+    };
   }
 
   function worktreeState(w) {
@@ -1201,13 +1286,21 @@
 
   function renderRepo(p) {
     if (!composer || composer.projectId !== p.id) composer = buildComposer(p.id);
-    composer.update(p);
+    const sessions = chatData && chatData.projectId === p.id ? chatData.chats : [];
+    const chosen = selectedSession.get(p.id) || null;
+    const session = sessions.find((x) => x.id === chosen) || null;
+    composer.update(p, session, sessions);
+    const select = (id) => {
+      selectedSession.set(p.id, id);
+      renderRepo(p);
+    };
     repoTab.replaceChildren(
       el("button", { class: "back", type: "button", onclick: () => go("") }, icon("back"), "All repositories"),
       repoHeader(p),
       el("section", { class: "panel" },
-        el("div", { class: "panel-head" }, el("h2", null, "Chat"), el("span", { class: "panel-sub" }, "Each message runs on its own branch")),
-        thread(p), composer.node),
+        el("div", { class: "panel-head" }, el("h2", null, "Sessions"), el("span", { class: "panel-sub" }, "Each session works on its own branch")),
+        sessionList(p, sessions, session ? session.id : null, select),
+        conversation(p, session), composer.node),
       historyPanel(p),
       branchesPanel(p),
       pathsPanel(p));
@@ -1218,10 +1311,15 @@
     if (!(await ensureAccess())) { repoTab.replaceChildren(lockedPanel(false)); return; }
     spin(true);
     try {
-      const [projects, schedule] = await Promise.all([fetchProjects(), api("/api/schedule", { prompt: false }).catch(() => null)]);
+      const [projects, schedule, chats] = await Promise.all([
+        fetchProjects(),
+        api("/api/schedule", { prompt: false }).catch(() => null),
+        api("/api/projects/" + encodeURIComponent(id) + "/chats", { prompt: false }).catch(() => null),
+      ]);
       if (id !== currentRepo) return;
       if (projects.locked) { repoTab.replaceChildren(lockedPanel(true)); return; }
       if (schedule && schedule.ok && schedule.json) scheduleData = schedule.body;
+      if (chats && chats.ok && chats.json) chatData = { projectId: id, chats: chats.body.chats || [] };
       const project = projectsCache.find((p) => p.id === id);
       if (!project) {
         repoTab.replaceChildren(

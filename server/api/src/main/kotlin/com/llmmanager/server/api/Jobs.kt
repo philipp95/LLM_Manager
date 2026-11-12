@@ -70,6 +70,12 @@ data class Job(
     val resumeOnLimitReset: Boolean = true,
     /** When the work is done (and reviewed, for a pipeline), push the branch and open a pull request. */
     val publish: Boolean = false,
+    /** The chat session this message belongs to; null for scheduled jobs, whose every firing starts a session. */
+    val chatId: String? = null,
+    /** Work in this existing worktree (its branch) with a fresh agent session, instead of a new worktree. */
+    val worktree: String? = null,
+    /** Told to an agent that starts afresh in a session: what was asked before. Sent ahead of [prompt]. */
+    val context: String? = null,
     val enabled: Boolean = true,
     val createdAt: String,
     val lastFiredAt: String? = null,
@@ -134,4 +140,6 @@ data class Run(
     val continues: Stage? = null,
     /** What publishing did once the work was done: the pull request opened, or why not. */
     val publishNote: String? = null,
+    /** The chat session the run belongs to: one conversation, on one branch. */
+    val chatId: String? = null,
 )

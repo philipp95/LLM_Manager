@@ -102,14 +102,21 @@ and a link to the repository on its forge.
 
 Tap a tile for the repository's screen:
 
-- **Chat**: pick one of the agents installed on the server (Claude, Codex with
-  your ChatGPT plan, Gemini), write what you want, and send. Each message
-  becomes a run on its own new branch. Tick **Cross-review first** and a second
-  agent reviews the commit before the first addresses the review. When the work
-  is done, the server pushes the branch and opens a pull request into the
-  default branch (GitLab: a merge request); the answer links to it. A run that
-  changed nothing opens nothing. Repositories without a forge remote keep the
-  work on the local branch.
+- **Sessions**: the repository's chat, as sessions to choose from. **New
+  session** (the default when you open a repository) lets you pick one of the
+  agents installed on the server (Claude, Codex with your ChatGPT plan, Gemini);
+  its first message starts a new branch in a worktree of its own. Pick a session
+  from the list to continue it: the next message resumes the same agent session
+  on the same branch, so the agent remembers the conversation, and waits until
+  the last one is done. Tick **Cross-review first** and a second agent reviews
+  the commit before the session's agent addresses the review. When a message's
+  work is done, the server pushes the branch and opens its pull request into the
+  default branch (GitLab: a merge request), or updates the one already open.
+  Work that changed nothing opens nothing; repositories without a forge remote
+  keep the work on the local branch. A new session can instead work on another
+  session's branch (**Same as …** under Branch); both sessions then change that
+  branch, taking turns in its worktree. Each firing of a scheduled job is a
+  session too, so you can follow up on it in the chat.
 - **Branch history**: the pull requests most recently updated on the forge,
   with state, branch, author, agent and CI/CD.
 - **Branches**: the worktrees, with push, pull request and merge controls, and
