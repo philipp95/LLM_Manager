@@ -28,4 +28,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
       - name: Compile, test, analyze, and package
         shell: bash
-        run: bash ./gradlew check :server:spike:installDist :server:api:installDist --no-daemon --console=plain
+        run: |
+          set -o pipefail
+          bash ./gradlew check :server:spike:installDist :server:api:installDist --no-daemon --console=plain 2>&1 | tee build.log
+      # Job logs need a GitHub sign-in on public repositories; annotations show on the pull request.
+      - name: Show failures as annotations
+        if: failure()
+        shell: bash
+        run: bash .github/scripts/annotate-failures.sh build.log
