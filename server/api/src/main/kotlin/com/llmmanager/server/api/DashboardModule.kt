@@ -17,6 +17,7 @@ import io.ktor.server.request.contentLength
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondFile
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
@@ -74,6 +75,9 @@ fun Application.dashboardModule(
     routing {
         get("/") {
             call.respondText(DashboardResources.page, ContentType.Text.Html.withParameter("charset", "utf-8"))
+        }
+        get("/logo.png") {
+            call.respondBytes(DashboardResources.logo, ContentType.Image.PNG)
         }
         get("/api/projects") {
             if (!call.authorized(access)) return@get
@@ -203,6 +207,9 @@ private val MISDIRECTED = HttpStatusCode(421, "Misdirected Request")
 
 internal object DashboardResources {
     val page: String = checkNotNull(javaClass.getResource("/dashboard/index.html")) { "dashboard page missing" }.readText()
+
+    /** The app's logo, for the page header, the browser tab and the app download banner. */
+    val logo: ByteArray = checkNotNull(javaClass.getResource("/dashboard/logo.png")) { "logo missing" }.readBytes()
 
     /** CSP source allowing exactly the page's one inline script, and nothing injected beside it. */
     val scriptHash: String = run {

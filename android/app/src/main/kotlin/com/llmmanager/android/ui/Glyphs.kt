@@ -18,7 +18,6 @@ object Glyphs {
     val check by lazy { stroked("M5 12l5 5L20 7", width = 3f) }
     val cross by lazy { stroked("M6 6l12 12M18 6 6 18", width = 3f) }
     val clock by lazy { stroked("M12 7v5l3 2M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z", width = 2.6f) }
-    val anchor by lazy { stroked("M12 22V8M5 12H2a10 10 0 0 0 20 0h-3M12 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z") }
 
     private fun stroked(path: String, width: Float = 2f): ImageVector =
         ImageVector.Builder(defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)

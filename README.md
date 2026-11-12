@@ -285,6 +285,10 @@ release keystore: Android only installs updates signed with the same key. When
 shows **Get the Android app** and serves it at `/download/llm-manager.apk`; allow
 your browser to install apps when Android asks.
 
+The logo is `docs/brand/logo.png`. `java scripts/MakeIcons.java` regenerates the
+launcher icon (each density), the in-app mark and the dashboard's logo from it; the
+themed (monochrome) launcher icon is the vector `ic_launcher_monochrome.xml`.
+
 The version is set in one place, `appVersion` in `android/app/build.gradle.kts`;
 the version code Android compares is derived from it (0.6.0 is 600). Settings in
 the app shows the installed version. When the server offers a newer build, the

@@ -1,13 +1,12 @@
 package com.llmmanager.android.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
@@ -37,9 +36,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +49,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.llmmanager.android.R
 import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.ProjectsResponse
 import com.llmmanager.android.ui.DashboardViewModel.Connection
@@ -238,10 +238,10 @@ private fun TopBar(
                 if (onBack != null) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "All repositories") }
                 } else {
-                    Box(
-                        Modifier.padding(start = 12.dp, end = 4.dp).size(34.dp).background(Palette.rust, RoundedCornerShape(10.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(Glyphs.anchor, contentDescription = null, tint = Palette.harbor, modifier = Modifier.size(20.dp)) }
+                    Image(
+                        painterResource(R.drawable.logo_mark), contentDescription = null,
+                        modifier = Modifier.padding(start = 12.dp, end = 4.dp).size(34.dp),
+                    )
                 }
             },
             title = {

@@ -2,6 +2,7 @@
 <resources>
     <!-- Harbor: the same colours as the Compose theme and the web dashboard. -->
     <color name="background">#FF13282D</color>
-    <color name="icon_background">#FFD2733A</color>
-    <color name="icon_mark">#FF13282D</color>
+    <!-- Launcher icon background: the logo's own gradient, from its corners. -->
+    <color name="icon_background_start">#FF023A48</color>
+    <color name="icon_background_end">#FF021E3E</color>
 </resources>

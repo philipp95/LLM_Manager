@@ -106,6 +106,9 @@ class DashboardModuleTest {
         application { dashboardModule(ProjectScanner(emptyList()), token, DashboardServices(apk = ApkFile(apkFile))) }
 
         assertEquals(HttpStatusCode.OK, client.get("/").status)
+        val logo = client.get("/logo.png")
+        assertEquals(ContentType.Image.PNG, logo.contentType())
+        assertTrue(logo.bodyAsText(Charsets.ISO_8859_1).startsWith("\u0089PNG"), "the logo is served as a PNG")
         assertEquals("""{"status":"ready"}""", client.get("/readyz").bodyAsText())
         val download = client.get(ApkFile.URL)
         assertEquals(HttpStatusCode.OK, download.status)
