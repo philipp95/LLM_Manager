@@ -1,7 +1,9 @@
 name: Build and check
 
+# Pull requests get one run per change; pushes are checked again once they land on main.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
