@@ -33,6 +33,6 @@ jobs:
           bash ./gradlew check :server:spike:installDist :server:api:installDist --no-daemon --console=plain 2>&1 | tee build.log
       # Job logs need a GitHub sign-in on public repositories; annotations show on the pull request.
       - name: Show failures as annotations
-        if: failure()
+        if: failure() || cancelled()
         shell: bash
-        run: bash .github/scripts/annotate-failures.sh build.log
+        run: bash .github/scripts/annotate-failures.sh build.log "${{ job.status }}"

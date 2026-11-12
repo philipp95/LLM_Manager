@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Turns the failures in a Gradle log into GitHub annotations, so they show on the pull
 # request's checks without opening the job log (which needs a sign-in on public repositories).
-# Usage: annotate-failures.sh build.log
+# Usage: annotate-failures.sh build.log [job status]
 log="${1:-build.log}"
+status="${2:-failure}"
 [ -f "$log" ] || { echo "::error::No build log at $log"; exit 0; }
+
+# A cancelled or timed-out job has no summary: show where the build was when it stopped.
+if [ "$status" = "cancelled" ]; then
+  tail -n 15 "$log" | sed -e 's/%/%25/g' | awk '{ printf "%s%%0A", $0 }' | sed -e 's/^/::error title=Last output before the job stopped::/'
+  echo
+fi
 
 # Each failed test, with the exception Gradle prints on the next line.
 awk '/ FAILED$/ {

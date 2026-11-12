@@ -25,6 +25,12 @@ subprojects {
         extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
             jvmToolchain(21)
         }
-        tasks.withType<Test>().configureEach { useJUnitPlatform() }
+        tasks.withType<Test>().configureEach {
+            useJUnitPlatform()
+            // A hung test fails with its name instead of stalling CI until the job is killed;
+            // the slowest test takes a few seconds.
+            systemProperty("junit.jupiter.execution.timeout.default", "2 m")
+            timeout.set(java.time.Duration.ofMinutes(10))
+        }
     }
 }
