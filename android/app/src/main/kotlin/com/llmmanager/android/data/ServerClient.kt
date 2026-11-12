@@ -25,83 +25,96 @@ sealed interface ApiResult<out T> {
 class ServerClient(
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
+    /**
+     * Asks for a token for this phone. The server grants one when Tailscale says the phone is
+     * signed in to the server owner's account; otherwise the reason comes back as [ApiResult.Failed].
+     */
+    suspend fun pair(server: ServerAddress): ApiResult<PairResponse> =
+        request(json, server, Call("POST", "/api/pair", json.encodeToString(PairRequest.serializer(), PairRequest())), token = null) {
+            json.decodeFromString(PairResponse.serializer(), it)
+        }
+
     /** Every API call carries the access token; only the configured server ever receives it. */
     suspend fun projects(server: ServerAddress, token: String): ApiResult<ProjectsResponse> =
-        request(server, Call("GET", "/api/projects"), token) { json.decodeFromString(ProjectsResponse.serializer(), it) }
+        request(json, server, Call("GET", "/api/projects"), token) { json.decodeFromString(ProjectsResponse.serializer(), it) }
 
     suspend fun startCodex(server: ServerAddress, projectId: String, token: String): ApiResult<LaunchResponse> =
-        request(server, Call("POST", "/api/projects/${encode(projectId)}/codex"), token) {
+        request(json, server, Call("POST", "/api/projects/${encode(projectId)}/codex"), token) {
             json.decodeFromString(LaunchResponse.serializer(), it)
         }
 
     /** [action] is push, pull-request or merge; returns the server's message. */
     suspend fun branchAction(server: ServerAddress, token: String, projectId: String, action: String, branch: String): ApiResult<String> {
         val body = json.encodeToString(BranchRequest.serializer(), BranchRequest(branch))
-        return request(server, Call("POST", "/api/projects/${encode(projectId)}/branches/${encode(action)}", body), token) {
+        return request(json, server, Call("POST", "/api/projects/${encode(projectId)}/branches/${encode(action)}", body), token) {
             json.decodeFromString(BranchResult.serializer(), it).message
         }
     }
 
     suspend fun usage(server: ServerAddress, token: String): ApiResult<UsageResponse> =
-        request(server, Call("GET", "/api/usage"), token) { json.decodeFromString(UsageResponse.serializer(), it) }
+        request(json, server, Call("GET", "/api/usage"), token) { json.decodeFromString(UsageResponse.serializer(), it) }
 
     suspend fun schedule(server: ServerAddress, token: String): ApiResult<ScheduleResponse> =
-        request(server, Call("GET", "/api/schedule"), token) { json.decodeFromString(ScheduleResponse.serializer(), it) }
+        request(json, server, Call("GET", "/api/schedule"), token) { json.decodeFromString(ScheduleResponse.serializer(), it) }
 
     suspend fun createJob(server: ServerAddress, token: String, job: JobRequest): ApiResult<Unit> =
-        request(server, Call("POST", "/api/jobs", json.encodeToString(JobRequest.serializer(), job)), token) { }
+        request(json, server, Call("POST", "/api/jobs", json.encodeToString(JobRequest.serializer(), job)), token) { }
 
     /** [action] is one of run, pause, enable, delete. */
     suspend fun jobAction(server: ServerAddress, token: String, jobId: String, action: String): ApiResult<Unit> =
-        request(server, Call("POST", "/api/jobs/${encode(jobId)}/${encode(action)}"), token) { }
+        request(json, server, Call("POST", "/api/jobs/${encode(jobId)}/${encode(action)}"), token) { }
 
     suspend fun cancelRun(server: ServerAddress, token: String, runId: String): ApiResult<Unit> =
-        request(server, Call("POST", "/api/runs/${encode(runId)}/cancel"), token) { }
+        request(json, server, Call("POST", "/api/runs/${encode(runId)}/cancel"), token) { }
 
     suspend fun runLog(server: ServerAddress, token: String, runId: String): ApiResult<RunLog> =
-        request(server, Call("GET", "/api/runs/${encode(runId)}/log"), token) { json.decodeFromString(RunLog.serializer(), it) }
+        request(json, server, Call("GET", "/api/runs/${encode(runId)}/log"), token) { json.decodeFromString(RunLog.serializer(), it) }
+}
 
-    /** One HTTP request: [body], when present, is sent as JSON. */
-    private data class Call(val method: String, val path: String, val body: String? = null)
+/** One HTTP request: [body], when present, is sent as JSON. */
+private data class Call(val method: String, val path: String, val body: String? = null)
 
-    private suspend fun <T> request(server: ServerAddress, call: Call, token: String?, decode: (String) -> T): ApiResult<T> = withContext(Dispatchers.IO) {
-        val (method, path, body) = call
-        val connection = try {
-            URL(server.baseUrl + path).openConnection() as HttpURLConnection
-        } catch (e: IOException) {
-            return@withContext ApiResult.Failed(e.message ?: "Invalid address")
-        }
-        try {
-            connection.requestMethod = method
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            // The token is scoped to this host: never follow a redirect elsewhere with it.
-            connection.instanceFollowRedirects = false
-            connection.useCaches = false
-            connection.setRequestProperty("Accept", "application/json")
-            token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-            if (method == "POST") {
-                val bytes = body?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
-                if (body != null) connection.setRequestProperty("Content-Type", "application/json")
-                connection.doOutput = true
-                connection.setFixedLengthStreamingMode(bytes.size)
-                connection.outputStream.use { it.write(bytes) }
-            }
-            val status = connection.responseCode
-            val text = (if (status < 400) connection.inputStream else connection.errorStream)?.use { it.readBytes().decodeToString() }.orEmpty()
-            interpret(json, status, connection.contentType, text, decode)
-        } catch (e: IOException) {
-            ApiResult.NoRoute(e.message ?: e.javaClass.simpleName)
-        } catch (e: SerializationException) {
-            ApiResult.Failed("Unexpected response: ${e.message?.take(120)}")
-        } finally {
-            connection.disconnect()
-        }
+private const val CONNECT_TIMEOUT_MS = 6_000
+private const val READ_TIMEOUT_MS = 20_000
+
+private suspend fun <T> request(
+    json: Json,
+    server: ServerAddress,
+    call: Call,
+    token: String?,
+    decode: (String) -> T,
+): ApiResult<T> = withContext(Dispatchers.IO) {
+    val (method, path, body) = call
+    val connection = try {
+        URL(server.baseUrl + path).openConnection() as HttpURLConnection
+    } catch (e: IOException) {
+        return@withContext ApiResult.Failed(e.message ?: "Invalid address")
     }
-
-    private companion object {
-        const val CONNECT_TIMEOUT_MS = 6_000
-        const val READ_TIMEOUT_MS = 20_000
+    try {
+        connection.requestMethod = method
+        connection.connectTimeout = CONNECT_TIMEOUT_MS
+        connection.readTimeout = READ_TIMEOUT_MS
+        // The token is scoped to this host: never follow a redirect elsewhere with it.
+        connection.instanceFollowRedirects = false
+        connection.useCaches = false
+        connection.setRequestProperty("Accept", "application/json")
+        token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+        if (method == "POST") {
+            val bytes = body?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+            if (body != null) connection.setRequestProperty("Content-Type", "application/json")
+            connection.doOutput = true
+            connection.setFixedLengthStreamingMode(bytes.size)
+            connection.outputStream.use { it.write(bytes) }
+        }
+        val status = connection.responseCode
+        val text = (if (status < 400) connection.inputStream else connection.errorStream)?.use { it.readBytes().decodeToString() }.orEmpty()
+        interpret(json, status, connection.contentType, text, decode)
+    } catch (e: IOException) {
+        ApiResult.NoRoute(e.message ?: e.javaClass.simpleName)
+    } catch (e: SerializationException) {
+        ApiResult.Failed("Unexpected response: ${e.message?.take(120)}")
+    } finally {
+        connection.disconnect()
     }
 }
 

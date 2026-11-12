@@ -41,14 +41,19 @@ class DashboardServices(
     val schedule: ScheduleApi? = null,
     /** Pull request activity from the forges, cached. */
     val insights: InsightsService? = null,
+    /** Lets the owner's own Tailscale devices pair without the access token. */
+    val pairing: Pairing? = null,
+    /** The client's tailnet address; tests stand in for other devices with it. */
+    val peerAddress: (ApplicationCall) -> String = { it.request.local.remoteAddress },
 )
 
 /**
  * The dashboard's HTTP surface.
  *
- * Open: the static page, `/readyz` and the APK download, none of which carries data.
- * Everything under `/api` needs [token]. Requests must name an [allowedHosts] host
- * (the bind address or the machine's tailnet names), which defeats DNS rebinding.
+ * Open: the static page, `/readyz` and the APK download, none of which carries data, and
+ * pairing, which Tailscale vouches for. Everything else under `/api` needs [token] or a
+ * paired device's token. Requests must name an [allowedHosts] host (the bind address or
+ * the machine's tailnet names), which defeats DNS rebinding.
  */
 fun Application.dashboardModule(
     scanner: ProjectScanner,
@@ -58,6 +63,7 @@ fun Application.dashboardModule(
     allowedHosts: Set<String>? = null,
 ) {
     val snapshots = TtlCache(SNAPSHOT_TTL_MS) { projectsResponse(scanner, services) }
+    val access = Access(token, services.pairing, services.peerAddress)
 
     install(ContentNegotiation) {
         json(Json { encodeDefaults = true; explicitNulls = true })
@@ -70,10 +76,11 @@ fun Application.dashboardModule(
             call.respondText(DashboardResources.page, ContentType.Text.Html.withParameter("charset", "utf-8"))
         }
         get("/api/projects") {
-            if (!call.authorized(token)) return@get
+            if (!call.authorized(access)) return@get
             call.respond(withContext(Dispatchers.IO) { snapshots.get() })
         }
-        services.launcher?.let { codexRoute(it, token, snapshots) }
+        services.launcher?.let { codexRoute(it, access, snapshots) }
+        services.pairing?.let { pairingRoutes(it, access, allowedHosts) }
         // Open: a browser download link cannot carry the token, and the APK holds no secret.
         get(ApkFile.URL) {
             val file = services.apk?.file?.takeIf { it.isFile }
@@ -85,7 +92,7 @@ fun Application.dashboardModule(
             call.respondFile(file)
         }
         services.schedule?.let {
-            scheduleRoutes(it, token) { projectId ->
+            scheduleRoutes(it, access) { projectId ->
                 snapshots.invalidate()
                 services.insights?.invalidate(projectId)
             }
@@ -120,9 +127,9 @@ private fun Application.guards(allowedHosts: Set<String>?) {
     }
 }
 
-private fun Route.codexRoute(launcher: CodexLauncher, token: ApiToken, snapshots: TtlCache<*>) {
+private fun Route.codexRoute(launcher: CodexLauncher, access: Access, snapshots: TtlCache<*>) {
     post("/api/projects/{id}/codex") {
-        if (!call.authorized(token)) return@post
+        if (!call.authorized(access)) return@post
         val result = withContext(Dispatchers.IO) { launcher.launch(call.parameters["id"].orEmpty()) }
         snapshots.invalidate()
         when (result) {
@@ -136,9 +143,9 @@ private fun Route.codexRoute(launcher: CodexLauncher, token: ApiToken, snapshots
     }
 }
 
-/** Responds 401 and returns false unless the request carries the access token. */
-internal suspend fun ApplicationCall.authorized(token: ApiToken): Boolean {
-    if (token.accepts(request.headers[HttpHeaders.Authorization])) return true
+/** Responds 401 and returns false unless the request carries the access token or a paired device's token. */
+internal suspend fun ApplicationCall.authorized(access: Access): Boolean {
+    if (withContext(Dispatchers.IO) { access.accepts(this@authorized) }) return true
     respond(HttpStatusCode.Unauthorized, ApiError("Missing or wrong access token"))
     return false
 }

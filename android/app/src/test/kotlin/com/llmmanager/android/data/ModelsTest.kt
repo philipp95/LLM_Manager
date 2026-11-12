@@ -64,6 +64,27 @@ class ModelsTest {
     }
 
     @Test
+    fun `an update is offered only for a newer build from the server itself`() {
+        val body = """{"generatedAt":"2026-11-12T10:00:00Z","projects":[],"androidApp":{"url":"/download/llm-manager.apk","sizeBytes":7408758,
+            "builtAt":"2026-11-12T09:00:00Z","versionCode":700,"versionName":"0.7.0","sha256":"ab12"}}"""
+        val app = json.decodeFromString(ProjectsResponse.serializer(), body).androidApp!!
+
+        assertEquals("0.7.0", app.versionName)
+        assertTrue(app.newerThan(600))
+        assertTrue(!app.newerThan(700) && !app.newerThan(701))
+        assertTrue("a server that cannot tell its version offers no update", !app.copy(versionCode = null).newerThan(1))
+        assertTrue("only the server's own download", !app.copy(url = "https://elsewhere.example/app.apk").newerThan(1))
+    }
+
+    @Test
+    fun `pairing answers decode`() {
+        val body = """{"token":"tok","device":{"id":"a1","name":"philipps-s25","os":"android","client":"app",
+            "pairedAt":"2026-11-12T10:00:00Z","lastSeenAt":"2026-11-12T10:00:00Z","current":true}}"""
+        val paired = json.decodeFromString(PairResponse.serializer(), body)
+        assertEquals("philipps-s25" to true, paired.device.name to paired.device.current)
+    }
+
+    @Test
     fun `an older server without analytics still decodes`() {
         val response = json.decodeFromString(ProjectsResponse.serializer(), """{"generatedAt":"2026-11-09T13:00:00Z","projects":[]}""")
         assertNull(response.analytics)

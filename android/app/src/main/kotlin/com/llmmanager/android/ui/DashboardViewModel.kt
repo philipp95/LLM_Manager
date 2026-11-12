@@ -1,14 +1,18 @@
 package com.llmmanager.android.ui
 
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.llmmanager.android.data.AndroidApp
 import com.llmmanager.android.data.ApiResult
+import com.llmmanager.android.data.Credentials
 import com.llmmanager.android.data.LaunchResponse
 import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.ProjectsResponse
 import com.llmmanager.android.data.ServerAddress
 import com.llmmanager.android.data.ServerClient
 import com.llmmanager.android.data.SettingsStore
+import com.llmmanager.android.update.AppUpdater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +27,8 @@ import kotlinx.coroutines.launch
 class DashboardViewModel(
     private val settings: SettingsStore,
     private val client: ServerClient,
+    private val credentials: Credentials,
+    private val updater: AppUpdater,
     defaultServerUrl: String,
 ) : ViewModel() {
 
@@ -32,25 +38,32 @@ class DashboardViewModel(
         data object Online : Connection
         data class NoRoute(val detail: String) : Connection
 
-        /** No token saved yet, or the server rejected it ([refused]). */
-        data class NeedsToken(val refused: Boolean) : Connection
+        /** No usable token, and the server did not pair this phone: [reason] says why. */
+        data class NeedsToken(val reason: String?) : Connection
         data class Failed(val message: String) : Connection
     }
 
     data class UiState(
         val serverUrl: String? = null,
         val hasToken: Boolean = false,
+        /** The name the server paired this phone as; null when the token was typed in. */
+        val pairedAs: String? = null,
         val connection: Connection = Connection.Loading,
         val data: ProjectsResponse? = null,
         val refreshing: Boolean = false,
         /** Project id with a launch in flight. */
         val launching: String? = null,
+        /** An update is downloading. */
+        val updating: Boolean = false,
     )
 
     sealed interface Event {
         data class Message(val text: String) : Event
         data class Started(val projectName: String, val launch: LaunchResponse) : Event
         data object NeedToken : Event
+
+        /** Android needs the user's permission (once) before this app may install its update. */
+        data class AllowInstalls(val settings: Intent) : Event
     }
 
     private val mutableState = MutableStateFlow(UiState())
@@ -64,15 +77,16 @@ class DashboardViewModel(
 
     init {
         viewModelScope.launch {
-            combine(settings.serverUrl, settings.hasToken) { url, token -> url to token }.collect { (url, token) ->
-                if (url == null && ServerAddress.parse(defaultServerUrl) is ServerAddress.Parsed.Valid) {
-                    settings.setServerUrl(defaultServerUrl)
-                    return@collect
+            combine(settings.serverUrl, settings.hasToken, settings.pairedAs) { url, token, paired -> Triple(url, token, paired) }
+                .collect { (url, token, paired) ->
+                    if (url == null && ServerAddress.parse(defaultServerUrl) is ServerAddress.Parsed.Valid) {
+                        settings.setServerUrl(defaultServerUrl)
+                        return@collect
+                    }
+                    val changed = url != mutableState.value.serverUrl
+                    mutableState.update { it.copy(serverUrl = url, hasToken = token, pairedAs = paired) }
+                    if (changed) refresh()
                 }
-                val changed = url != mutableState.value.serverUrl
-                mutableState.update { it.copy(serverUrl = url, hasToken = token) }
-                if (changed) refresh()
-            }
         }
     }
 
@@ -83,22 +97,18 @@ class DashboardViewModel(
             return
         }
         refreshJob = viewModelScope.launch {
-            val token = settings.token()
-            if (token == null) {
-                mutableState.update { it.copy(connection = Connection.NeedsToken(refused = false), data = null) }
-                return@launch
-            }
             mutableState.update { it.copy(refreshing = true) }
-            val connection = when (val result = client.projects(server, token)) {
+            // Pairs first when this phone has no token yet, and again when the server rejects the saved one.
+            val connection = when (val result = credentials.call(server) { client.projects(server, it) }) {
                 is ApiResult.Ok -> {
                     mutableState.update { it.copy(data = result.value) }
                     Connection.Online
                 }
                 is ApiResult.NoRoute -> Connection.NoRoute(result.detail)
-                ApiResult.Unauthorized -> Connection.NeedsToken(refused = true)
+                ApiResult.Unauthorized -> Connection.NeedsToken(credentials.refusal)
                 is ApiResult.Failed -> Connection.Failed(result.message)
             }
-            mutableState.update { it.copy(connection = connection, refreshing = false) }
+            mutableState.update { it.copy(connection = connection, refreshing = false, data = it.data.takeUnless { connection is Connection.NeedsToken }) }
         }
     }
 
@@ -106,13 +116,8 @@ class DashboardViewModel(
         val server = currentServer() ?: return
         if (mutableState.value.launching != null) return
         viewModelScope.launch {
-            val token = settings.token()
-            if (token == null) {
-                eventChannel.send(Event.NeedToken)
-                return@launch
-            }
             mutableState.update { it.copy(launching = project.id) }
-            val event = when (val result = client.startCodex(server, project.id, token)) {
+            val event = when (val result = credentials.call(server) { client.startCodex(server, project.id, it) }) {
                 is ApiResult.Ok -> Event.Started(project.name, result.value)
                 ApiResult.Unauthorized -> Event.NeedToken
                 is ApiResult.NoRoute -> Event.Message("Can't reach the server — is Tailscale connected?")
@@ -128,12 +133,7 @@ class DashboardViewModel(
     fun publish(project: Project, branch: String, action: String) {
         val server = currentServer() ?: return
         viewModelScope.launch {
-            val token = settings.token()
-            if (token == null) {
-                eventChannel.send(Event.NeedToken)
-                return@launch
-            }
-            val event = when (val result = client.branchAction(server, token, project.id, action, branch)) {
+            val event = when (val result = credentials.call(server) { client.branchAction(server, it, project.id, action, branch) }) {
                 is ApiResult.Ok -> Event.Message(result.value)
                 ApiResult.Unauthorized -> Event.NeedToken
                 is ApiResult.NoRoute -> Event.Message("Can't reach the server — is Tailscale connected?")
@@ -144,7 +144,23 @@ class DashboardViewModel(
         }
     }
 
-    /** Saves the address and, when given, a new token. Returns an error to show, or null. */
+    /** Downloads [app] from the server and hands it to Android's installer, which asks the user to confirm. */
+    fun update(app: AndroidApp) {
+        val server = currentServer() ?: return
+        if (mutableState.value.updating) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(updating = true) }
+            val event = when (val outcome = updater.install(server, app)) {
+                AppUpdater.Outcome.NeedsPermission -> Event.AllowInstalls(updater.permissionIntent())
+                AppUpdater.Outcome.Started -> Event.Message("Confirm the update to version ${app.versionName ?: app.versionCode}")
+                is AppUpdater.Outcome.Failed -> Event.Message(outcome.message)
+            }
+            mutableState.update { it.copy(updating = false) }
+            eventChannel.send(event)
+        }
+    }
+
+    /** Saves the address and, when given, a typed-in token. Returns an error to show, or null. */
     fun saveSettings(url: String, token: String?): String? {
         val parsed = ServerAddress.parse(url)
         if (parsed is ServerAddress.Parsed.Invalid) return parsed.reason
@@ -161,7 +177,7 @@ class DashboardViewModel(
     fun forgetToken() {
         viewModelScope.launch {
             settings.clearToken()
-            eventChannel.send(Event.Message("Access token removed from this phone"))
+            eventChannel.send(Event.Message("Token removed from this phone"))
         }
     }
 

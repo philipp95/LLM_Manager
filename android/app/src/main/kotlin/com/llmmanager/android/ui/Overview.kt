@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.llmmanager.android.BuildConfig
+import com.llmmanager.android.data.AndroidApp
 import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.ProjectsResponse
 import com.llmmanager.android.ui.DashboardViewModel.Connection
@@ -26,13 +28,22 @@ private const val TAILSCALE_PACKAGE = "com.tailscale.ipn"
 
 /** The Repos tab: a grid of repository tiles, or what stands in the way of showing it. */
 @Composable
-fun Overview(state: DashboardViewModel.UiState, onRetry: () -> Unit, onSettings: () -> Unit, onOpen: (Project) -> Unit) {
+fun Overview(
+    state: DashboardViewModel.UiState,
+    onRetry: () -> Unit,
+    onSettings: () -> Unit,
+    onOpen: (Project) -> Unit,
+    onUpdate: (AndroidApp) -> Unit,
+) {
     val context = LocalContext.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Two tiles across on a phone, more on wider screens.
         val columns = maxOf(2, (maxWidth / 180.dp).toInt())
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
             connectionNotice(state.connection, onSettings = onSettings, onRetry = onRetry, context = context)
+            state.data?.androidApp?.takeIf { it.newerThan(BuildConfig.VERSION_CODE) }?.let { app ->
+                item(key = "update") { UpdateBanner(app, state.updating) { onUpdate(app) } }
+            }
             state.data?.let { data -> repositories(data, columns, onOpen) }
         }
     }
@@ -54,11 +65,10 @@ private fun LazyListScope.connectionNotice(
 ) {
     val (title, body) = when (connection) {
         Connection.NotConfigured -> "Set the server address" to "Enter the dashboard's Tailscale address, e.g. http://100.101.102.103:8080."
-        is Connection.NeedsToken -> if (connection.refused) {
-            "Access token refused" to "The server did not accept the saved token. Enter the current one (cat ~/.config/llm-manager/api-token)."
-        } else {
-            "Access token needed" to "The server shares repositories and starts agents only with its access token (cat ~/.config/llm-manager/api-token)."
-        }
+        is Connection.NeedsToken -> "Access token needed" to
+            "Phones signed in to the server's Tailscale account pair automatically. " +
+            (connection.reason?.let { "$it. " } ?: "This one could not. ") +
+            "Enter the server's access token instead (on the server: cat ~/.config/llm-manager/api-token)."
         is Connection.NoRoute -> "Can't reach the server" to "Is Tailscale connected on this phone? (${connection.detail})"
         is Connection.Failed -> "Something went wrong" to connection.message
         Connection.Loading, Connection.Online -> return

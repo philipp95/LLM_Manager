@@ -16,7 +16,16 @@ data class ProjectsResponse(
 )
 
 @Serializable
-data class AndroidApp(val url: String, val sizeBytes: Long, val builtAt: String)
+data class AndroidApp(
+    val url: String,
+    val sizeBytes: Long,
+    val builtAt: String,
+    /** From the build's output metadata; the app compares it with its own to offer an update. */
+    val versionCode: Int? = null,
+    val versionName: String? = null,
+    /** Hex SHA-256 of the APK, checked by the app before it installs a download. */
+    val sha256: String? = null,
+)
 
 /** One git repository this machine works on, identified by its common git directory. */
 @Serializable

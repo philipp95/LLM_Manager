@@ -77,9 +77,17 @@ The start script launches git, tmux and agents with `fork()` rather than the
 JDK's spawn helper, so an in-place JDK package upgrade does not leave a running
 server unable to start them.
 
-Everything under `/api` needs the access token, created on first start in
-`~/.config/llm-manager/api-token` (mode 600); paste it once into the page (lock
-icon) or the app. Only the page itself, `/readyz` and the APK download are open.
+Everything under `/api` needs a token. Devices signed in to the same Tailscale
+account as the server get one automatically: the page and the app **pair**
+themselves on first use. The server asks Tailscale who is connecting and gives
+that device its own token, which only works from that device. The server itself,
+tagged nodes and other people's devices cannot pair; they use the access token
+created on first start in `~/.config/llm-manager/api-token` (mode 600), pasted
+once into the page (lock icon) or the app. The lock icon also lists paired
+devices; revoking one makes it pair again, so to lock a device out remove it from
+your Tailscale account (or start the server with `--pairing off`, and only the
+access token works). Only the page itself, `/readyz`, pairing and the APK
+download are open.
 Restrict port 8080 to your own devices with Tailscale ACLs as well. The full
 security model, including the admin steps it relies on, is in
 [docs/security.md](docs/security.md).
@@ -276,6 +284,15 @@ release keystore: Android only installs updates signed with the same key. When
 `android/app/build/outputs/apk/release/app-release.apk` exists, the dashboard
 shows **Get the Android app** and serves it at `/download/llm-manager.apk`; allow
 your browser to install apps when Android asks.
+
+The version is set in one place, `appVersion` in `android/app/build.gradle.kts`;
+the version code Android compares is derived from it (0.6.0 is 600). Settings in
+the app shows the installed version. When the server offers a newer build, the
+Repos tab shows **Update**: the app downloads the APK from the server, checks its
+SHA-256, and Android asks you to confirm (the first time, allow LLM Manager to
+install apps). Android refuses an update signed with another key. To publish an
+update, raise `appVersion` and build the release APK; the server picks up the new
+APK and its version without a restart.
 
 ## Layout
 

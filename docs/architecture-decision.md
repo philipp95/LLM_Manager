@@ -32,9 +32,11 @@ The repository currently contains five Kotlin/JVM modules and an Android app:
 - `android/app`: a Compose client for that API, restricted to Tailscale hosts,
   with the access token encrypted under an Android Keystore key.
 
-There is no OpenClaw plugin, database, push notification, or pairing service. The
-dashboard's static bearer token (required for every API call) is a stopgap, not the
-pairing, per-device identity, and approval design listed below. Unattended runs are
+There is no OpenClaw plugin, database or push notification. Access is a bearer token
+on every API call: either the dashboard's static access token, or a per-device token
+that the owner's own Tailscale devices get by pairing (Tailscale's whois vouches for
+the device; the token only works from it and can be revoked). That is a stopgap for
+the approval design listed below: there are no per-action approvals yet. Unattended runs are
 confined by the agents' own permission systems plus a minimal environment, and by an
 OS sandbox (bubblewrap) only where it is installed; allowed build commands run
 repository code. Server-side git ignores repository-defined programs and refuses

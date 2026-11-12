@@ -19,8 +19,7 @@ class ApiToken(private val value: String) {
 
     /** Constant-time check of an `Authorization: Bearer <token>` header; nothing else is accepted. */
     fun accepts(authorization: String?): Boolean {
-        if (authorization == null || !authorization.startsWith(SCHEME)) return false
-        val presented = authorization.substring(SCHEME.length).trim()
+        val presented = bearer(authorization) ?: return false
         return MessageDigest.isEqual(presented.toByteArray(Charsets.UTF_8), value.toByteArray(Charsets.UTF_8))
     }
 
@@ -28,6 +27,10 @@ class ApiToken(private val value: String) {
         private const val MIN_LENGTH = 32
         private const val BYTES = 32
         private const val SCHEME = "Bearer "
+
+        /** The token of an `Authorization: Bearer <token>` header, or null for anything else. */
+        fun bearer(authorization: String?): String? =
+            authorization?.takeIf { it.startsWith(SCHEME) }?.substring(SCHEME.length)?.trim()?.ifEmpty { null }
 
         /** Reads the token from [file], creating it owner-readable only (0600) on first use. */
         fun loadOrCreate(file: File): ApiToken {

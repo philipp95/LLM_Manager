@@ -31,16 +31,21 @@ class SettingsStore(context: Context) {
     val serverUrl: Flow<String?> = store.data.map { it[SERVER_URL] }
     val hasToken: Flow<Boolean> = store.data.map { it[TOKEN_CIPHERTEXT] != null }
 
+    /** The device name the server paired this phone as; null when the token was typed in. */
+    val pairedAs: Flow<String?> = store.data.map { it[PAIRED_AS] }
+
     suspend fun setServerUrl(url: String) {
         store.edit { it[SERVER_URL] = url }
     }
 
-    suspend fun saveToken(token: String) {
+    /** Saves [token]; [pairedAs] is the device name when the token came from pairing. */
+    suspend fun saveToken(token: String, pairedAs: String? = null) {
         val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
         val ciphertext = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
         store.edit {
             it[TOKEN_IV] = Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
             it[TOKEN_CIPHERTEXT] = Base64.encodeToString(ciphertext, Base64.NO_WRAP)
+            if (pairedAs != null) it[PAIRED_AS] = pairedAs else it.remove(PAIRED_AS)
         }
     }
 
@@ -68,6 +73,7 @@ class SettingsStore(context: Context) {
         store.edit {
             it.remove(TOKEN_IV)
             it.remove(TOKEN_CIPHERTEXT)
+            it.remove(PAIRED_AS)
         }
         KeyStore.getInstance(KEYSTORE).apply { load(null) }.takeIf { it.containsAlias(KEY_ALIAS) }?.deleteEntry(KEY_ALIAS)
     }
@@ -95,5 +101,6 @@ class SettingsStore(context: Context) {
         val SERVER_URL = stringPreferencesKey("server_url")
         val TOKEN_IV = stringPreferencesKey("token_iv")
         val TOKEN_CIPHERTEXT = stringPreferencesKey("token_ciphertext")
+        val PAIRED_AS = stringPreferencesKey("paired_as")
     }
 }

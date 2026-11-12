@@ -3,6 +3,7 @@ package com.llmmanager.android.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.llmmanager.android.data.ApiResult
+import com.llmmanager.android.data.Credentials
 import com.llmmanager.android.data.JobRequest
 import com.llmmanager.android.data.RunLog
 import com.llmmanager.android.data.ScheduleResponse
@@ -20,7 +21,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** Schedule and usage tabs. Shares the server address and token with the overview. */
-class ScheduleViewModel(private val settings: SettingsStore, private val client: ServerClient) : ViewModel() {
+class ScheduleViewModel(
+    private val settings: SettingsStore,
+    private val client: ServerClient,
+    private val credentials: Credentials,
+) : ViewModel() {
 
     data class State(
         val usage: UsageResponse? = null,
@@ -47,8 +52,8 @@ class ScheduleViewModel(private val settings: SettingsStore, private val client:
         }
     }
 
-    fun refreshUsage() = withToken { server, token ->
-        val result = client.usage(server, token)
+    fun refreshUsage() = launchWithServer { server ->
+        val result = credentials.call(server) { client.usage(server, it) }
         mutableState.update {
             when (result) {
                 is ApiResult.Ok -> it.copy(usage = result.value, usageError = null)
@@ -58,8 +63,8 @@ class ScheduleViewModel(private val settings: SettingsStore, private val client:
         }
     }
 
-    fun refreshSchedule() = withToken { server, token ->
-        val result = client.schedule(server, token)
+    fun refreshSchedule() = launchWithServer { server ->
+        val result = credentials.call(server) { client.schedule(server, it) }
         mutableState.update {
             when (result) {
                 is ApiResult.Ok -> it.copy(schedule = result.value, scheduleError = null, needsToken = false)
@@ -70,9 +75,9 @@ class ScheduleViewModel(private val settings: SettingsStore, private val client:
     }
 
     /** Creates a job; [message] replaces the default confirmation ("Started" or "Scheduled"). */
-    fun create(request: JobRequest, message: String? = null, onCreated: () -> Unit) = withToken { server, token ->
+    fun create(request: JobRequest, message: String? = null, onCreated: () -> Unit) = launchWithServer { server ->
         mutableState.update { it.copy(submitting = true) }
-        val result = client.createJob(server, token, request)
+        val result = credentials.call(server) { client.createJob(server, it, request) }
         mutableState.update { it.copy(submitting = false) }
         if (result is ApiResult.Ok) {
             onCreated()
@@ -83,20 +88,20 @@ class ScheduleViewModel(private val settings: SettingsStore, private val client:
         }
     }
 
-    fun jobAction(jobId: String, action: String) = withToken { server, token ->
-        val result = client.jobAction(server, token, jobId, action)
+    fun jobAction(jobId: String, action: String) = launchWithServer { server ->
+        val result = credentials.call(server) { client.jobAction(server, it, jobId, action) }
         messages.send(if (result is ApiResult.Ok) "Done" else describe(result))
         refreshSchedule()
     }
 
-    fun cancel(runId: String) = withToken { server, token ->
-        val result = client.cancelRun(server, token, runId)
+    fun cancel(runId: String) = launchWithServer { server ->
+        val result = credentials.call(server) { client.cancelRun(server, it, runId) }
         messages.send(if (result is ApiResult.Ok) "Cancelled" else describe(result))
         refreshSchedule()
     }
 
-    fun openLog(runId: String) = withToken { server, token ->
-        when (val result = client.runLog(server, token, runId)) {
+    fun openLog(runId: String) = launchWithServer { server ->
+        when (val result = credentials.call(server) { client.runLog(server, it, runId) }) {
             is ApiResult.Ok -> mutableState.update { it.copy(log = result.value) }
             else -> messages.send(describe(result))
         }
@@ -111,11 +116,6 @@ class ScheduleViewModel(private val settings: SettingsStore, private val client:
             block(target)
             mutableState.update { it.copy(loading = false) }
         }
-    }
-
-    private fun withToken(block: suspend (ServerAddress, String) -> Unit) = launchWithServer { server ->
-        val token = settings.token()
-        if (token == null) mutableState.update { it.copy(needsToken = true) } else block(server, token)
     }
 
     private fun describe(result: ApiResult<*>): String = when (result) {

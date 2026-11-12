@@ -1,6 +1,7 @@
 # Security model
 
-Status: reviewed 2026-11-09; pull request insights and chat publishing added 2026-11-11. This describes what the code enforces today and what
+Status: reviewed 2026-11-09; pull request insights and chat publishing added 2026-11-11;
+pairing and in-app updates added 2026-11-12. This describes what the code enforces today and what
 still depends on the machine's configuration.
 
 ## What is being protected
@@ -32,7 +33,10 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 | Control | Where |
 | --- | --- |
 | Binds only to the Tailscale IPv4 (or loopback); never `0.0.0.0` | `BindAddress` |
-| Every `/api` endpoint needs `Authorization: Bearer <token>` (256-bit, compared in constant time). Open: the static page, `/readyz`, the APK | `DashboardModule`, `ApiToken` |
+| Every `/api` endpoint needs `Authorization: Bearer <token>`: the access token (256-bit, compared in constant time) or a paired device's token. Open: the static page, `/readyz`, the APK, pairing | `DashboardModule`, `ApiToken`, `Access` |
+| Pairing: tailscaled's whois says who is connecting. Only untagged devices of the person the server is signed in as can pair; the server's own node (so anything running on it, such as an agent) cannot. Each device gets its own 256-bit token, stored as a SHA-256 hash, accepted only from that device's node, listed and revocable; `--pairing off` disables it | `Pairing`, `Tailnet` |
+| Pairing refuses requests another web site makes the browser send (`Sec-Fetch-Site`, `Origin` checked against the allowed hosts); its answer is not readable cross-origin anyway | `PairingRoutes` |
+| In-app updates come only from the configured server's `/download/` path, are checked against the SHA-256 the server reports, and installed through Android's package installer, which asks the user and refuses an APK signed with another key | `AppUpdater` |
 | Host header must be the bind address or the machine's MagicDNS names (`--allowed-host` adds more); others get 421 | `DashboardModule`, `BindAddress.allowedHosts` |
 | CSP allows only the page's own script (by SHA-256); `frame-ancestors 'none'`, COOP/CORP, `nosniff`, `no-referrer`, `no-store` | `DashboardModule` |
 | Request bodies ≤ 64 KiB, `Content-Length` required; unexpected errors become JSON 500 without details | `DashboardModule` |
@@ -80,7 +84,11 @@ The phone (web page or app) steers agents that edit those repositories, unattend
   model APIs. A run can send anything it can read to the internet.
 - **Build caches are writable** inside the sandbox (`~/.gradle`, `~/.npm`, ...), so a
   run could poison a cache used by later builds.
-- **The access token is a single shared secret** without per-device identity or expiry.
-  Pairing with per-device credentials remains future work (`docs/architecture-decision.md`).
+- **The access token is a single shared secret** without expiry. Paired devices have their
+  own tokens, but the access token still works from anywhere on the tailnet.
+- **Pairing trusts every app on your own Tailscale devices.** Any app on your phone or laptop
+  that can reach the server can pair itself, just as it can reach any other service on your
+  tailnet. Revoking a device makes it pair again; removing it from your Tailscale account
+  locks it out. Use `--pairing off` if that is too much trust.
 - **The sandbox profile is untested on this machine** because bubblewrap is not installed;
   it is unit-tested as an argument list and self-tested at startup before use.

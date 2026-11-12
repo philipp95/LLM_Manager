@@ -16,6 +16,19 @@ fun setting(name: String): String? = (findProperty(name) as String?) ?: local.ge
 
 val releaseStore = setting("llmmanager.signing.storeFile")?.let(::file)?.takeIf { it.isFile }
 
+/**
+ * The app's version: the one line to change for a release. The version code Android compares
+ * when updating is derived from it (major * 10000 + minor * 100 + patch), so it always grows
+ * with the version: 0.6.0 is 600, 1.2.3 is 10203.
+ */
+val appVersion = "0.6.0"
+
+fun versionCodeOf(version: String): Int {
+    val parts = version.split('.').map(String::toInt)
+    require(parts.size == 3 && parts.all { it in 0..99 }) { "Version must be major.minor.patch with parts below 100, got $version" }
+    return parts[0] * 10_000 + parts[1] * 100 + parts[2]
+}
+
 android {
     namespace = "com.llmmanager.android"
     compileSdk = 35
@@ -24,8 +37,8 @@ android {
         applicationId = "com.llmmanager.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionName = appVersion
+        versionCode = versionCodeOf(appVersion)
         val serverUrl = setting("llmmanager.serverUrl").orEmpty()
         require(serverUrl.none { it == '"' || it == '\\' }) { "llmmanager.serverUrl must not contain quotes or backslashes" }
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"$serverUrl\"")

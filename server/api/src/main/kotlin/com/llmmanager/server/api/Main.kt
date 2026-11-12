@@ -46,6 +46,10 @@ class ApiServer : CliktCommand(name = "api") {
         "--agent-sandbox",
         help = "auto: sandbox agent runs with bubblewrap when it works; on: refuse runs that cannot be sandboxed; off: never",
     ).choice("auto" to AgentSandbox.Mode.AUTO, "on" to AgentSandbox.Mode.ON, "off" to AgentSandbox.Mode.OFF).default(AgentSandbox.Mode.AUTO)
+    private val pairingMode by option(
+        "--pairing",
+        help = "on: devices signed in to this server's Tailscale account pair without the access token; off: the token only",
+    ).choice("on", "off").default("on")
     private val tokenFile by option("--token-file", help = "Access token for launching sessions; created if missing")
         .default(File(System.getProperty("user.home"), ".config/llm-manager/api-token").path)
 
@@ -72,11 +76,13 @@ class ApiServer : CliktCommand(name = "api") {
         val insights = InsightsService(InsightSources(credentials), agentForBranch = { projectId, branch -> agentOf(store, projectId, branch) })
         val schedule = schedule(store, workspace, credentials, onPublished = { insights.invalidate(it.projectId) })
         val hosts = BindAddress.allowedHosts(address, port, BindAddress.tailscaleNames(), allowedHost)
+        val pairing = if (pairingMode == "on") Pairing(CachedTailnet(TailscaleCli()), state) else null
         val log = LoggerFactory.getLogger(ApiServer::class.java)
         log.info("Dashboard on http://{}:{}/ scanning {}", address.hostAddress, port, projects)
         log.info("Codex: {}. Token in {}. State in {}. Answering for {}", codexPath ?: "not found", tokenFile, stateDir, hosts)
+        log.info("Pairing: {}", if (pairing != null) "devices of this server's Tailscale account pair without the token" else "off")
         embeddedServer(Netty, port = port, host = address.hostAddress) {
-            dashboardModule(scanner, token, DashboardServices(launcher, ApkFile(File(apk)), schedule, insights), allowedHosts = hosts)
+            dashboardModule(scanner, token, DashboardServices(launcher, ApkFile(File(apk)), schedule, insights, pairing), allowedHosts = hosts)
         }.start(wait = true)
     }
 

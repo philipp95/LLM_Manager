@@ -239,6 +239,14 @@
   .paths div { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
   .paths div b { font-family: system-ui, sans-serif; font-weight: 700; color: var(--ink); margin-right: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 
+  .devices { margin: 4px 0 12px; }
+  .device { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--paper-line); }
+  .device:first-child { border-top: 0; }
+  .device div { flex: 1; min-width: 0; }
+  .device b { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .device span { font-size: 12.5px; color: var(--ink-2); }
+  dialog a { color: var(--rust-strong); font-weight: 650; }
+
   /* ---------- buttons and lists ---------- */
   .small-btn {
     min-height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--paper-line); background: var(--field); color: var(--ink);
@@ -378,6 +386,7 @@
 </main>
 <dialog id="job-dialog" class="sheet"></dialog>
 <dialog id="log-dialog" class="sheet"></dialog>
+<dialog id="access-dialog" class="sheet"></dialog>
 <div class="toast" id="toast" role="status"></div>
 <dialog id="token-dialog">
   <div>
@@ -400,6 +409,7 @@
   const REFRESH_MS = 30000;
   let inFlight = false, codexAvailable = false, toastTimer = 0, projectsCache = [], lastAnalytics = null, lastUsage = null;
   let activeTab = "overview", currentRepo = null, scheduleData = null, composer = null, insightRetries = 0, gridScroll = 0;
+  let pairing = null, pairRefusal = "", lastApp = null;
 
   const ICONS = {
     refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
@@ -594,30 +604,124 @@
     });
   }
 
-  /** Without a (valid) token there is nothing to show but how to get one, and the open app download. */
+  /** Not paired and no (valid) token: say why, and offer the token and the open app download. */
   function lockedPanel(refused) {
     status.textContent = "Locked";
     return el("div", { class: "panel" },
       el("div", { class: "panel-head" }, el("h2", null, refused ? "Access token refused" : "Access token needed")),
       el("p", { class: "muted" }, refused
         ? "The saved token was not accepted. It changes if the server's token file is replaced."
-        : "This dashboard shows repositories and starts agents, so it needs the server's access token."),
+        : "Devices signed in to the same Tailscale account as the server get access automatically. " +
+          (pairRefusal ? pairRefusal + ". Enter the server's access token instead." : "Otherwise enter the server's access token.")),
       el("div", { class: "actions-row" },
         el("button", { class: "small-btn go", type: "button", onclick: async () => { if (await askToken()) refreshActive(); } }, icon("lock"), "Enter token"),
         el("a", { class: "small-btn", href: "/download/llm-manager.apk", download: "llm-manager.apk" }, icon("download"), "Android app")));
   }
 
+  /** Who has access: the paired devices (revocable), the token as a fallback, and the Android app. */
+  async function openAccess() {
+    const dialog = $("access-dialog");
+    const list = el("div", { class: "devices" }, el("p", { class: "muted" }, "Loading…"));
+    const app = lastApp && typeof lastApp.url === "string" && lastApp.url.startsWith("/download/") ? lastApp : null;
+    const useToken = async () => {
+      dialog.close();
+      if (await askToken()) { toast("Token saved"); refreshActive(); }
+    };
+    const forget = () => {
+      setToken("");
+      renderLock();
+      dialog.close();
+      toast("Forgotten in this browser");
+    };
+    dialog.replaceChildren(
+      el("div", { class: "section-head" }, el("h2", null, "Access"),
+        el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
+      el("p", null, "Devices signed in to the same Tailscale account as the server pair themselves: each gets its own token, " +
+        "which only works from that device. Revoking one makes it pair again; to lock a device out, remove it from your Tailscale account."),
+      list,
+      el("div", { class: "actions-row" },
+        el("button", { class: "small-btn", type: "button", onclick: useToken }, icon("lock"), "Use the access token"),
+        getToken() ? el("button", { class: "small-btn danger", type: "button", onclick: forget }, icon("x"), "Forget in this browser") : null),
+      app ? el("p", { class: "hint-text" }, "Android app " + (app.versionName ? "version " + app.versionName : "") + " · ",
+        el("a", { href: app.url, download: "llm-manager.apk" }, "download")) : null);
+    dialog.showModal();
+    if (!(await ensureAccess())) {
+      list.replaceChildren(el("p", { class: "muted" }, "This browser is not paired. " + (pairRefusal || "There is no access token") + "."));
+      return;
+    }
+    const result = await api("/api/devices", { prompt: false });
+    if (result.status === 404) { list.replaceChildren(el("p", { class: "muted" }, "Pairing is off on this server; devices use the access token.")); return; }
+    if (!result.ok) { list.replaceChildren(el("p", { class: "muted" }, result.body.error || "Could not load devices (" + result.status + ")")); return; }
+    const devices = result.body.devices || [];
+    const row = (d) => el("div", { class: "device" },
+      el("div", null, el("b", null, d.name),
+        el("span", null, (d.client === "app" ? "Android app" : "Browser") + (d.os ? " · " + d.os : "") + " · last seen " + relative(d.lastSeenAt || d.pairedAt))),
+      d.current ? chip("this browser", "ok", "check")
+        : el("button", { class: "small-btn danger", type: "button", onclick: async () => {
+            const revoked = await api("/api/devices/" + encodeURIComponent(d.id) + "/revoke", { method: "POST" });
+            toast(revoked.ok ? "Revoked " + d.name : (revoked.body.error || "Failed"), !revoked.ok);
+            openAccess();
+          } }, icon("trash"), "Revoke"));
+    list.replaceChildren(...(devices.length ? devices.map(row)
+      : [el("p", { class: "muted" }, "No paired devices. This browser uses the access token.")]));
+  }
+
   /**
-   * Authenticated JSON request to this origin. On 401 it asks for the token once, unless
+   * Pairs this browser when the server recognises it, through Tailscale, as one of its owner's
+   * devices: the server then hands out a token for this browser alone. Concurrent callers share
+   * one attempt. False, with the reason in `pairRefusal`, when the server says no.
+   */
+  function pair() {
+    if (!pairing) {
+      pairing = (async () => {
+        try {
+          const response = await fetch("/api/pair", {
+            method: "POST", cache: "no-store",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ client: "web" }),
+          });
+          const body = await response.json().catch(() => ({}));
+          if (response.ok && typeof body.token === "string") {
+            setToken(body.token);
+            pairRefusal = "";
+            renderLock();
+            return true;
+          }
+          pairRefusal = body.error || "Pairing is not available (" + response.status + ")";
+          return false;
+        } catch (error) {
+          pairRefusal = "The server could not be reached (" + error.message + ")";
+          return false;
+        } finally {
+          pairing = null;
+        }
+      })();
+    }
+    return pairing;
+  }
+
+  /** A token to use: the saved one, or a new one from pairing. */
+  async function ensureAccess() {
+    return !!getToken() || await pair();
+  }
+
+  /**
+   * Authenticated JSON request to this origin. Without a token it pairs first; on 401 (a token
+   * revoked or replaced) it pairs again, and only then asks for the access token, unless
    * `prompt: false` (background refreshes must never pop a dialog).
    */
   async function api(path, options) {
     const { prompt = true, ...init } = options || {};
+    await ensureAccess();
     const send = () => fetch(path, Object.assign({ cache: "no-store" }, init, {
       headers: Object.assign({ Accept: "application/json", Authorization: "Bearer " + getToken() }, init.headers || {}),
     }));
     let response = await send();
-    if (response.status === 401 && prompt && await askToken()) response = await send();
+    if (response.status === 401) {
+      setToken("");
+      renderLock();
+      if (await pair() || (prompt && await askToken())) response = await send();
+    }
     const type = response.headers.get("Content-Type") || "";
     const json = type.includes("application/json");
     const body = json ? await response.json().catch(() => ({})) : {};
@@ -681,11 +785,13 @@
     const mb = (app.sizeBytes / 1048576).toFixed(1);
     slot.replaceChildren(el("a", { class: "app-banner", href: app.url, download: "llm-manager.apk" },
       el("span", { class: "mark" }, icon("download")),
-      el("div", null, el("b", null, "Get the Android app"), el("span", null, mb + " MB · built " + relative(app.builtAt))),
+      el("div", null, el("b", null, "Get the Android app"),
+        el("span", null, (app.versionName ? "Version " + app.versionName + " · " : "") + mb + " MB · built " + relative(app.builtAt))),
       icon("link")));
   }
 
   function applyProjects(body) {
+    lastApp = body.androidApp || null;
     codexAvailable = body.codexAvailable === true;
     projectsCache = body.projects;
     lastAnalytics = body.analytics || null;
@@ -704,7 +810,7 @@
 
   async function load() {
     if (inFlight) return;
-    if (!getToken()) { grid.replaceChildren(lockedPanel(false)); $("app-slot").replaceChildren(); return; }
+    if (!(await ensureAccess())) { grid.replaceChildren(lockedPanel(false)); $("app-slot").replaceChildren(); return; }
     inFlight = true;
     spin(true);
     try {
@@ -1049,7 +1155,7 @@
 
   async function loadRepo() {
     const id = currentRepo;
-    if (!getToken()) { repoTab.replaceChildren(lockedPanel(false)); return; }
+    if (!(await ensureAccess())) { repoTab.replaceChildren(lockedPanel(false)); return; }
     spin(true);
     try {
       const [projects, schedule] = await Promise.all([fetchProjects(), api("/api/schedule", { prompt: false }).catch(() => null)]);
@@ -1169,7 +1275,7 @@
   }
 
   async function loadSchedule() {
-    if (!getToken()) { scheduleTab.replaceChildren(lockedPanel(false)); return; }
+    if (!(await ensureAccess())) { scheduleTab.replaceChildren(lockedPanel(false)); return; }
     spin(true);
     try {
       const result = await api("/api/schedule");
@@ -1463,7 +1569,7 @@
   }
 
   async function loadUsage() {
-    if (!getToken()) { usageTab.replaceChildren(lockedPanel(false)); return; }
+    if (!(await ensureAccess())) { usageTab.replaceChildren(lockedPanel(false)); return; }
     spin(true);
     try {
       const [result, projects] = await Promise.all([api("/api/usage", { prompt: false }), fetchProjects().catch(() => null)]);
@@ -1492,10 +1598,7 @@
   $("refresh").append(icon("refresh"));
   $("refresh").addEventListener("click", refreshActive);
   for (const button of document.querySelectorAll(".tabs button")) button.addEventListener("click", () => go(button.dataset.tab === "overview" ? "" : button.dataset.tab));
-  $("lock").addEventListener("click", async () => {
-    if (getToken() && confirm("Forget the saved access token on this device?")) { setToken(""); renderLock(); toast("Token removed"); refreshActive(); return; }
-    if (!getToken() && await askToken()) { toast("Token saved"); refreshActive(); }
-  });
+  $("lock").addEventListener("click", openAccess);
   renderLock();
   window.addEventListener("hashchange", route);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshActive(); });

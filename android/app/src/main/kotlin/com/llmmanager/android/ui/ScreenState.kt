@@ -3,6 +3,7 @@ package com.llmmanager.android.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.llmmanager.android.data.AndroidApp
 import com.llmmanager.android.data.JobRequest
 import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.Run
@@ -21,6 +22,9 @@ class RepoActions(
     val onStartCodex: () -> Unit,
     val onPublish: (branch: String, action: String) -> Unit,
 )
+
+/** What the settings dialog shows about updates: the server's app, whether one is downloading, and how to start. */
+class UpdateState(val offered: AndroidApp?, val updating: Boolean, val onUpdate: (AndroidApp) -> Unit)
 
 /** Which dialog is open: one holder, so the screen and its parts can open them. */
 class DialogState {

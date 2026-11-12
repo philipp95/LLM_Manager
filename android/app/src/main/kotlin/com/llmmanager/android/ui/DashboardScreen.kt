@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +54,7 @@ import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.ProjectsResponse
 import com.llmmanager.android.ui.DashboardViewModel.Connection
 import com.llmmanager.android.ui.DashboardViewModel.Event
+import com.llmmanager.android.update.UpdateEvents
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -104,7 +106,10 @@ fun DashboardScreen(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVi
                     open, scheduleState.schedule, state.data?.codexAvailable == true, state.launching == open.id, scheduleState.submitting,
                     repoActions(open, viewModel, scheduleViewModel, dialogs, copy),
                 )
-                else -> Overview(state, onRetry = viewModel::refresh, onSettings = { dialogs.settings = true }, onOpen = { openId = it.id })
+                else -> Overview(
+                    state, onRetry = viewModel::refresh, onSettings = { dialogs.settings = true }, onOpen = { openId = it.id },
+                    onUpdate = viewModel::update,
+                )
             }
         }
     }
@@ -128,7 +133,9 @@ private fun Polling(tab: Int, openId: String?, refresh: () -> Unit) {
 
 @Composable
 private fun Events(viewModel: DashboardViewModel, scheduleViewModel: ScheduleViewModel, snackbar: SnackbarHostState, dialogs: DialogState) {
+    val context = LocalContext.current
     LaunchedEffect(scheduleViewModel) { scheduleViewModel.events.collect { snackbar.showSnackbar(it) } }
+    LaunchedEffect(Unit) { UpdateEvents.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -137,6 +144,10 @@ private fun Events(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVie
                 Event.NeedToken -> {
                     dialogs.settings = true
                     snackbar.showSnackbar("Enter the server's access token first")
+                }
+                is Event.AllowInstalls -> {
+                    context.startActivity(event.settings)
+                    snackbar.showSnackbar("Allow LLM Manager to install apps, then tap Update again")
                 }
             }
         }
@@ -177,8 +188,9 @@ private fun DialogHost(
     val scheduleState by scheduleViewModel.state.collectAsStateWithLifecycle()
     if (dialogs.settings) {
         SettingsDialog(
-            serverUrl = state.serverUrl.orEmpty(), hasToken = state.hasToken, onSave = viewModel::saveSettings,
-            onForgetToken = viewModel::forgetToken, onDismiss = { dialogs.settings = false },
+            serverUrl = state.serverUrl.orEmpty(), hasToken = state.hasToken, pairedAs = state.pairedAs,
+            onSave = viewModel::saveSettings, onForgetToken = viewModel::forgetToken, onDismiss = { dialogs.settings = false },
+            update = UpdateState(state.data?.androidApp, state.updating, viewModel::update),
         )
     }
     dialogs.confirming?.let { project ->

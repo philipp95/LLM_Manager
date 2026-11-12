@@ -23,24 +23,24 @@ data class ApiOk(val status: String = "ok")
 @Serializable
 data class RunLog(val run: Run, val activity: List<ActivityLine>)
 
-/** Usage, schedules, run logs and publishing. Every route needs the access token. */
-fun Route.scheduleRoutes(api: ScheduleApi, token: ApiToken, onChange: (projectId: String) -> Unit = {}) {
+/** Usage, schedules, run logs and publishing. Every route needs the access token or a paired device. */
+fun Route.scheduleRoutes(api: ScheduleApi, access: Access, onChange: (projectId: String) -> Unit = {}) {
     val usage = TtlCache(USAGE_TTL_MS) { api.usage.read() }
     get("/api/usage") {
-        if (!call.authorized(token)) return@get
+        if (!call.authorized(access)) return@get
         call.respond(withContext(Dispatchers.IO) { usage.get() })
     }
-    jobRoutes(api, token)
-    runRoutes(api, token)
-    api.branches?.let { branchRoutes(it, token, onChange) }
+    jobRoutes(api, access)
+    runRoutes(api, access)
+    api.branches?.let { branchRoutes(it, access, onChange) }
 }
 
 private const val USAGE_TTL_MS = 10_000L
 
 /** Issue #1: push an agent branch, open its pull request, merge it through the forge. */
-private fun Route.branchRoutes(branches: BranchService, token: ApiToken, onChange: (projectId: String) -> Unit) {
+private fun Route.branchRoutes(branches: BranchService, access: Access, onChange: (projectId: String) -> Unit) {
     post("/api/projects/{id}/branches/{action}") {
-        if (!call.authorized(token)) return@post
+        if (!call.authorized(access)) return@post
         val branch = runCatching { call.receive<BranchRequest>() }.getOrNull()?.branch
         val id = call.parameters["id"].orEmpty()
         val outcome = when {
@@ -65,13 +65,13 @@ private fun Route.branchRoutes(branches: BranchService, token: ApiToken, onChang
 @Serializable
 data class BranchResult(val message: String, val record: BranchRecord)
 
-private fun Route.jobRoutes(api: ScheduleApi, token: ApiToken) {
+private fun Route.jobRoutes(api: ScheduleApi, access: Access) {
     get("/api/schedule") {
-        if (!call.authorized(token)) return@get
+        if (!call.authorized(access)) return@get
         call.respond(withContext(Dispatchers.IO) { api.jobs.overview() })
     }
     post("/api/jobs") {
-        if (!call.authorized(token)) return@post
+        if (!call.authorized(access)) return@post
         val request = runCatching { call.receive<JobRequest>() }.getOrNull()
         if (request == null) {
             call.respond(HttpStatusCode.BadRequest, ApiError("Malformed request"))
@@ -82,12 +82,12 @@ private fun Route.jobRoutes(api: ScheduleApi, token: ApiToken) {
             is JobService.Created.Invalid -> call.respond(HttpStatusCode.BadRequest, ApiError(created.reason))
         }
     }
-    jobActions(api, token)
+    jobActions(api, access)
 }
 
-private fun Route.jobActions(api: ScheduleApi, token: ApiToken) {
+private fun Route.jobActions(api: ScheduleApi, access: Access) {
     post("/api/jobs/{id}/{action}") {
-        if (!call.authorized(token)) return@post
+        if (!call.authorized(access)) return@post
         val id = call.parameters["id"].orEmpty()
         val found = withContext(Dispatchers.IO) {
             when (call.parameters["action"]) {
@@ -106,14 +106,14 @@ private fun Route.jobActions(api: ScheduleApi, token: ApiToken) {
     }
 }
 
-private fun Route.runRoutes(api: ScheduleApi, token: ApiToken) {
+private fun Route.runRoutes(api: ScheduleApi, access: Access) {
     post("/api/runs/{id}/cancel") {
-        if (!call.authorized(token)) return@post
+        if (!call.authorized(access)) return@post
         val run = withContext(Dispatchers.IO) { api.jobs.cancel(call.parameters["id"].orEmpty()) }
         if (run == null) call.respond(HttpStatusCode.NotFound, ApiError("Unknown run")) else call.respond(run)
     }
     get("/api/runs/{id}/log") {
-        if (!call.authorized(token)) return@get
+        if (!call.authorized(access)) return@get
         val run = api.store.run(call.parameters["id"].orEmpty())
         if (run == null) {
             call.respond(HttpStatusCode.NotFound, ApiError("Unknown run"))

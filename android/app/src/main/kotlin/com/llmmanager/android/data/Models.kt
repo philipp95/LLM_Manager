@@ -11,7 +11,42 @@ data class ProjectsResponse(
     val codexAvailable: Boolean = false,
     val projects: List<Project> = emptyList(),
     val analytics: Analytics? = null,
+    /** The APK the server offers, when it has one. */
+    val androidApp: AndroidApp? = null,
 )
+
+/** The app build the server offers for download; its version decides whether to offer an update. */
+@Serializable
+data class AndroidApp(
+    val url: String,
+    val sizeBytes: Long = 0,
+    val builtAt: String? = null,
+    val versionCode: Int? = null,
+    val versionName: String? = null,
+    /** Hex SHA-256 of the APK; the download is checked against it before installing. */
+    val sha256: String? = null,
+) {
+    /** True when this build is newer than the one running ([current] is its version code). */
+    fun newerThan(current: Int): Boolean = versionCode != null && versionCode > current && url.startsWith("/download/")
+}
+
+@Serializable
+data class PairRequest(val client: String = "app")
+
+/** A device paired with the server through Tailscale. */
+@Serializable
+data class PairedDevice(
+    val id: String,
+    val name: String,
+    val os: String? = null,
+    val client: String = "app",
+    val pairedAt: String? = null,
+    val lastSeenAt: String? = null,
+    val current: Boolean = false,
+)
+
+@Serializable
+data class PairResponse(val token: String, val device: PairedDevice)
 
 @Serializable
 data class Project(
