@@ -1,0 +1,24 @@
+config:
+  validation: true
+
+style:
+  ReturnCount:
+    excludeGuardClauses: true
+  # Numeric protocol fixtures and CLI presentation values are clearer inline.
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 160
+
+complexity:
+  LongParameterList:
+    ignoreDataClasses: true
+    ignoreAnnotated: ['Composable']
+  # Compose UI reads top to bottom; splitting a screen for line count hurts more than it helps.
+  LongMethod:
+    ignoreAnnotated: ['Composable']
+
+naming:
+  # Composables are PascalCase by convention.
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']

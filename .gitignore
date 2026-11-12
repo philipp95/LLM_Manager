@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# Local machine config — JDK path differs per machine
+local.properties
+
+# Signing keys and secrets never belong in the repository
+*.jks
+*.keystore
+*.p12
+*-token
+.env

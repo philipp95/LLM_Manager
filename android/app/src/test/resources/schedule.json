@@ -1,0 +1,49 @@
+{
+ "now": "2026-11-09T15:40:23.160046749Z",
+ "agents": {
+  "claude": true,
+  "codex": true
+ },
+ "jobs": [],
+ "runs": [
+  {
+   "id": "c8b8b7c298b0",
+   "jobId": "80a5a58ab279",
+   "projectId": "038e44f4cd9f4da0",
+   "projectName": "philipp95/test_repo",
+   "agent": "claude",
+   "stage": "work",
+   "status": "succeeded",
+   "prompt": "Reply OK",
+   "pipelineId": null,
+   "branch": "run/test-repo-20261109-153325-416c",
+   "worktree": "/w/run",
+   "baseCommit": "16221d8f90db8eeeaf2b75204b6929c2ddc714df",
+   "resultCommit": null,
+   "sessionId": "b977d935-61c0-4390-8387-cb6643ef7ce2",
+   "tmuxSession": "run-c8b8b7c298b0",
+   "createdAt": "2026-11-09T15:33:25.465915764Z",
+   "startedAt": "2026-11-09T15:33:25.546775889Z",
+   "finishedAt": "2026-11-09T15:33:29.265271294Z",
+   "summary": "OK",
+   "error": null,
+   "limitResetsAt": null,
+   "resumeScheduled": false,
+   "notBefore": null,
+   "continues": null
+  }
+ ],
+ "resumable": [
+  {
+   "projectId": "038e44f4cd9f4da0",
+   "projectName": "philipp95/test_repo",
+   "branch": "agent/run-a9980100-66a1-4121-9af0-b974d12a84c2",
+   "session": {
+    "agent": "claude",
+    "sessionId": "8fe2bd86-2a3b-4e44-b270-a56befd48dad",
+    "worktree": "/w/agent",
+    "updatedAt": "2026-11-08T19:26:59.050Z"
+   }
+  }
+ ]
+}
