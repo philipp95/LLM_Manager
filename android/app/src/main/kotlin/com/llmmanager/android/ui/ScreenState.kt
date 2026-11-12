@@ -23,8 +23,8 @@ class RepoActions(
     val onPublish: (branch: String, action: String) -> Unit,
 )
 
-/** What the settings dialog shows about updates: the server's app, whether one is downloading, and how to start. */
-class UpdateState(val offered: AndroidApp?, val updating: Boolean, val onUpdate: (AndroidApp) -> Unit)
+/** What the settings dialog shows about updates: the server's app, and how to get it. */
+class UpdateState(val offered: AndroidApp?, val onUpdate: (AndroidApp) -> Unit)
 
 /** Which dialog is open: one holder, so the screen and its parts can open them. */
 class DialogState {

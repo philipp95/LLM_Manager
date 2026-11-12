@@ -54,7 +54,6 @@ import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.ProjectsResponse
 import com.llmmanager.android.ui.DashboardViewModel.Connection
 import com.llmmanager.android.ui.DashboardViewModel.Event
-import com.llmmanager.android.update.UpdateEvents
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -135,7 +134,6 @@ private fun Polling(tab: Int, openId: String?, refresh: () -> Unit) {
 private fun Events(viewModel: DashboardViewModel, scheduleViewModel: ScheduleViewModel, snackbar: SnackbarHostState, dialogs: DialogState) {
     val context = LocalContext.current
     LaunchedEffect(scheduleViewModel) { scheduleViewModel.events.collect { snackbar.showSnackbar(it) } }
-    LaunchedEffect(Unit) { UpdateEvents.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -145,9 +143,11 @@ private fun Events(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVie
                     dialogs.settings = true
                     snackbar.showSnackbar("Enter the server's access token first")
                 }
-                is Event.AllowInstalls -> {
-                    context.startActivity(event.settings)
-                    snackbar.showSnackbar("Allow LLM Manager to install apps, then tap Update again")
+                is Event.OpenDownload -> {
+                    val opened = runCatching { context.startActivity(event.intent) }.isSuccess
+                    snackbar.showSnackbar(
+                        if (opened) "Your browser downloads version ${event.version}; open the download to install it" else "No browser to download the update",
+                    )
                 }
             }
         }
@@ -190,7 +190,7 @@ private fun DialogHost(
         SettingsDialog(
             serverUrl = state.serverUrl.orEmpty(), hasToken = state.hasToken, pairedAs = state.pairedAs,
             onSave = viewModel::saveSettings, onForgetToken = viewModel::forgetToken, onDismiss = { dialogs.settings = false },
-            update = UpdateState(state.data?.androidApp, state.updating, viewModel::update),
+            update = UpdateState(state.data?.androidApp, viewModel::update),
         )
     }
     dialogs.confirming?.let { project ->

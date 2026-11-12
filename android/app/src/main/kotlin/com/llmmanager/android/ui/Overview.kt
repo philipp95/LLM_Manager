@@ -42,7 +42,7 @@ fun Overview(
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
             connectionNotice(state.connection, onSettings = onSettings, onRetry = onRetry, context = context)
             state.data?.androidApp?.takeIf { it.newerThan(BuildConfig.VERSION_CODE) }?.let { app ->
-                item(key = "update") { UpdateBanner(app, state.updating) { onUpdate(app) } }
+                item(key = "update") { UpdateBanner(app) { onUpdate(app) } }
             }
             state.data?.let { data -> repositories(data, columns, onOpen) }
         }

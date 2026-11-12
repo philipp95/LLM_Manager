@@ -12,7 +12,7 @@ import com.llmmanager.android.data.ProjectsResponse
 import com.llmmanager.android.data.ServerAddress
 import com.llmmanager.android.data.ServerClient
 import com.llmmanager.android.data.SettingsStore
-import com.llmmanager.android.update.AppUpdater
+import com.llmmanager.android.update.AppDownload
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -28,7 +28,6 @@ class DashboardViewModel(
     private val settings: SettingsStore,
     private val client: ServerClient,
     private val credentials: Credentials,
-    private val updater: AppUpdater,
     defaultServerUrl: String,
 ) : ViewModel() {
 
@@ -53,8 +52,6 @@ class DashboardViewModel(
         val refreshing: Boolean = false,
         /** Project id with a launch in flight. */
         val launching: String? = null,
-        /** An update is downloading. */
-        val updating: Boolean = false,
     )
 
     sealed interface Event {
@@ -62,8 +59,8 @@ class DashboardViewModel(
         data class Started(val projectName: String, val launch: LaunchResponse) : Event
         data object NeedToken : Event
 
-        /** Android needs the user's permission (once) before this app may install its update. */
-        data class AllowInstalls(val settings: Intent) : Event
+        /** Opens the update's download in the browser; Android installs it when the download is opened. */
+        data class OpenDownload(val intent: Intent, val version: String) : Event
     }
 
     private val mutableState = MutableStateFlow(UiState())
@@ -144,20 +141,11 @@ class DashboardViewModel(
         }
     }
 
-    /** Downloads [app] from the server and hands it to Android's installer, which asks the user to confirm. */
+    /** Hands [app]'s download to the browser: the app itself never installs packages. */
     fun update(app: AndroidApp) {
         val server = currentServer() ?: return
-        if (mutableState.value.updating) return
-        viewModelScope.launch {
-            mutableState.update { it.copy(updating = true) }
-            val event = when (val outcome = updater.install(server, app)) {
-                AppUpdater.Outcome.NeedsPermission -> Event.AllowInstalls(updater.permissionIntent())
-                AppUpdater.Outcome.Started -> Event.Message("Confirm the update to version ${app.versionName ?: app.versionCode}")
-                is AppUpdater.Outcome.Failed -> Event.Message(outcome.message)
-            }
-            mutableState.update { it.copy(updating = false) }
-            eventChannel.send(event)
-        }
+        val intent = AppDownload.intent(server, app) ?: return
+        viewModelScope.launch { eventChannel.send(Event.OpenDownload(intent, app.versionName ?: app.versionCode.toString())) }
     }
 
     /** Saves the address and, when given, a typed-in token. Returns an error to show, or null. */

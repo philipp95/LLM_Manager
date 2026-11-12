@@ -292,9 +292,10 @@ themed (monochrome) launcher icon is the vector `ic_launcher_monochrome.xml`.
 The version is set in one place, `appVersion` in `android/app/build.gradle.kts`;
 the version code Android compares is derived from it (0.6.0 is 600). Settings in
 the app shows the installed version. When the server offers a newer build, the
-Repos tab shows **Update**: the app downloads the APK from the server, checks its
-SHA-256, and Android asks you to confirm (the first time, allow LLM Manager to
-install apps). Android refuses an update signed with another key. To publish an
+Repos tab shows **Update**: it opens the server's download in the browser, and
+opening the download installs it (Android refuses an update signed with another
+key). The app does not install packages itself: Google Play Protect blocks
+sideloaded apps that update themselves ("Harmful app blocked"). To publish an
 update, raise `appVersion` and build the release APK; the server picks up the new
 APK and its version without a restart.
 

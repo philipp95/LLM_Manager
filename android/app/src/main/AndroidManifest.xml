@@ -3,8 +3,6 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- In-app updates: the APK comes from the dashboard server; Android asks the user to confirm. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Lets "Open Tailscale" find the Tailscale app when the server is unreachable. -->
     <queries>
@@ -32,9 +30,5 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Receives the package installer's result for an update; only this app's own session reaches it. -->
-        <receiver
-            android:name=".update.InstallResultReceiver"
-            android:exported="false" />
     </application>
 </manifest>
