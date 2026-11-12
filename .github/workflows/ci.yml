@@ -28,11 +28,18 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
+      # Kotlin compiles inside the Gradle process: a separate Kotlin daemon outlives the build and,
+      # on Windows, can hold the step's output open so the step never ends (jobs hung until the
+      # timeout). The output goes to a file for the same reason and is printed when the build ends.
       - name: Compile, test, analyze, and package
         shell: bash
+        timeout-minutes: 15
         run: |
-          set -o pipefail
-          bash ./gradlew check :server:spike:installDist :server:api:installDist --no-daemon --console=plain 2>&1 | tee build.log
+          status=0
+          bash ./gradlew check :server:spike:installDist :server:api:installDist --no-daemon --console=plain \
+            -Pkotlin.compiler.execution.strategy=in-process > build.log 2>&1 || status=$?
+          cat build.log
+          exit $status
       # Job logs need a GitHub sign-in on public repositories; annotations show on the pull request.
       - name: Show failures as annotations
         if: failure() || cancelled()
