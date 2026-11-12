@@ -35,20 +35,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.llmmanager.android.data.JobRequest
 import com.llmmanager.android.data.Project
+import com.llmmanager.android.data.ScheduleResponse
 
 /**
  * The message box under the chat: pick an available agent, write, optionally ask a second agent
  * to review first, send. Text survives refreshes; it is cleared once the server accepts the job.
+ * An agent that is not signed in on the server gets the sign-in pop-up first, then the message goes.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun Composer(project: Project, agents: Map<String, Boolean>?, sending: Boolean, onSend: (JobRequest, () -> Unit) -> Unit) {
+fun Composer(project: Project, schedule: ScheduleResponse?, sending: Boolean, actions: ChatActions) {
     // Until the schedule is loaded every agent is offered; the server refuses ones it lacks.
-    val available = AGENT_ORDER.filter { agents == null || agents[it] == true }
-    var chosen by rememberSaveable { mutableStateOf("claude") }
+    val available = AGENT_ORDER.filter { schedule == null || schedule.agents[it] == true }
+    var chosen by rememberSaveable { mutableStateOf<String?>(null) }
     var text by rememberSaveable(project.id) { mutableStateOf("") }
     var review by rememberSaveable(project.id) { mutableStateOf(false) }
-    val agent = chosen.takeIf { it in available } ?: available.firstOrNull() ?: "claude"
+    val agent = listOfNotNull(chosen, schedule?.defaultAgent).firstOrNull { it in available } ?: available.firstOrNull() ?: "claude"
     val reviewer = reviewerFor(agent, available)
 
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -65,12 +67,26 @@ fun Composer(project: Project, agents: Map<String, Boolean>?, sending: Boolean, 
             projectId = project.id, kind = if (review && reviewer != null) "pipeline" else "run", agent = agent, prompt = text.trim(),
             reviewer = reviewer.takeIf { review }, publish = project.forge != null,
         )
-        onSend(request) {
-            text = ""
-            review = false
+        val send = {
+            actions.onSend(request) {
+                text = ""
+                review = false
+            }
         }
+        val missing = listOfNotNull(request.agent, request.reviewer).filter { schedule?.needsSignIn(it) == true }
+        signInThen(missing, actions.onSignIn, send)
     }
-    Text(composerHint(project, available), color = Palette.ink2, fontSize = 12.5.sp, modifier = Modifier.padding(top = 8.dp))
+    val hint = if (schedule?.needsSignIn(agent) == true) {
+        "${agentLabel(agent)} is not signed in on the server yet. Sending asks you to sign in first."
+    } else {
+        composerHint(project, available)
+    }
+    Text(hint, color = Palette.ink2, fontSize = 12.5.sp, modifier = Modifier.padding(top = 8.dp))
+}
+
+/** Signs in each of [agents] in turn, then runs [then]. */
+private fun signInThen(agents: List<String>, signIn: (String, () -> Unit) -> Unit, then: () -> Unit) {
+    if (agents.isEmpty()) then() else signIn(agents.first()) { signInThen(agents.drop(1), signIn, then) }
 }
 
 /** The agent's usual reviewer when it is available, else any other available agent. */
@@ -126,6 +142,6 @@ private fun AgentOption(agent: String, selected: Boolean, onClick: () -> Unit) {
     ) {
         AgentMark(agent, size = 17.dp, tint = content)
         Spacer(Modifier.width(7.dp))
-        Text(if (agent == "codex") "Codex (ChatGPT)" else agentLabel(agent), color = content, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(pickName(agent), color = content, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }

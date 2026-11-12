@@ -61,9 +61,10 @@ class ApiServer : CliktCommand(name = "api") {
         val scanner = ProjectScanner(projects.filter { it.isNotBlank() }, sessions = sessions)
         val codexPath = codex ?: CodexLauncher.findCodex()
         val policy = File(state, "gemini-policy.toml").apply { writeText(AgentCommands.geminiPolicy()) }
+        val preferences = PreferencesStore(state)
         val commands = AgentCommands(
             claude ?: CodexLauncher.findBinary("claude"), codexPath,
-            gemini = gemini ?: CodexLauncher.findBinary("gemini"), geminiPolicyFile = policy.path,
+            gemini = gemini ?: CodexLauncher.findBinary("gemini"), geminiPolicyFile = policy.path, model = preferences::model,
         )
         val sandbox = sandbox(state, policy, commands)
         val launcher = CodexLauncher(
@@ -72,9 +73,12 @@ class ApiServer : CliktCommand(name = "api") {
         )
         val workspace = Workspace(scanner, sessions, commands, sandbox = sandbox)
         val credentials = ForgeCredentials(File(tokenFile).absoluteFile.parentFile, CodexLauncher.findBinary("gh"))
+        val accounts = AgentAccounts(commands::binary)
+        val signIn = AgentSignIn(TmuxTerminals(), accounts, commands::binary, File(state, "sign-in"))
+        val settings = SettingsApi(preferences, accounts, signIn, ForgeAccounts(credentials, preferences))
         val store = StateStore(state).also { it.pruneRunDirs() }
         val insights = InsightsService(InsightSources(credentials), agentForBranch = { projectId, branch -> agentOf(store, projectId, branch) })
-        val schedule = schedule(store, workspace, credentials, onPublished = { insights.invalidate(it.projectId) })
+        val schedule = schedule(store, workspace, credentials, settings, onPublished = { insights.invalidate(it.projectId) })
         val hosts = BindAddress.allowedHosts(address, port, BindAddress.tailscaleNames(), allowedHost)
         val pairing = if (pairingMode == "on") Pairing(CachedTailnet(TailscaleCli()), state) else null
         val log = LoggerFactory.getLogger(ApiServer::class.java)
@@ -82,7 +86,8 @@ class ApiServer : CliktCommand(name = "api") {
         log.info("Codex: {}. Token in {}. State in {}. Answering for {}", codexPath ?: "not found", tokenFile, stateDir, hosts)
         log.info("Pairing: {}", if (pairing != null) "devices of this server's Tailscale account pair without the token" else "off")
         embeddedServer(Netty, port = port, host = address.hostAddress) {
-            dashboardModule(scanner, token, DashboardServices(launcher, ApkFile(File(apk)), schedule, insights, pairing), allowedHosts = hosts)
+            val services = DashboardServices(launcher, ApkFile(File(apk)), schedule, insights, pairing, settings = settings)
+            dashboardModule(scanner, token, services, allowedHosts = hosts)
         }.start(wait = true)
     }
 
@@ -103,14 +108,22 @@ class ApiServer : CliktCommand(name = "api") {
     }
 
     /** Scheduling and publishing: persistent jobs and runs, ticking in the background for the server's lifetime. */
-    private fun schedule(store: StateStore, workspace: Workspace, credentials: ForgeCredentials, onPublished: (Run) -> Unit): ScheduleApi {
+    private fun schedule(
+        store: StateStore,
+        workspace: Workspace,
+        credentials: ForgeCredentials,
+        settings: SettingsApi,
+        onPublished: (Run) -> Unit,
+    ): ScheduleApi {
         val usage = UsageReader(File(System.getProperty("user.home")), store.dir)
-        val engine = RunEngine(store, workspace, File(runWorktrees))
+        val preferences = settings.preferences
+        val engine = RunEngine(store, workspace, File(runWorktrees), committer = preferences::committer)
         val branches = BranchService(store, BranchStore(store.dir), workspace, ForgeClient(credentials), credentials)
         val publisher = { run: Run -> branches.publish(run).also { onPublished(run) } }
         val scheduler = Scheduler(store, engine, workspace.sessions, hooks = FollowUpHooks(usage::resetHint, publisher))
         scheduler.launch(CoroutineScope(SupervisorJob()))
-        return ScheduleApi(JobService(store, scheduler, workspace, SessionCatalog()), store, usage, branches)
+        val choices = AgentChoices(preferences::enabled, { settings.accounts.status(it).signedIn }, { preferences.get().defaultAgent })
+        return ScheduleApi(JobService(store, scheduler, workspace, SessionCatalog(), choices = choices), store, usage, branches)
     }
 
     /** The agent this server ran on [branch]: the first run's, or Codex for an interactive `codex/` session. */

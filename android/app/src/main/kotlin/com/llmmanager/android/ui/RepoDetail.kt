@@ -49,7 +49,7 @@ fun RepoDetail(
 ) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
         item(key = "head") { RepoHeader(project) }
-        item(key = "chat") { ChatPanel(project, schedule?.runs.orEmpty(), schedule?.agents, sending, actions.chat) }
+        item(key = "chat") { ChatPanel(project, schedule, sending, actions.chat) }
         item(key = "history") { HistoryPanel(project) }
         item(key = "branches") {
             BranchesPanel(project, codexAvailable, launching, actions.onStartCodex, actions.chat.onCopy, actions.onPublish)

@@ -36,7 +36,7 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 /** What the dashboard can do beyond listing projects; each part is optional. */
-class DashboardServices(
+data class DashboardServices(
     val launcher: CodexLauncher? = null,
     val apk: ApkFile? = null,
     val schedule: ScheduleApi? = null,
@@ -46,6 +46,8 @@ class DashboardServices(
     val pairing: Pairing? = null,
     /** The client's tailnet address; tests stand in for other devices with it. */
     val peerAddress: (ApplicationCall) -> String = { it.request.local.remoteAddress },
+    /** Profile, agent sign-ins and code hosts. */
+    val settings: SettingsApi? = null,
 )
 
 /**
@@ -101,6 +103,7 @@ fun Application.dashboardModule(
                 services.insights?.invalidate(projectId)
             }
         }
+        services.settings?.let { settingsRoutes(it, access) }
         // Shape-checked by clients so a captive portal's 200 HTML is not mistaken for the server.
         get("/readyz") {
             call.respond(Readiness("ready"))

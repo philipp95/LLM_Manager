@@ -72,12 +72,12 @@ class ServerClient(
 }
 
 /** One HTTP request: [body], when present, is sent as JSON. */
-private data class Call(val method: String, val path: String, val body: String? = null)
+internal data class Call(val method: String, val path: String, val body: String? = null)
 
 private const val CONNECT_TIMEOUT_MS = 6_000
 private const val READ_TIMEOUT_MS = 20_000
 
-private suspend fun <T> request(
+internal suspend fun <T> request(
     json: Json,
     server: ServerAddress,
     call: Call,
@@ -99,7 +99,7 @@ private suspend fun <T> request(
         connection.useCaches = false
         connection.setRequestProperty("Accept", "application/json")
         token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-        if (method == "POST") {
+        if (method == "POST" || method == "PUT") {
             val bytes = body?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
             if (body != null) connection.setRequestProperty("Content-Type", "application/json")
             connection.doOutput = true
@@ -118,7 +118,7 @@ private suspend fun <T> request(
     }
 }
 
-private fun encode(segment: String): String = URLEncoder.encode(segment, "UTF-8")
+internal fun encode(segment: String): String = URLEncoder.encode(segment, "UTF-8")
 
 private fun <T> interpret(json: Json, status: Int, contentType: String?, body: String, decode: (String) -> T): ApiResult<T> {
     // A captive portal answers 200 with HTML; only a JSON body counts as the server.

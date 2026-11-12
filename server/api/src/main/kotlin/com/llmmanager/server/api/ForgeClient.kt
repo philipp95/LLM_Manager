@@ -30,17 +30,17 @@ data class PullRequestRef(val forge: String, val number: Long, val url: String, 
  * instance needs `gitlab-token-<host>`, and `azure-devops-token` is sent only to
  * dev.azure.com. A token never goes to a host just because a repository's origin names it.
  */
-class ForgeCredentials(private val dir: File, val gh: String?) {
+class ForgeCredentials(val dir: File, val gh: String?) {
     /** The token for GitLab at [host], or null when there is none (or it is not private). */
     fun gitlabToken(host: String): String? = read(gitlabFile(host))
 
-    fun azureToken(): String? = read(File(dir, AZURE_FILE))
+    fun azureToken(): String? = read(azureFile())
 
     /** What is missing to open pull requests on [forge], or null when it is ready. */
     fun missing(forge: Forge): String? = when (forge) {
         is Forge.GitHub -> if (gh == null) "Install the GitHub CLI (gh) on the server and run `gh auth login`" else null
         is Forge.GitLab -> problem(gitlabFile(forge.host), "a GitLab token (api scope) for ${forge.host}")
-        is Forge.AzureDevOps -> problem(File(dir, AZURE_FILE), "an organisation-scoped Azure DevOps PAT (Code: Read & write)")
+        is Forge.AzureDevOps -> problem(azureFile(), "an organisation-scoped Azure DevOps PAT (Code: Read & write)")
     }
 
     /**
@@ -62,7 +62,9 @@ class ForgeCredentials(private val dir: File, val gh: String?) {
         )
     }
 
-    private fun gitlabFile(host: String) = File(dir, if (host == "gitlab.com") GITLAB_FILE else "$GITLAB_FILE-$host")
+    internal fun gitlabFile(host: String) = File(dir, if (host == "gitlab.com") GITLAB_FILE else "$GITLAB_FILE-$host")
+
+    internal fun azureFile() = File(dir, AZURE_FILE)
 
     private fun problem(file: File, what: String): String? = when {
         !file.isFile -> "Add $what to $file (chmod 600)"

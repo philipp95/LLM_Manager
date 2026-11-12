@@ -219,8 +219,38 @@ Claude (`CLAUDE.md`), Codex and Gemini (`GEMINI.md`) all read `AGENTS.md`, so
 the skill library and project rules are shared between them; the review prompt
 asks the reviewer to check the change against it.
 
-Install Gemini CLI with `npm install -g --prefix ~/.local @google/gemini-cli`
-and sign in once by running `~/.local/bin/gemini` over SSH.
+Install Gemini CLI with `npm install -g --prefix ~/.local @google/gemini-cli`,
+then sign it in from **Settings** (or once by running `~/.local/bin/gemini` over SSH).
+
+### Settings and sign-ins
+
+The **Settings** tab, on the page and in the app, holds:
+
+- **Profile**: your name and email, and the agent the chat preselects. Agent
+  commits keep the agent as author and name you as committer, so they show up
+  on your account on the forge.
+- **Agents**: whether each CLI is signed in on the server (`claude auth status`,
+  `codex login status`, Gemini's own files), signing in, switching accounts and
+  signing out, an API key instead of an account (Codex, Gemini), whether the chat
+  and new jobs offer the agent, and its model (passed as `--model`; for Codex as
+  `-c model="…"`).
+- **Code hosts**: GitHub through the `gh` CLI (sign in with a token, sign out),
+  and tokens for GitLab (per host) and Azure DevOps. Each token is checked with
+  its host before it is saved to the files described below, and is never shown
+  again.
+
+Signing in runs the CLI's own sign-in on the server, in a tmux session named
+`sign-in-<agent>`: `claude auth login --claudeai`, `codex login --device-auth`,
+and Gemini's Google sign-in (`NO_BROWSER=true gemini`, after choosing
+`oauth-personal` in `~/.gemini/settings.json`). A pop-up shows the sign-in link,
+and for Codex the one-time code to enter there. Claude and Gemini show a code on
+the page after you sign in; paste it into the pop-up and the server types it into
+the waiting CLI. The credentials end up where the CLI's own sign-in puts them.
+Sending a chat message to an agent that is not signed in opens the pop-up first
+and sends the message once the agent is signed in; a run that failed while its
+agent was signed out offers the sign-in next to the error. Gemini waits five
+minutes for its code, Codex's code lasts 15 minutes. Settings themselves (profile,
+agent preferences) live in `~/.local/share/llm-manager/settings.json`.
 
 ### Publishing agent branches
 
@@ -237,7 +267,9 @@ published from here.
 | GitLab | `gitlab.com` and hosts with a `gitlab` label | token with `api` scope in `~/.config/llm-manager/gitlab-token` (gitlab.com) or `gitlab-token-<host>` (self-hosted) |
 | Azure DevOps | `dev.azure.com`, `ssh.dev.azure.com`, `*.visualstudio.com` | organisation-scoped PAT (Code: Read & write) in `~/.config/llm-manager/azure-devops-token` |
 
-Create token files with `chmod 600`; files readable by other users are refused.
+**Settings → Code hosts** checks a token with its host and writes these files
+(0600) for you. By hand, create token files with `chmod 600`; files readable by
+other users are refused.
 Each token is bound to one host and is never sent to another just because a
 repository's origin names it, nor across redirects. Tokens reach `git push`
 through `GIT_CONFIG_*` environment variables rather than the command line. Azure DevOps

@@ -11,11 +11,14 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.llmmanager.android.data.Credentials
 import com.llmmanager.android.data.ServerClient
+import com.llmmanager.android.data.SettingsClient
 import com.llmmanager.android.data.SettingsStore
 import com.llmmanager.android.ui.DashboardScreen
 import com.llmmanager.android.ui.DashboardViewModel
 import com.llmmanager.android.ui.LlmManagerTheme
 import com.llmmanager.android.ui.ScheduleViewModel
+import com.llmmanager.android.ui.SettingsViewModel
+import com.llmmanager.android.ui.SignInViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,6 +30,7 @@ class MainActivity : ComponentActivity() {
         val settings = SettingsStore(applicationContext)
         val client = ServerClient()
         val credentials = Credentials(settings, client)
+        val settingsClient = SettingsClient()
         setContent {
             LlmManagerTheme {
                 val viewModel: DashboardViewModel = viewModel(
@@ -37,7 +41,13 @@ class MainActivity : ComponentActivity() {
                 val scheduleViewModel: ScheduleViewModel = viewModel(
                     factory = viewModelFactory { initializer { ScheduleViewModel(settings, client, credentials) } },
                 )
-                DashboardScreen(viewModel, scheduleViewModel)
+                val settingsViewModel: SettingsViewModel = viewModel(
+                    factory = viewModelFactory { initializer { SettingsViewModel(settings, settingsClient, credentials) } },
+                )
+                val signInViewModel: SignInViewModel = viewModel(
+                    factory = viewModelFactory { initializer { SignInViewModel(settings, settingsClient, credentials) } },
+                )
+                DashboardScreen(viewModel, scheduleViewModel, settingsViewModel, signInViewModel)
             }
         }
     }

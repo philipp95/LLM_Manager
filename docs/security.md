@@ -42,6 +42,9 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 | Request bodies ≤ 64 KiB, `Content-Length` required; unexpected errors become JSON 500 without details | `DashboardModule` |
 | Token, state and run logs private (0600 / 0700); forge token files refused unless owner-only | `SecureFiles`, `StateStore`, `ForgeCredentials` |
 | Forge tokens bound to one host (`gitlab-token` = gitlab.com, `gitlab-token-<host>` otherwise; Azure DevOps = dev.azure.com), never sent across redirects, passed to `git push` via environment, not argv | `ForgeCredentials`, `ForgeClient` |
+| Agent sign-in from the phone runs each CLI's own sign-in command, fixed per agent, in tmux. The pop-up gets only links on that agent's own sign-in hosts plus the CLI's last lines; a pasted code is limited to the characters OAuth codes use, reaches the CLI through a tmux buffer filled from stdin (never a command line), and is not echoed back. One sign-in per agent, ended after 5 to 15 minutes | `AgentSignIn`, `Terminals` |
+| Keys and tokens entered in Settings are write-only: API keys go to `codex login --with-api-key` on stdin or to Gemini's `~/.gemini/.env` (0600); GitHub tokens to `gh auth login --with-token` on stdin; GitLab and Azure DevOps tokens, once their host accepts them, to owner-only files written 0600 from the start. None is returned to a client | `AgentAccounts`, `GeminiFiles`, `ForgeAccounts`, `SecureFiles` |
+| A model chosen in Settings can never read as a command-line option; profile names and emails without `<`, `>` or control characters are the only identities git is given | `PreferencesStore` |
 | Agent permissions pinned on the command line: edits plus an allowlist of build/test/read-only git commands (Claude, Gemini policy), Codex's workspace-write sandbox; reviews read-only | `AgentCommands` |
 | Agents start with a minimal environment: no `SSH_AUTH_SOCK`, `GH_TOKEN`, tmux/D-Bus variables or other agents' keys | `AgentEnvironment` |
 | With bubblewrap: read-only root; secrets, other agents' logins and runtime sockets hidden; only the worktree, the agent's own state and build caches writable; agent config (hooks, settings, MCP servers) read-only | `AgentSandbox` |
@@ -90,5 +93,8 @@ The phone (web page or app) steers agents that edit those repositories, unattend
   that can reach the server can pair itself, just as it can reach any other service on your
   tailnet. Revoking a device makes it pair again; removing it from your Tailscale account
   locks it out. Use `--pairing off` if that is too much trust.
+- **API access includes the agents' and code hosts' sign-ins.** Whoever holds the access token
+  or a paired device can sign the agent CLIs in or out, switch their accounts and replace code
+  host tokens on the server (never read them). That is the same trust as starting agent runs.
 - **The sandbox profile is untested on this machine** because bubblewrap is not installed;
   it is unit-tested as an argument list and self-tested at startup before use.

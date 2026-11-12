@@ -33,12 +33,25 @@ data class ResumeTarget(val projectId: String, val projectName: String, val bran
 @Serializable
 data class ScheduleResponse(
     val now: String,
+    /** Agents offered in the pickers: installed and turned on in Settings. */
     val agents: Map<String, Boolean>,
     val jobs: List<JobView>,
     val runs: List<Run>,
     val resumable: List<ResumeTarget>,
     /** Whether agent runs are contained by the OS sandbox. */
     val sandbox: SandboxStatus? = null,
+    /** Per installed agent: whether its CLI is signed in, so the chat can ask for a sign-in first. */
+    val signedIn: Map<String, Boolean> = emptyMap(),
+    /** Preselected in the chat, from Settings. */
+    val defaultAgent: Agent? = null,
+)
+
+/** What the pickers need to know about agents beyond whether their CLI is installed; from Settings. */
+class AgentChoices(
+    val enabled: (Agent) -> Boolean = { true },
+    /** Null when it cannot be told. */
+    val signedIn: (Agent) -> Boolean? = { null },
+    val defaultAgent: () -> Agent? = { null },
 )
 
 /** Creates, lists and changes jobs; the only path by which clients affect scheduling. */
@@ -48,6 +61,7 @@ class JobService(
     private val workspace: Workspace,
     private val catalog: SessionCatalog,
     private val clock: Clock = Clock.systemUTC(),
+    private val choices: AgentChoices = AgentChoices(),
 ) {
     private val scanner = workspace.scanner
     private val commands = workspace.commands
@@ -61,11 +75,13 @@ class JobService(
         val now = Instant.now(clock)
         return ScheduleResponse(
             now = now.toString(),
-            agents = Agent.entries.associate { it.name.lowercase() to commands.available(it) },
+            agents = Agent.entries.associate { it.name.lowercase() to (commands.available(it) && choices.enabled(it)) },
             jobs = store.jobs().sortedBy { it.createdAt }.map { JobView(it, ScheduleTimes.next(it, now)?.toString()) },
             runs = store.runs().sortedByDescending { it.createdAt }.take(RECENT_RUNS),
             resumable = resumable(),
             sandbox = workspace.sandbox.status(),
+            signedIn = Agent.entries.filter(commands::available).mapNotNull { agent -> choices.signedIn(agent)?.let { agent.name.lowercase() to it } }.toMap(),
+            defaultAgent = choices.defaultAgent()?.takeIf { commands.available(it) && choices.enabled(it) },
         )
     }
 
@@ -122,6 +138,7 @@ class JobService(
 
     private fun problem(request: JobRequest): String? = when {
         !commands.available(request.agent) -> "${request.agent.label} CLI is not installed on the server"
+        request.kind != JobKind.RESUME && !choices.enabled(request.agent) -> "${request.agent.label} is turned off in Settings"
         request.kind == JobKind.PIPELINE && reviewerOf(request) == request.agent -> "Choose a different agent to review"
         request.kind == JobKind.PIPELINE && !commands.available(reviewerOf(request)) ->
             "${reviewerOf(request).label} CLI is needed to review but is not installed"

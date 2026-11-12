@@ -14,6 +14,8 @@ class ChatActions(
     val onLog: (Run) -> Unit,
     val onCancel: (Run) -> Unit,
     val onCopy: (String) -> Unit,
+    /** Opens the sign-in pop-up for an agent; [then] runs once it is signed in. */
+    val onSignIn: (agent: String, then: () -> Unit) -> Unit = { _, _ -> },
 )
 
 /** Everything the repository screen can do, routed to the view models by the caller. */
@@ -21,6 +23,24 @@ class RepoActions(
     val chat: ChatActions,
     val onStartCodex: () -> Unit,
     val onPublish: (branch: String, action: String) -> Unit,
+)
+
+/** The screen's view models, handed around together. */
+class ViewModels(
+    val dashboard: DashboardViewModel,
+    val schedule: ScheduleViewModel,
+    val settings: SettingsViewModel,
+    val signIn: SignInViewModel,
+)
+
+/** What the sign-in pop-up can do, routed to [SignInViewModel] by the caller. */
+class SignInActions(
+    val onSubmit: (code: String) -> Unit,
+    val onApiKey: (key: String) -> Unit,
+    val onRestart: () -> Unit,
+    val onCancel: () -> Unit,
+    val onClose: () -> Unit,
+    val onCopy: (String) -> Unit,
 )
 
 /** What the settings dialog shows about updates: the server's app, and how to get it. */

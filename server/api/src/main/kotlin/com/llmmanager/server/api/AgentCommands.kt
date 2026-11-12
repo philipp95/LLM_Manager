@@ -17,6 +17,8 @@ class AgentCommands(
     private val gemini: String? = null,
     /** Policy file allowing [claudeAllowedTools]' shell commands for Gemini; see [geminiPolicy]. */
     private val geminiPolicyFile: String? = null,
+    /** The model chosen in Settings for an agent, already validated; null for the CLI's default. */
+    private val model: (Agent) -> String? = { null },
 ) {
     fun available(agent: Agent): Boolean = binary(agent) != null
 
@@ -36,7 +38,7 @@ class AgentCommands(
     /** Reviews [commit] without changing anything; the instructions arrive on stdin. */
     fun review(agent: Agent, commit: String): List<String> = when (agent) {
         Agent.CLAUDE -> claudeBase() + listOf("--permission-mode", "default", "--allowedTools") + CLAUDE_REVIEW_TOOLS
-        Agent.CODEX -> listOf(required(Agent.CODEX), "review", "-c", "sandbox_mode=\"read-only\"", "--commit", commit, "-")
+        Agent.CODEX -> codexCli + listOf("review", "-c", "sandbox_mode=\"read-only\"", "--commit", commit, "-")
         // Plan mode is Gemini's read-only mode.
         Agent.GEMINI -> geminiBase() + listOf("--approval-mode", "plan")
     }
@@ -47,14 +49,19 @@ class AgentCommands(
      * "ask" means deny in headless mode. --skip-trust: run worktrees are new folders it has
      * not seen, created by this server from the user's own repositories.
      */
-    private fun geminiBase() = listOf(required(Agent.GEMINI), "--output-format", "stream-json", "--skip-trust")
+    private fun geminiBase() =
+        listOf(required(Agent.GEMINI), "--output-format", "stream-json", "--skip-trust") + model(Agent.GEMINI)?.let { listOf("--model", it) }.orEmpty()
 
     private fun geminiEdit(session: List<String>) = geminiBase() + session + listOf("--approval-mode", "auto_edit") +
         (geminiPolicyFile?.let { listOf("--policy", it) } ?: emptyList())
 
-    private fun claudeBase() = listOf(required(Agent.CLAUDE), "-p", "--output-format", "stream-json", "--verbose")
+    private fun claudeBase() =
+        listOf(required(Agent.CLAUDE), "-p", "--output-format", "stream-json", "--verbose") + model(Agent.CLAUDE)?.let { listOf("--model", it) }.orEmpty()
 
-    private fun codexExec() = listOf(required(Agent.CODEX), "exec", "--json", "--sandbox", "workspace-write")
+    private fun codexExec() = codexCli + listOf("exec", "--json", "--sandbox", "workspace-write")
+
+    /** Codex takes the model as a config override, which every subcommand accepts. */
+    private val codexCli: List<String> get() = listOf(required(Agent.CODEX)) + model(Agent.CODEX)?.let { listOf("-c", "model=\"$it\"") }.orEmpty()
 
     /** The executable for [agent], or null when it is not installed. */
     fun binary(agent: Agent): String? = when (agent) {

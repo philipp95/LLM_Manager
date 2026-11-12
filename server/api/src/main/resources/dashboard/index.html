@@ -350,6 +350,41 @@
   .log .done { color: var(--ok-ink); border-left-color: var(--ok); }
   dialog details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-2); margin-top: 10px; }
 
+  /* ---------- settings and sign-in ---------- */
+  .input, .panel select {
+    width: 100%; min-height: 42px; border-radius: 11px; border: 1px solid var(--paper-line); background: var(--field); color: var(--ink);
+    padding: 0 12px; font: inherit; font-size: 14px; min-width: 0;
+  }
+  .input.mono { font-family: var(--mono); font-size: 13px; }
+  .settings-form { display: grid; gap: 4px; }
+  .settings-form .field:first-child { margin-top: 0; }
+  .field small { font-size: 12px; color: var(--ink-2); }
+  .setting-row { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--paper-line); min-width: 0; }
+  .setting-row:first-child { border-top: 0; padding-top: 0; }
+  .setting-row:last-child { padding-bottom: 0; }
+  .row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  .row-head b { font-size: 15px; }
+  .row-head .grow { flex: 1; }
+  .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .inline .input { flex: 1 1 180px; width: auto; }
+  .token-form { display: grid; gap: 8px; padding: 10px; border-radius: 12px; background: var(--paper-2); }
+  .steps { display: grid; gap: 12px; margin: 4px 0 14px; padding: 0; list-style: none; counter-reset: step; }
+  .steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; align-items: start; counter-increment: step; font-size: 14px; color: var(--ink); }
+  .steps li::before {
+    content: counter(step); width: 24px; height: 24px; border-radius: 50%; background: var(--paper-2); color: var(--ink);
+    display: grid; place-items: center; font-size: 12px; font-weight: 750;
+  }
+  .steps li > div { display: grid; gap: 8px; min-width: 0; }
+  .device-code {
+    font-family: var(--mono); font-size: 26px; font-weight: 750; letter-spacing: .08em; padding: 6px 14px; border-radius: 12px;
+    background: var(--field); border: 1px dashed var(--ink-3); justify-self: start; user-select: all;
+  }
+  a.small-btn.go { color: #FFF8EE; }
+  .screen {
+    font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--harbor); color: var(--on-harbor);
+    border-radius: 10px; padding: 8px 10px; max-height: 200px; overflow: auto; margin: 6px 0 0;
+  }
+  .signin-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13.5px; color: var(--ink-2); margin: 4px 0 12px; }
   .toast {
     position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); z-index: 20;
     max-width: calc(100% - 28px); width: max-content; padding: 11px 16px; border-radius: 12px; font-size: 14px;
@@ -374,6 +409,7 @@
     <button role="tab" type="button" data-tab="overview" aria-selected="true">Repos</button>
     <button role="tab" type="button" data-tab="schedule" aria-selected="false">Schedule</button>
     <button role="tab" type="button" data-tab="usage" aria-selected="false">Usage</button>
+    <button role="tab" type="button" data-tab="settings" aria-selected="false">Settings</button>
   </nav>
 </header>
 <main>
@@ -384,10 +420,12 @@
   <section class="tab" id="tab-repo" hidden></section>
   <section class="tab" id="tab-schedule" hidden></section>
   <section class="tab" id="tab-usage" hidden></section>
+  <section class="tab" id="tab-settings" hidden></section>
 </main>
 <dialog id="job-dialog" class="sheet"></dialog>
 <dialog id="log-dialog" class="sheet"></dialog>
 <dialog id="access-dialog" class="sheet"></dialog>
+<dialog id="signin-dialog" class="sheet"></dialog>
 <div class="toast" id="toast" role="status"></div>
 <dialog id="token-dialog">
   <div>
@@ -405,7 +443,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const grid = $("projects"), status = $("status"), toastEl = $("toast");
-  const repoTab = $("tab-repo"), scheduleTab = $("tab-schedule"), usageTab = $("tab-usage");
+  const repoTab = $("tab-repo"), scheduleTab = $("tab-schedule"), usageTab = $("tab-usage"), settingsTab = $("tab-settings");
   const TOKEN_KEY = "llm-manager.token", AGENT_KEY = "llm-manager.agent";
   const REFRESH_MS = 30000;
   let inFlight = false, codexAvailable = false, toastTimer = 0, projectsCache = [], lastAnalytics = null, lastUsage = null;
@@ -437,6 +475,9 @@
     merge: "M18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21V9a9 9 0 0 0 9 9",
     pr: "M18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM13 6h3a2 2 0 0 1 2 2v7M6 9v12",
     send: "M3.7 3.1a.5.5 0 0 0-.7.6l2.9 7.6a2 2 0 0 1 0 1.4L3 20.3a.5.5 0 0 0 .7.6l18-8.5a.5.5 0 0 0 0-.9zM6 12h16",
+    key: "M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4",
+    logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+    user: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
   };
 
   // Brand marks from Simple Icons (CC0); the names are their owners' trademarks. Azure DevOps and
@@ -633,7 +674,7 @@
       dialog.close();
       toast("Forgotten in this browser");
     };
-    dialog.replaceChildren(
+    dialog.replaceChildren(...[
       el("div", { class: "section-head" }, el("h2", null, "Access"),
         el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
       el("p", null, "Devices signed in to the same Tailscale account as the server pair themselves: each gets its own token, " +
@@ -643,7 +684,8 @@
         el("button", { class: "small-btn", type: "button", onclick: useToken }, icon("lock"), "Use the access token"),
         getToken() ? el("button", { class: "small-btn danger", type: "button", onclick: forget }, icon("x"), "Forget in this browser") : null),
       app ? el("p", { class: "hint-text" }, "Android app " + (app.versionName ? "version " + app.versionName : "") + " · ",
-        el("a", { href: app.url, download: "llm-manager.apk" }, "download")) : null);
+        el("a", { href: app.url, download: "llm-manager.apk" }, "download")) : null,
+    ].filter(Boolean));
     dialog.showModal();
     if (!(await ensureAccess())) {
       list.replaceChildren(el("p", { class: "muted" }, "This browser is not paired. " + (pairRefusal || "There is no access token") + "."));
@@ -914,6 +956,10 @@
         el("div", { class: "meta" }, (first.branch ? first.branch + " · " : "") + "updated " + relative(last.finishedAt || last.startedAt || last.createdAt)),
         el("div", { class: "actions-row" },
           el("button", { class: "small-btn", type: "button", onclick: () => openLog(last) }, icon("list"), "Log"),
+          last.status === "failed" && needsSignIn(last.agent)
+            ? el("button", { class: "small-btn go", type: "button", onclick: async () => { if (await openSignIn(last.agent)) loadRepo(); } },
+                icon("key"), "Sign in to " + AGENT[last.agent].label)
+            : null,
           active ? el("button", { class: "small-btn danger", type: "button", onclick: () => cancelRun(active, loadRepo) }, icon("x"), "Cancel") : null)),
     ];
   }
@@ -935,7 +981,13 @@
     return el("div", { class: "thread" }, turns.map((t) => turn(p, t)));
   }
 
-  function savedAgent() { try { return localStorage.getItem(AGENT_KEY) || "claude"; } catch (_) { return "claude"; } }
+  function savedAgent() {
+    let saved = null;
+    try { saved = localStorage.getItem(AGENT_KEY); } catch (_) { saved = null; }
+    return saved || (scheduleData && scheduleData.defaultAgent) || "claude";
+  }
+  /** Whether the server says this agent's CLI is not signed in (unknown counts as signed in). */
+  const needsSignIn = (agent) => !!(scheduleData && scheduleData.signedIn && scheduleData.signedIn[agent] === false);
   function saveAgent(agent) { try { localStorage.setItem(AGENT_KEY, agent); } catch (_) { /* private mode */ } }
 
   /** The chat box. Built once per repository, so a refresh never wipes what is being typed. */
@@ -971,6 +1023,8 @@
       if (reviewer) reviewText.textContent = "Cross-review first: " + AGENT[reviewer].label + " reviews the change, " + AGENT[state.agent].label + " addresses it";
       hint.textContent = !ok.length
         ? "No coding agent is installed on the server."
+        : needsSignIn(state.agent)
+          ? AGENT[state.agent].label + " is not signed in on the server yet. Sending asks you to sign in first."
         : p.forge
           ? "Works on a new branch. When it's done, the branch is pushed and a pull request is opened on " + FORGE[p.forge].label + "."
           : "This repository has no GitHub, GitLab or Azure DevOps remote, so the work stays on a local branch.";
@@ -982,6 +1036,12 @@
       const prompt = text.value.trim();
       if (!prompt) { toast("Write a message first", true); text.focus(); return; }
       const reviewer = review.checked ? reviewerFor(state.agent) : null;
+      for (const agent of [state.agent, reviewer].filter(Boolean)) {
+        if (!needsSignIn(agent)) continue;
+        if (!(await openSignIn(agent))) { toast(AGENT[agent].label + " needs to be signed in first", true); return; }
+        scheduleData.signedIn[agent] = true;
+        render();
+      }
       const request = { projectId: p.id, kind: reviewer ? "pipeline" : "run", agent: state.agent, prompt, publish: !!p.forge, resumeOnLimitReset: true };
       if (reviewer) request.reviewer = reviewer;
       send.disabled = true;
@@ -1196,7 +1256,7 @@
     }
     currentRepo = null;
     composer = null;
-    const tab = hash === "schedule" || hash === "usage" ? hash : "overview";
+    const tab = ["schedule", "usage", "settings"].includes(hash) ? hash : "overview";
     showTab(tab);
     window.scrollTo(0, tab === "overview" ? gridScroll : 0);
   }
@@ -1205,7 +1265,7 @@
     activeTab = name;
     const selected = name === "repo" ? "overview" : name;
     for (const button of document.querySelectorAll(".tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === selected));
-    for (const tab of ["overview", "repo", "schedule", "usage"]) $("tab-" + tab).hidden = tab !== name;
+    for (const tab of ["overview", "repo", "schedule", "usage", "settings"]) $("tab-" + tab).hidden = tab !== name;
     refreshActive();
   }
 
@@ -1213,7 +1273,316 @@
     if (activeTab === "repo") return loadRepo();
     if (activeTab === "schedule") return loadSchedule();
     if (activeTab === "usage") return loadUsage();
+    if (activeTab === "settings") return loadSettings();
     return load();
+  }
+
+  // ---------- settings ----------
+  const SIGN_IN = {
+    claude: {
+      account: "your Claude account",
+      code: "Copy the code the page shows after you sign in, and paste it here.",
+    },
+    codex: {
+      account: "your ChatGPT account",
+      key: "An OpenAI API key (platform.openai.com → API keys). Usage is then billed to the API account, not to ChatGPT.",
+    },
+    gemini: {
+      account: "your Google account",
+      code: "Allow access, then copy the authorization code and paste it here. Gemini waits five minutes for it.",
+      key: "A Gemini API key from Google AI Studio (aistudio.google.com → Get API key).",
+    },
+  };
+  const LIVE_STATES = ["starting", "waiting", "checking"];
+
+  /**
+   * The sign-in pop-up for an agent's CLI on the server. The CLI's own sign-in runs there; this
+   * shows its link (and Codex's code), and hands the code from the sign-in page back to it.
+   * Resolves true once the agent is signed in.
+   */
+  function openSignIn(agent) {
+    return new Promise((resolve) => {
+      const dialog = $("signin-dialog");
+      const label = AGENT[agent].pick, help = SIGN_IN[agent];
+      const content = el("div");
+      let view = { state: "starting", screen: [] }, timer = 0, signedIn = false, keyForm = false, note = "";
+      const path = "/api/settings/agents/" + agent + "/sign-in";
+
+      async function call(method, suffix, payload) {
+        clearTimeout(timer);
+        try {
+          const init = payload === undefined ? { method } : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) };
+          const result = await api(path + (suffix || ""), init);
+          view = result.ok && result.json ? result.body : { state: "failed", message: result.body.error || "Failed (" + result.status + ")", screen: [] };
+        } catch (error) {
+          view = { state: "failed", message: "Can't reach the server: " + error.message, screen: [] };
+        }
+        if (dialog.open) render();
+      }
+
+      function codeStep() {
+        const input = el("input", { class: "input mono", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "Paste the code" });
+        const go = el("button", { class: "small-btn go", type: "button" }, icon("check"), "Continue");
+        const submit = async () => {
+          const code = input.value.trim();
+          if (!code) { input.focus(); return; }
+          go.disabled = true;
+          await call("POST", "/code", { code });
+        };
+        go.addEventListener("click", submit);
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+        setTimeout(() => input.focus(), 0);
+        return el("div", { class: "inline" }, input, go);
+      }
+
+      function steps() {
+        const url = httpsOnly(view.url);
+        const open = url
+          ? el("a", { class: "small-btn go", href: url, target: "_blank", rel: "noopener noreferrer" }, icon("link"), "Open the sign-in page")
+          : el("span", { class: "meta" }, "Waiting for the link…");
+        const items = [el("li", null, el("div", null, el("span", null, "Open the sign-in page and sign in with " + help.account + "."), open))];
+        if (view.userCode) {
+          const copyCode = el("button", { class: "small-btn", type: "button", onclick: async () => toast(await copy(view.userCode) ? "Code copied" : "Copy failed; select the code", false) }, icon("copy"), "Copy");
+          items.push(el("li", null, el("div", null, el("span", null, "Enter this code on that page:"), el("div", { class: "inline" }, el("span", { class: "device-code" }, view.userCode), copyCode))));
+          items.push(el("li", null, el("div", null, el("span", null, "Come back here: this window notices by itself when you're signed in."))));
+        } else if (help.code) {
+          items.push(el("li", null, el("div", null, el("span", null, help.code), view.needsCode ? codeStep() : el("span", { class: "meta" }, view.state === "checking" ? "Checking the code…" : "Waiting for " + AGENT[agent].label + "…"))));
+        }
+        return el("ol", { class: "steps" }, items);
+      }
+
+      function keyStep() {
+        const input = el("input", { class: "input mono", type: "password", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "Paste the API key" });
+        const save = el("button", { class: "small-btn go", type: "button" }, icon("check"), "Use this key");
+        save.addEventListener("click", async () => {
+          if (!input.value.trim()) { input.focus(); return; }
+          save.disabled = true;
+          const result = await api("/api/settings/agents/" + agent + "/api-key", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: input.value.trim() }) });
+          save.disabled = false;
+          if (!result.ok) { note = result.body.error || "Failed (" + result.status + ")"; render(); return; }
+          if (LIVE_STATES.includes(view.state)) await api(path, { method: "DELETE" }).catch(() => null);
+          view = { state: "done", message: "Signed in with an API key", screen: [] };
+          render();
+        });
+        setTimeout(() => input.focus(), 0);
+        return el("div", { class: "token-form" }, el("span", { class: "hint-text" }, help.key), el("div", { class: "inline" }, input, save),
+          el("div", { class: "actions-row" }, el("button", { class: "small-btn", type: "button", onclick: () => { keyForm = false; note = ""; render(); } }, icon("back"), "Back to signing in")));
+      }
+
+      function render() {
+        const live = LIVE_STATES.includes(view.state);
+        const screen = view.screen && view.screen.length
+          ? el("details", { open: view.state === "failed" }, el("summary", null, "What " + AGENT[agent].label + " printed"), el("pre", { class: "screen" }, view.screen.join("\n")))
+          : null;
+        let body;
+        if (view.state === "done") {
+          signedIn = true;
+          body = [el("div", { class: "signin-status" }, chip(view.message || "Signed in", "ok", "check"))];
+          setTimeout(() => { if (dialog.open) dialog.close(); }, 1400);
+        } else if (keyForm) {
+          body = [keyStep()];
+        } else if (view.state === "failed" || view.state === "idle") {
+          body = [
+            el("div", { class: "signin-status" }, chip(view.state === "idle" ? "No sign-in running" : "Not signed in", view.state === "idle" ? null : "bad", "alert"),
+              view.message ? el("span", null, view.message) : null),
+            screen,
+            el("div", { class: "actions-row" }, el("button", { class: "small-btn go", type: "button", onclick: () => call("POST", "", { restart: true }) }, icon("refresh"), "Try again")),
+          ];
+        } else {
+          body = [
+            view.state === "starting" ? el("div", { class: "signin-status" }, chip("Starting the sign-in on the server…", "running", "loader")) : steps(),
+            view.message && view.state === "waiting" ? el("p", { class: "err" }, view.message) : null,
+            screen,
+          ];
+        }
+        // replaceChildren would show null as the text "null", unlike el().
+        content.replaceChildren(...[
+          ...body,
+          note ? el("p", { class: "err" }, note) : null,
+          el("div", { class: "actions-row" },
+            help.key && !keyForm && view.state !== "done" ? el("button", { class: "small-btn", type: "button", onclick: () => { keyForm = true; render(); } }, icon("key"), "Use an API key instead") : null,
+            live && !keyForm ? el("button", { class: "small-btn", type: "button", onclick: () => call("POST", "", { restart: true }) }, icon("refresh"), "New link") : null,
+            live ? el("button", { class: "small-btn danger", type: "button", onclick: async () => { await call("DELETE"); dialog.close(); } }, icon("x"), "Cancel sign-in") : null),
+        ].filter(Boolean));
+        clearTimeout(timer);
+        if (live && dialog.open) timer = setTimeout(() => call("GET"), view.state === "starting" ? 700 : 2000);
+      }
+
+      dialog.replaceChildren(
+        el("div", { class: "section-head" }, el("h2", null, "Sign in to " + label),
+          el("button", { class: "small-btn", type: "button", onclick: () => dialog.close() }, icon("x"), "Close")),
+        el("p", null, "This signs in the " + AGENT[agent].label + " CLI on the server, the way it signs in on a computer. Your password goes only to the sign-in page."),
+        content);
+      dialog.addEventListener("close", () => { clearTimeout(timer); resolve(signedIn); }, { once: true });
+      dialog.showModal();
+      render();
+      call("POST", "", {});
+    });
+  }
+
+  async function loadSettings() {
+    if (!(await ensureAccess())) { settingsTab.replaceChildren(lockedPanel(false)); return; }
+    spin(true);
+    try {
+      const result = await api("/api/settings");
+      if (result.status === 404) { settingsTab.replaceChildren(el("div", { class: "panel" }, el("p", { class: "muted" }, "This server has no settings yet; update it."))); return; }
+      if (!result.ok) throw new Error(result.body.error || "Failed (" + result.status + ")");
+      renderSettings(result.body);
+      stamp();
+    } catch (error) {
+      settingsTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Couldn't load the settings"), error.message));
+    } finally {
+      spin(false);
+    }
+  }
+
+  /** Sends one change; the server answers with the whole settings page, shown again. */
+  async function changeSettings(path, method, payload, button) {
+    if (button) button.disabled = true;
+    try {
+      const init = payload === undefined ? { method } : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) };
+      const result = await api(path, init);
+      if (!result.ok) { toast(result.body.error || "Failed (" + result.status + ")", true); return false; }
+      toast(result.body.message || "Saved");
+      if (activeTab === "settings") renderSettings(result.body);
+      return true;
+    } catch (error) {
+      toast("Can't reach the server: " + error.message, true);
+      return false;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  const field = (label, input, note) => el("label", { class: "field" }, el("span", null, label), input, note ? el("small", null, note) : null);
+  const textInput = (value, attrs) => el("input", Object.assign({ class: "input", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false" }, attrs, { value: value || "" }));
+
+  function profilePanel(data) {
+    const name = textInput(data.profile.name, { autocomplete: "name", autocapitalize: "words", maxlength: "80", placeholder: "Your name" });
+    const email = textInput(data.profile.email, { type: "email", autocomplete: "email", maxlength: "120", placeholder: "you@example.com" });
+    const offered = data.agents.filter((a) => a.installed && a.enabled);
+    const agent = el("select", { "aria-label": "Agent selected in the chat" },
+      el("option", { value: "" }, "The last one used on each device"),
+      offered.map((a) => el("option", { value: a.agent, selected: a.agent === data.defaultAgent }, AGENT[a.agent].pick)));
+    const save = el("button", { class: "small-btn go", type: "button" }, icon("check"), "Save profile");
+    save.addEventListener("click", async () => {
+      const defaultAgent = agent.value || null;
+      const saved = await changeSettings("/api/settings/profile", "PUT", { name: name.value.trim(), email: email.value.trim(), defaultAgent }, save);
+      if (saved && defaultAgent) saveAgent(defaultAgent);
+    });
+    return el("div", { class: "panel settings-form" },
+      field("Name", name),
+      field("Email", email, "Your agents' commits name you as the committer, so they show up on your account on GitHub, GitLab or Azure DevOps. The agent stays the author."),
+      field("Agent in the chat", agent),
+      el("div", { class: "actions-row" }, save));
+  }
+
+  function agentRow(a) {
+    const name = AGENT[a.agent].pick;
+    const status = !a.installed ? chip("Not installed", "warn", "alert")
+      : a.signedIn ? chip("Signed in" + (a.method ? " · " + a.method : ""), "ok", "check")
+      : chip("Not signed in", "bad", "alert");
+    if (!a.installed) {
+      return el("div", { class: "setting-row" }, el("div", { class: "row-head" }, agentMark(a.agent), el("b", null, name), el("span", { class: "grow" }), status),
+        el("p", { class: "muted" }, "Install the " + AGENT[a.agent].label + " CLI on the server to use it."));
+    }
+    const enabled = el("input", { type: "checkbox", checked: a.enabled });
+    const model = textInput(a.model, { class: "input mono", maxlength: "100", placeholder: "CLI default", "aria-label": name + " model" });
+    const save = el("button", { class: "small-btn", type: "button" }, icon("check"), "Save");
+    const store = () => changeSettings("/api/settings/agents/" + a.agent, "PUT", { enabled: enabled.checked, model: model.value.trim() }, save);
+    save.addEventListener("click", store);
+    enabled.addEventListener("change", store);
+    const signOut = async (event) => {
+      if (!confirm("Sign " + name + " out on the server? Its runs fail until it is signed in again.")) return;
+      await changeSettings("/api/settings/agents/" + a.agent + "/sign-out", "POST", undefined, event.currentTarget);
+    };
+    return el("div", { class: "setting-row" },
+      el("div", { class: "row-head" }, agentMark(a.agent), el("b", null, name), el("span", { class: "grow" }), status),
+      a.account ? el("div", { class: "meta" }, a.account) : null,
+      el("div", { class: "actions-row" },
+        el("button", { class: "small-btn" + (a.signedIn ? "" : " go"), type: "button", onclick: async () => { if (await openSignIn(a.agent)) loadSettings(); } },
+          icon("key"), a.signIn ? "Continue signing in" : a.signedIn ? "Switch account" : "Sign in"),
+        a.signedIn ? el("button", { class: "small-btn danger", type: "button", onclick: signOut }, icon("logout"), "Sign out") : null),
+      el("label", { class: "toggle" }, enabled, el("span", null, "Offer " + AGENT[a.agent].label + " in the chat and in new jobs")),
+      el("div", { class: "inline" }, model, save),
+      el("small", { class: "hint-text" }, "Model: the name " + AGENT[a.agent].label + "'s --model option takes. Empty uses the CLI's default."));
+  }
+
+  /** A code host: its status, and a token form opened on demand. Tokens are sent once and never shown again. */
+  function forgeRow(f, title, mark, options) {
+    const status = options.adds ? null : f.connected ? chip(f.account ? "Signed in as " + f.account : "Connected", "ok", "check") : chip("Not connected", null, "alert");
+    const token = el("input", { class: "input mono", type: "password", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "Paste the token" });
+    const extra = options.fields || [];
+    const connect = el("button", { class: "small-btn go", type: "button" }, icon("check"), "Check and save");
+    const form = el("div", { class: "token-form", hidden: true }, ...extra.map((x) => x.node), token,
+      el("small", { class: "hint-text" }, options.help, options.link ? [" ", el("a", { href: options.link, target: "_blank", rel: "noopener noreferrer" }, "Create one")] : null),
+      el("div", { class: "actions-row" }, connect, el("button", { class: "small-btn", type: "button", onclick: () => { form.hidden = true; } }, "Cancel")));
+    connect.addEventListener("click", () => {
+      const payload = { token: token.value.trim() };
+      for (const x of extra) payload[x.key] = x.node.value.trim();
+      if (!payload.token) { token.focus(); return; }
+      changeSettings("/api/settings/forges/" + f.forge + (options.query || ""), "PUT", Object.assign(payload, options.payload || {}), connect);
+    });
+    const remove = async (event) => {
+      if (!confirm(options.removeText)) return;
+      await changeSettings("/api/settings/forges/" + f.forge + (options.query || ""), "DELETE", undefined, event.currentTarget);
+    };
+    return el("div", { class: "setting-row" },
+      el("div", { class: "row-head" }, mark, el("b", null, title), el("span", { class: "grow" }), status),
+      f.note ? el("div", { class: "meta" }, f.note) : null,
+      el("div", { class: "actions-row" },
+        el("button", { class: "small-btn" + (f.connected ? "" : " go"), type: "button", onclick: () => { form.hidden = false; (extra[0] ? extra[0].node : token).focus(); } },
+          icon("key"), f.connected ? "Use another token" : options.connectLabel),
+        f.connected ? el("button", { class: "small-btn danger", type: "button", onclick: remove }, icon("logout"), options.removeLabel) : null),
+      form);
+  }
+
+  function forgeRows(forges) {
+    const rows = [];
+    const github = forges.find((f) => f.forge === "github");
+    if (github) {
+      rows.push(forgeRow(github, "GitHub", forgeBadge("github"), {
+        connectLabel: "Sign in with a token", removeLabel: "Sign out", removeText: "Sign the GitHub CLI on the server out? Pull requests on GitHub stop until it signs in again.",
+        help: "A classic token with the repo, read:org and workflow scopes, or a fine-grained one. It goes to the GitHub CLI (gh) on the server.",
+        link: "https://github.com/settings/tokens/new?scopes=repo,read:org,workflow&description=LLM%20Manager",
+      }));
+    }
+    for (const f of forges.filter((x) => x.forge === "gitlab")) {
+      rows.push(forgeRow(f, f.host === "gitlab.com" ? "GitLab" : "GitLab · " + f.host, forgeBadge("gitlab"), {
+        connectLabel: "Add a token", removeLabel: "Remove token", removeText: "Remove the GitLab token for " + f.host + "?",
+        query: "?host=" + encodeURIComponent(f.host), payload: { host: f.host },
+        help: "A personal access token with the api scope, for " + f.host + ".",
+        link: "https://" + f.host + "/-/user_settings/personal_access_tokens?name=LLM%20Manager&scopes=api",
+      }));
+    }
+    const host = textInput("", { placeholder: "gitlab.example.com", "aria-label": "GitLab host", autocapitalize: "off" });
+    rows.push(forgeRow({ forge: "gitlab", host: "", connected: false }, "Another GitLab server", forgeBadge("gitlab"), {
+      connectLabel: "Add a server", adds: true, fields: [{ key: "host", node: host }],
+      help: "Its host name (it must contain \"gitlab\", as gitlab.example.com does) and a personal access token with the api scope.",
+    }));
+    const azure = forges.find((f) => f.forge === "azure-devops");
+    if (azure) {
+      const org = textInput("", { placeholder: "Organisation, as in dev.azure.com/<organisation>", "aria-label": "Azure DevOps organisation" });
+      rows.push(forgeRow(azure, "Azure DevOps", forgeBadge("azure-devops"), {
+        connectLabel: "Add a token", removeLabel: "Remove token", removeText: "Remove the Azure DevOps token?", fields: [{ key: "organization", node: org }],
+        help: "A personal access token with Code (Read & write), created in your organisation's user settings.",
+      }));
+    }
+    return rows;
+  }
+
+  function renderSettings(data) {
+    settingsTab.replaceChildren(
+      el("div", { class: "section-head" }, el("h2", null, "Profile")),
+      profilePanel(data),
+      el("div", { class: "section-head" }, el("h2", null, "Agents")),
+      el("div", { class: "panel" }, data.agents.map(agentRow)),
+      el("div", { class: "section-head" }, el("h2", null, "Code hosts")),
+      el("div", { class: "panel" }, forgeRows(data.forges)),
+      el("div", { class: "section-head" }, el("h2", null, "Access")),
+      el("div", { class: "panel" },
+        el("p", { class: "muted" }, "Paired devices, the server's access token, and the Android app."),
+        el("div", { class: "actions-row" }, el("button", { class: "small-btn", type: "button", onclick: openAccess }, icon("lock"), "Devices and access"))));
   }
 
   // ---------- schedule ----------
@@ -1284,7 +1653,7 @@
       const jobs = scheduleData.jobs, runs = scheduleData.runs;
       const sandbox = scheduleData.sandbox;
       const sandboxed = sandbox && Object.values(sandbox.agents || {}).some(Boolean);
-      scheduleTab.replaceChildren(
+      scheduleTab.replaceChildren(...[
         sandbox ? el("div", { class: "panel sandbox-row" },
           chip(sandboxed ? "Agent sandbox on" : "Agent sandbox off", sandboxed ? "ok" : "warn", sandboxed ? "check" : "alert"),
           el("span", { class: "hint-text" }, sandbox.note)) : null,
@@ -1293,7 +1662,8 @@
         el("div", { class: "list-card" }, jobs.length ? jobs.map(jobItem)
           : el("div", { class: "empty" }, "No jobs yet. Schedule a run, a build-and-review, or a resume.")),
         el("div", { class: "section-head" }, el("h2", null, "Recent runs")),
-        el("div", { class: "list-card" }, runs.length ? runs.map(runItem) : el("div", { class: "empty" }, "No runs yet.")));
+        el("div", { class: "list-card" }, runs.length ? runs.map(runItem) : el("div", { class: "empty" }, "No runs yet.")),
+      ].filter(Boolean));
       stamp();
     } catch (error) {
       scheduleTab.replaceChildren(el("div", { class: "error" }, el("strong", null, "Couldn't load the schedule"), error.message));
@@ -1600,11 +1970,11 @@
   $("lock").addEventListener("click", openAccess);
   renderLock();
   window.addEventListener("hashchange", route);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshActive(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && activeTab !== "settings") refreshActive(); });
   // Background refresh, but never while a dialog is open or something is being typed.
   setInterval(() => {
     const typing = document.activeElement && ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement.tagName);
-    if (!document.hidden && !typing && !document.querySelector("dialog[open]")) refreshActive();
+    if (!document.hidden && !typing && !document.querySelector("dialog[open]") && activeTab !== "settings") refreshActive();
   }, REFRESH_MS);
   route();
 })();

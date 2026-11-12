@@ -187,12 +187,20 @@ data class ModelTokens(val model: String, val tokens: Long)
 @Serializable
 data class ScheduleResponse(
     val now: String,
+    /** Agents offered in the pickers: installed and turned on in Settings. */
     val agents: Map<String, Boolean> = emptyMap(),
     val jobs: List<JobView> = emptyList(),
     val runs: List<Run> = emptyList(),
     val resumable: List<ResumeTarget> = emptyList(),
     val sandbox: SandboxStatus? = null,
-)
+    /** Per installed agent: whether its CLI is signed in on the server. */
+    val signedIn: Map<String, Boolean> = emptyMap(),
+    /** Preselected in the chat, from Settings. */
+    val defaultAgent: String? = null,
+) {
+    /** True only when the server says [agent] is not signed in; unknown counts as signed in. */
+    fun needsSignIn(agent: String): Boolean = signedIn[agent] == false
+}
 
 /** Whether agent runs are contained by the OS sandbox on the server. */
 @Serializable

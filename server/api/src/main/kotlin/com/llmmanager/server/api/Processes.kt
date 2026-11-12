@@ -20,17 +20,18 @@ object Processes {
 
     /**
      * Like [run], but keeps stderr and the exit code so failures can be explained to the user.
-     * With [inheritEnvironment] false the child gets only [environment].
+     * With [inheritEnvironment] false the child gets only [environment]. [input] goes to stdin,
+     * which keeps secrets such as tokens off the command line.
      */
     fun exec(
         command: List<String>,
-        directory: File? = null,
         timeoutMillis: Long = 60_000,
         environment: Map<String, String> = emptyMap(),
         inheritEnvironment: Boolean = true,
+        input: String? = null,
     ): Exec {
         val process = try {
-            ProcessBuilder(command).directory(directory).also {
+            ProcessBuilder(command).also {
                 if (!inheritEnvironment) it.environment().clear()
                 it.environment().putAll(environment)
             }.start()
@@ -38,7 +39,7 @@ object Processes {
             startFailed(command, e)
             return Exec(-1, "", e.message ?: "could not start ${command.first()}")
         }
-        process.outputStream.close()
+        write(process, input)
         val out = reader.submit<String> { readBounded(process.inputStream) }
         val err = reader.submit<String> { readBounded(process.errorStream) }
         return try {
@@ -78,6 +79,15 @@ object Processes {
         } finally {
             process.destroyForcibly()
             output.cancel(true)
+        }
+    }
+
+    /** Sends [input] (if any) and closes stdin; a child that exits without reading it is not an error. */
+    private fun write(process: Process, input: String?) {
+        try {
+            process.outputStream.use { stdin -> input?.let { stdin.write(it.toByteArray(Charsets.UTF_8)) } }
+        } catch (_: IOException) {
+            // The child closed its stdin early; its exit code says whether that mattered.
         }
     }
 

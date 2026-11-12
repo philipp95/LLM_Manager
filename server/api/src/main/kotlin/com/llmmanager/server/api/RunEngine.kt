@@ -19,6 +19,8 @@ class RunEngine(
     private val workspace: Workspace,
     private val worktreeRoot: File,
     private val clock: Clock = Clock.systemUTC(),
+    /** The person from Settings who commits agent work; null keeps the agent as committer too. */
+    private val committer: () -> Profile? = { null },
 ) {
     private val git = workspace.git
     private val sessions = workspace.sessions
@@ -122,15 +124,22 @@ class RunEngine(
         }
     }
 
-    /** Commits whatever the agent changed, attributed to the agent, never to a person. Returns the commit or the previous one. */
+    /**
+     * Commits whatever the agent changed. The agent is always the author, never a person; the
+     * person set up in Settings, when there is one, is the committer, so the commit is linked
+     * to their account on the code host. Returns the commit or the previous one.
+     */
     private fun commitChanges(run: Run): String? {
         val dir = File(checkNotNull(run.worktree))
         val dirty = git.run(dir, "status", "--porcelain", "--ignore-submodules=all")?.isNotBlank() == true
         if (!dirty) return run.resultCommit
         val title = run.prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(TITLE_CHARS) ?: "agent changes"
         val message = "${run.agent.label} (${run.stage.name.lowercase()}): $title\n\nRun ${run.id} started by LLM Manager.\n"
-        val identity = listOf("-c", "user.name=${run.agent.label} via LLM Manager", "-c", "user.email=llm-manager@localhost")
-        val committed = git.run(dir, "add", "-A") != null && git.run(dir, identity + listOf("commit", "--no-verify", "-q", "-m", message)) != null
+        val agent = "${run.agent.label} via LLM Manager"
+        val person = committer()
+        val identity = listOf("-c", "user.name=${person?.name ?: agent}", "-c", "user.email=${person?.email ?: AGENT_EMAIL}")
+        val commit = listOf("commit", "--no-verify", "-q", "--author=$agent <$AGENT_EMAIL>", "-m", message)
+        val committed = git.run(dir, "add", "-A") != null && git.run(dir, identity + commit) != null
         return if (committed) git.run(dir, "rev-parse", "HEAD")?.trim() else run.resultCommit
     }
 
@@ -144,6 +153,7 @@ class RunEngine(
     companion object {
         const val RUN_BRANCH_PREFIX = "run"
         private const val TITLE_CHARS = 60
+        private const val AGENT_EMAIL = "llm-manager@localhost"
 
         /** Single-quotes [value] for bash, so paths are never interpreted. */
         fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"

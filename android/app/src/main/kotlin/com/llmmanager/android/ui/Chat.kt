@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.Run
+import com.llmmanager.android.data.ScheduleResponse
 
 /**
  * One message and its answer: the runs that share a pipeline (build, review, fix) or a branch
@@ -45,8 +47,8 @@ fun conversationTurns(runs: List<Run>, projectId: String, limit: Int = 8): List<
  * when the project has a forge the branch is pushed and a pull request opened once it is done.
  */
 @Composable
-fun ChatPanel(project: Project, runs: List<Run>, agents: Map<String, Boolean>?, sending: Boolean, actions: ChatActions) {
-    val turns = conversationTurns(runs, project.id)
+fun ChatPanel(project: Project, schedule: ScheduleResponse?, sending: Boolean, actions: ChatActions) {
+    val turns = conversationTurns(schedule?.runs.orEmpty(), project.id)
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PanelTitle("Chat", Modifier.weight(1f))
@@ -60,11 +62,11 @@ fun ChatPanel(project: Project, runs: List<Run>, agents: Map<String, Boolean>?, 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             turns.forEach { turn ->
                 Message(turn.first())
-                Answer(TurnView(project, turn), project.forge, actions)
+                Answer(TurnView(project, turn), project.forge, actions, needsSignIn = schedule?.needsSignIn(turn.last().agent) == true)
             }
         }
         HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(top = 14.dp, bottom = 12.dp))
-        Composer(project, agents, sending, actions.onSend)
+        Composer(project, schedule, sending, actions)
     }
 }
 
@@ -105,7 +107,7 @@ private fun Message(run: Run) {
 /** The agent's answer: progress through the stages, its last summary, and the pull request. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Answer(turn: TurnView, forge: String?, actions: ChatActions) {
+private fun Answer(turn: TurnView, forge: String?, actions: ChatActions, needsSignIn: Boolean) {
     Column(
         Modifier.fillMaxWidth().padding(end = 28.dp).background(Palette.paper2, RoundedCornerShape(16.dp, 16.dp, 16.dp, 5.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -132,6 +134,10 @@ private fun Answer(turn: TurnView, forge: String?, actions: ChatActions) {
         Outcome(turn, forge)
         turn.attach?.let { AttachCommand(it, actions.onCopy) }
         Text(turn.footer, color = Palette.ink2, fontSize = 11.5.sp)
+        if (turn.failure != null && needsSignIn) {
+            // Most likely why it failed: the agent's CLI is not signed in on the server.
+            Button(onClick = { actions.onSignIn(turn.last.agent) {} }) { Text("Sign in to ${agentLabel(turn.last.agent)}", fontSize = 13.sp) }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { actions.onLog(turn.last) }) { Text("Log", fontSize = 13.sp) }
             turn.active?.let { active ->

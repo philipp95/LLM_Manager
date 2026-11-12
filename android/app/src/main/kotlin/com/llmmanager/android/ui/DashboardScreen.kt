@@ -61,18 +61,26 @@ import java.time.format.DateTimeParseException
 import kotlinx.coroutines.delay
 
 private const val REFRESH_INTERVAL_MS = 30_000L
-private val TABS = listOf("Repos", "Schedule", "Usage")
+private val TABS = listOf("Repos", "Schedule", "Usage", "Settings")
+private const val SETTINGS_TAB = 3
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel, scheduleViewModel: ScheduleViewModel) {
+fun DashboardScreen(
+    viewModel: DashboardViewModel,
+    scheduleViewModel: ScheduleViewModel,
+    settingsViewModel: SettingsViewModel,
+    signInViewModel: SignInViewModel,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scheduleState by scheduleViewModel.state.collectAsStateWithLifecycle()
+    val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     // The repository whose screen is open on the Repos tab.
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     val open = openId?.takeIf { tab == 0 }?.let { id -> state.data?.projects?.firstOrNull { it.id == id } }
-    val refreshTab: () -> Unit = { refresh(tab, openId != null, viewModel, scheduleViewModel) }
+    val models = ViewModels(viewModel, scheduleViewModel, settingsViewModel, signInViewModel)
+    val refreshTab: () -> Unit = { refresh(tab, openId != null, models) }
     val snackbar = remember { SnackbarHostState() }
     val dialogs = remember { DialogState() }
     val clipboard = LocalClipboardManager.current
@@ -81,6 +89,7 @@ fun DashboardScreen(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVi
     BackHandler(enabled = openId != null) { openId = null }
     Polling(tab, openId, refreshTab)
     Events(viewModel, scheduleViewModel, snackbar, dialogs)
+    SettingsEvents(settingsViewModel, signInViewModel, scheduleViewModel, snackbar)
 
     Scaffold(
         containerColor = Palette.harbor,
@@ -93,7 +102,11 @@ fun DashboardScreen(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVi
             )
         },
     ) { padding ->
-        val refreshing = if (tab == 0) state.refreshing else scheduleState.loading
+        val refreshing = when (tab) {
+            0 -> state.refreshing
+            SETTINGS_TAB -> settingsState.loading
+            else -> scheduleState.loading
+        }
         PullToRefreshBox(isRefreshing = refreshing, onRefresh = refreshTab, modifier = Modifier.padding(padding).fillMaxSize()) {
             when {
                 tab == 1 -> ScheduleScreen(
@@ -101,9 +114,17 @@ fun DashboardScreen(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVi
                     onNeedToken = { dialogs.settings = true }, onCopy = copy,
                 )
                 tab == 2 -> UsageScreen(scheduleState.usage, scheduleState.usageError, state.data?.analytics)
+                tab == SETTINGS_TAB -> SettingsScreen(
+                    settingsState, settingsActions(settingsViewModel, signInViewModel),
+                    PhoneSettings(
+                        state.serverUrl.orEmpty(), state.pairedAs, state.hasToken, UpdateState(state.data?.androidApp, viewModel::update),
+                        onServer = { dialogs.settings = true },
+                    ),
+                    onRetry = settingsViewModel::load,
+                )
                 open != null -> RepoDetail(
                     open, scheduleState.schedule, state.data?.codexAvailable == true, state.launching == open.id, scheduleState.submitting,
-                    repoActions(open, viewModel, scheduleViewModel, dialogs, copy),
+                    repoActions(open, models, dialogs, copy),
                 )
                 else -> Overview(
                     state, onRetry = viewModel::refresh, onSettings = { dialogs.settings = true }, onOpen = { openId = it.id },
@@ -112,7 +133,7 @@ fun DashboardScreen(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVi
             }
         }
     }
-    DialogHost(dialogs, state, viewModel, scheduleViewModel, copy)
+    DialogHost(dialogs, state, viewModel, scheduleViewModel, signInViewModel, copy)
 }
 
 /** Polls what is on screen while the app is in the foreground; stops in the background to spare the battery. */
@@ -155,26 +176,21 @@ private fun Events(viewModel: DashboardViewModel, scheduleViewModel: ScheduleVie
 }
 
 /** The repository screen's actions, routed to the view models. */
-private fun repoActions(
-    project: Project,
-    viewModel: DashboardViewModel,
-    scheduleViewModel: ScheduleViewModel,
-    dialogs: DialogState,
-    copy: (String) -> Unit,
-) = RepoActions(
+private fun repoActions(project: Project, models: ViewModels, dialogs: DialogState, copy: (String) -> Unit) = RepoActions(
     chat = ChatActions(
         onSend = { request, onSent ->
-            scheduleViewModel.create(request, message = "${agentLabel(request.agent)} is on it") {
+            models.schedule.create(request, message = "${agentLabel(request.agent)} is on it") {
                 onSent()
-                viewModel.refresh()
+                models.dashboard.refresh()
             }
         },
-        onLog = { scheduleViewModel.openLog(it.id) },
+        onLog = { models.schedule.openLog(it.id) },
         onCancel = { dialogs.cancelling = it },
         onCopy = copy,
+        onSignIn = { agent, then -> models.signIn.open(agent, then) },
     ),
     onStartCodex = { dialogs.confirming = project },
-    onPublish = { branch, action -> viewModel.publish(project, branch, action) },
+    onPublish = { branch, action -> models.dashboard.publish(project, branch, action) },
 )
 
 @Composable
@@ -183,9 +199,18 @@ private fun DialogHost(
     state: DashboardViewModel.UiState,
     viewModel: DashboardViewModel,
     scheduleViewModel: ScheduleViewModel,
+    signInViewModel: SignInViewModel,
     copy: (String) -> Unit,
 ) {
     val scheduleState by scheduleViewModel.state.collectAsStateWithLifecycle()
+    val signIn by signInViewModel.state.collectAsStateWithLifecycle()
+    SignInDialog(
+        signIn,
+        SignInActions(
+            onSubmit = signInViewModel::submit, onApiKey = signInViewModel::useApiKey, onRestart = signInViewModel::restart,
+            onCancel = signInViewModel::cancel, onClose = signInViewModel::close, onCopy = copy,
+        ),
+    )
     if (dialogs.settings) {
         SettingsDialog(
             serverUrl = state.serverUrl.orEmpty(), hasToken = state.hasToken, pairedAs = state.pairedAs,
@@ -279,10 +304,13 @@ private fun TopBar(
     }
 }
 
-/** Refreshes what is on screen: the repositories (and, on a repository, its runs), the schedule, or usage. */
-private fun refresh(tab: Int, repository: Boolean, overview: DashboardViewModel, schedule: ScheduleViewModel) {
+/** Refreshes what is on screen: the repositories (and, on a repository, its runs), the schedule, usage, or settings. */
+private fun refresh(tab: Int, repository: Boolean, models: ViewModels) {
+    val overview = models.dashboard
+    val schedule = models.schedule
     when (tab) {
         1 -> schedule.refreshSchedule()
+        SETTINGS_TAB -> models.settings.load()
         2 -> {
             schedule.refreshUsage()
             overview.refresh()
@@ -308,3 +336,13 @@ private fun updated(iso: String): String = try {
 } catch (_: DateTimeParseException) {
     "Online"
 }
+
+/** The Settings tab's changes, and the sign-in pop-up it opens. */
+private fun settingsActions(settings: SettingsViewModel, signIn: SignInViewModel) = SettingsActions(
+    onSaveProfile = settings::saveProfile,
+    onSaveAgent = settings::saveAgent,
+    onSignIn = { agent -> signIn.open(agent) },
+    onSignOut = settings::signOut,
+    onConnectForge = settings::connectForge,
+    onDisconnectForge = settings::disconnectForge,
+)

@@ -108,7 +108,11 @@ class SchedulerTest {
 
     private data class Fixture(val scheduler: Scheduler, val jobs: JobService, val store: StateStore, val repo: File, val projectId: String)
 
-    private fun fixture(publisher: (Run) -> String = { "Publishing is not configured" }): Fixture {
+    private fun fixture(
+        publisher: (Run) -> String = { "Publishing is not configured" },
+        committer: Profile? = null,
+        choices: AgentChoices = AgentChoices(),
+    ): Fixture {
         val repo = File(root, "repos/app").also { it.mkdirs() }
         git(repo, "init", "-b", "main")
         File(repo, "README.md").writeText("app\n")
@@ -119,9 +123,9 @@ class SchedulerTest {
         val store = StateStore(File(root, "state"))
         val commands = AgentCommands(fakeClaude(), fakeCodex(), gemini = fakeGemini())
         val workspace = Workspace(scanner, sessions, commands)
-        val engine = RunEngine(store, workspace, File(root, "runs"), clock = clock)
+        val engine = RunEngine(store, workspace, File(root, "runs"), clock = clock, committer = { committer })
         val scheduler = Scheduler(store, engine, sessions, clock = clock, hooks = FollowUpHooks(publisher = publisher))
-        val jobs = JobService(store, scheduler, workspace, SessionCatalog(File(root, "home")), clock)
+        val jobs = JobService(store, scheduler, workspace, SessionCatalog(File(root, "home")), clock, choices)
         return Fixture(scheduler, jobs, store, repo, scanner.scan().single().id)
     }
 
@@ -152,6 +156,26 @@ class SchedulerTest {
         assertEquals("Claude via LLM Manager\nClaude via LLM Manager\nPerson", output(worktree, "log", "--format=%an", "-3"))
         assertTrue(work.branch!!.startsWith("run/app-"))
         assertEquals("initial", output(f.repo, "log", "--format=%s", "-1"))
+    }
+
+    @Test
+    fun `with a profile the person commits the agent's work, and turned-off agents are not offered`() {
+        val choices = AgentChoices(enabled = { it != Agent.CODEX }, signedIn = { it == Agent.CLAUDE }, defaultAgent = { Agent.CODEX })
+        val f = fixture(committer = Profile("Ada", "ada@example.com"), choices = choices)
+
+        f.jobs.create(JobRequest(f.projectId, JobKind.RUN, Agent.CLAUDE, "Add a greeting"))
+        repeat(3) { f.scheduler.tick() }
+
+        val run = f.store.runs().single()
+        assertEquals(RunStatus.SUCCEEDED, run.status, run.error)
+        val identity = output(File(run.worktree!!), "log", "--format=%an <%ae>|%cn <%ce>", "-1")
+        assertEquals("Claude via LLM Manager <llm-manager@localhost>|Ada <ada@example.com>", identity, "the agent stays the author")
+        val refused = f.jobs.create(JobRequest(f.projectId, JobKind.RUN, Agent.CODEX, "Anything"))
+        assertEquals("Codex is turned off in Settings", (refused as JobService.Created.Invalid).reason)
+        val overview = f.jobs.overview()
+        assertEquals(mapOf("claude" to true, "codex" to false, "gemini" to true), overview.agents)
+        assertEquals(mapOf("claude" to true, "codex" to false, "gemini" to false), overview.signedIn)
+        assertNull(overview.defaultAgent, "a turned-off agent is not preselected")
     }
 
     @Test
