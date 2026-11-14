@@ -26,7 +26,19 @@ data class ChatView(
     /** Other sessions work on the same branch. */
     val sharesBranch: Boolean = false,
     val turns: List<ChatTurn> = emptyList(),
+    /** The pull request of the session's branch, as the forge last reported it: open, merged or closed. */
+    val pullRequest: PullRequestRef? = null,
+    /** Checks on the pull request: success, failure or pending; null when there are none. */
+    val ci: String? = null,
+    val mergedAt: String? = null,
+    /** Commits the session made on its branch. */
+    val commits: Int = 0,
 ) {
+    val merged: Boolean get() = pullRequest?.state == "merged"
+
+    /** The branch is gone, or its pull request was closed, without a merge. */
+    val closed: Boolean get() = !merged && (!open || pullRequest?.state == "closed")
+
     /** How the session is doing: a run still working, or else the last run. */
     val state: Run? get() = turns.lastOrNull()?.runs?.let { runs -> runs.firstOrNull { it.active } ?: runs.lastOrNull() }
 }

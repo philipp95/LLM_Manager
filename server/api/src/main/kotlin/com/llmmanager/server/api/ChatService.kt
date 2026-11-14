@@ -45,6 +45,13 @@ data class ChatView(
     /** Other sessions work on the same branch. */
     val sharesBranch: Boolean,
     val turns: List<ChatTurn>,
+    /** The pull request of the session's branch, as the forge last reported it; null until one is opened. */
+    val pullRequest: PullRequestRef? = null,
+    /** Checks on the pull request: success, failure or pending; null when there are none or they are not known yet. */
+    val ci: String? = null,
+    val mergedAt: String? = null,
+    /** Commits the session made on its branch. */
+    val commits: Int = 0,
 )
 
 @Serializable
@@ -62,6 +69,7 @@ class ChatService(
     private val workspace: Workspace,
     private val choices: AgentChoices = AgentChoices(),
     private val clock: Clock = Clock.systemUTC(),
+    pulls: SessionPulls? = null,
 ) {
     sealed interface Outcome {
         data class Ok(val chat: ChatView) : Outcome
@@ -76,7 +84,7 @@ class ChatService(
         data class Refused(val reason: String) : Planned
     }
 
-    private val history = ChatHistory(store)
+    private val history = ChatHistory(store, pulls)
 
     /** The project's sessions, most recently active first. */
     fun list(projectId: String): List<ChatView> = history.list(projectId)
@@ -197,7 +205,7 @@ class ChatService(
 }
 
 /** Sessions as the runs record them: grouped by session, with each message and what came of it. */
-private class ChatHistory(private val store: StateStore) {
+private class ChatHistory(private val store: StateStore, private val pulls: SessionPulls?) {
     fun list(projectId: String): List<ChatView> {
         val runs = store.runs().filter { it.projectId == projectId && it.chatId != null }
         val byChat = runs.groupBy { checkNotNull(it.chatId) }
@@ -223,14 +231,18 @@ private class ChatHistory(private val store: StateStore) {
         val turns = sorted.groupBy { it.jobId ?: it.pipelineId ?: it.id }.values.map { turnRuns ->
             ChatTurn(message(turnRuns), turnRuns.first().createdAt, turnRuns)
         }
+        val branch = latestBranch(sorted)
+        val pull = branch?.let { pulls?.of(first.projectId, it) }
         return ChatView(
             id = id, projectId = first.projectId,
             title = turns.first().message.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(TITLE_CHARS) ?: "Session",
-            agent = first.agent, branch = latestBranch(sorted),
+            agent = first.agent, branch = branch,
             createdAt = first.createdAt, updatedAt = sorted.maxOf { it.finishedAt ?: it.startedAt ?: it.createdAt },
             busy = sorted.any { !it.status.finished },
             open = worktree == null || File(worktree).isDirectory,
             sharesBranch = sharesBranch, turns = turns,
+            pullRequest = pull?.pullRequest, ci = pull?.ci, mergedAt = pull?.mergedAt,
+            commits = sorted.filter { it.resultCommit != it.baseCommit }.mapNotNull { it.resultCommit }.distinct().size,
         )
     }
 

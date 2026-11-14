@@ -248,7 +248,7 @@
 
   .chat-layout { display: grid; gap: 16px; min-width: 0; align-items: start; }
   .session-col, .chat-col { display: grid; gap: 10px; min-width: 0; }
-  .chat-col { min-height: calc(100vh - 240px); min-height: calc(100dvh - 240px); grid-template-rows: auto 1fr auto; }
+  .chat-col { min-height: calc(100vh - 240px); min-height: calc(100dvh - 240px); grid-template-rows: auto auto 1fr auto; }
   @media (max-width: 899px) {
     body:not(.in-chat) .chat-col { display: none; }
     body.in-chat .session-col, body.in-chat .repo-top, body.in-chat .subtabs, body.in-chat .server-note { display: none; }
@@ -261,23 +261,95 @@
     .session-col { position: sticky; top: 84px; max-height: calc(100vh - 100px); overflow-y: auto; padding: 2px; }
     .chat-head .back { display: none; }
   }
+  /* The sessions as a tree: main is the rail on the left, each session's branch forks off it,
+     carries a dot per message and, once merged, bends back into main. Newest on top. */
+  .tree { display: grid; min-width: 0; }
+  .tree-row { display: grid; grid-template-columns: 46px minmax(0, 1fr); min-width: 0; }
+  .tree.flat .tree-row { grid-template-columns: minmax(0, 1fr); }
+  .tree.flat .lane { display: none; }
+  .tree-row > :last-child { margin: 5px 0; min-width: 0; }
+  .lane { position: relative; display: flex; flex-direction: column; color: var(--on-harbor-2); }
+  .lane::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: var(--rail); }
+  .tree { --rail: #5F8088; }
+  .lane svg { display: block; width: 46px; height: 22px; flex: none; position: relative; overflow: visible; }
+  .lane path, .lane circle { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .lane circle.solid { fill: currentColor; }
+  .lane circle.hole { fill: var(--harbor); }
+  .lane-mid { flex: 1; position: relative; display: flex; flex-direction: column-reverse; justify-content: space-evenly; align-items: flex-start; gap: 3px; min-height: 12px; }
+  .lane-mid::before { content: ""; position: absolute; left: 32px; top: 0; bottom: 0; width: 2px; background: currentColor; }
+  .lane-mid i { position: relative; width: 10px; height: 10px; margin-left: 28px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px var(--harbor); flex: none; }
+  .lane-mid i.bad { background: #E07A6C; }
+  .lane-mid i.run { background: var(--harbor); border: 2px solid currentColor; box-sizing: border-box; animation: pulse 1.4s ease-in-out infinite; }
+  .lane-mid b { position: relative; margin-left: 22px; padding: 0 2px; min-width: 22px; text-align: center; font-size: 10px; font-weight: 750; line-height: 14px; color: currentColor; background: var(--harbor); font-variant-numeric: tabular-nums; }
+  .lane.open, .lane.new { color: var(--rust-on-dark); }
+  .lane.merged { color: #8CC59A; }
+  .lane.closed, .lane.new { --dash: 3 5; }
+  .lane.closed path, .lane.new path { stroke-dasharray: var(--dash); }
+  .lane.closed .lane-mid::before, .lane.new .lane-mid::before { background: repeating-linear-gradient(currentColor 0 3px, transparent 3px 8px); }
+  .lane.on path, .lane.on circle { stroke-width: 3; }
+  .lane.on .lane-mid::before { width: 4px; left: 31px; }
+  .lane.head::before { top: 50%; }
+  .lane.head i, .lane.knot i { position: absolute; left: 5px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--rail); box-shadow: 0 0 0 3px var(--harbor); }
+  .lane.knot i { background: var(--harbor); border: 2px solid var(--rail); box-sizing: border-box; }
+  .lane.foot { height: 16px; }
+  .lane.foot::before { background: linear-gradient(var(--rail), transparent); }
+  .tree-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 34px; color: var(--on-harbor-2); font-size: 12.5px; }
+  .tree-main .chip { background: var(--harbor-2); border-color: var(--harbor-line); color: var(--on-harbor); }
+  .tree-fold {
+    all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 12px; cursor: pointer;
+    color: var(--on-harbor); font-size: 13.5px; font-weight: 700; background: var(--harbor-2); border: 1px solid var(--harbor-line);
+  }
+  .tree-fold:focus-visible { outline: 3px solid var(--rust-on-dark); outline-offset: 2px; }
+  .tree-fold span { flex: 1; } .tree-fold small { font-weight: 500; color: var(--on-harbor-2); font-size: 12px; }
+  .tree-fold svg.icon { transition: transform .15s; } .tree-fold[aria-expanded="true"] svg.icon:last-child { transform: rotate(90deg); }
   .new-session {
     display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border: 0; border-radius: 14px; cursor: pointer;
     background: var(--rust-strong); color: #FFF8EE; font-weight: 750; font-size: 15px;
   }
   .new-session[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #FFF8EE; }
   .session {
-    all: unset; box-sizing: border-box; display: grid; gap: 4px; padding: 11px 13px; border-radius: 14px; cursor: pointer; min-width: 0; min-height: 56px;
+    all: unset; box-sizing: border-box; display: grid; gap: 5px; padding: 11px 13px; border-radius: 14px; cursor: pointer; min-width: 0; min-height: 56px;
     background: var(--paper); color: var(--ink); color-scheme: light; box-shadow: var(--shadow);
   }
+  .session.merged, .session.closed { background: var(--paper-2); box-shadow: none; }
   .session[aria-pressed="true"] { box-shadow: var(--shadow), inset 0 0 0 2px var(--rust); }
   .session:focus-visible { outline: 3px solid var(--rust-on-dark); outline-offset: 2px; }
   .session-top { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 700; font-size: 14.5px; }
   .session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .session-meta { display: flex; gap: 2px 10px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); min-width: 0; }
-  .session-meta .mono { font-family: var(--mono); overflow-wrap: anywhere; }
+  .session-branch { display: flex; align-items: center; gap: 5px; min-width: 0; font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+  .session-branch svg.icon { width: 13px; height: 13px; flex: none; }
+  .session-branch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+  .session-meta { display: flex; gap: 4px 8px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--ink-2); min-width: 0; }
+  .session-meta .chip { min-height: 22px; font-size: 11.5px; padding: 0 7px; }
   .session-col .more { justify-self: start; }
   .session-col .hint { margin: 4px 2px; font-size: 13px; color: var(--on-harbor-2); }
+
+  /* Merging, always in reach: the bar stays under the header while the conversation scrolls. */
+  .merge-slot { position: sticky; top: calc(var(--header-h, 66px) + 8px); z-index: 3; min-width: 0; }
+  .merge-slot:empty { margin-top: -10px; }
+  .merge-bar {
+    display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 10px 10px 10px 14px; border-radius: 16px; min-width: 0;
+    background: var(--paper); color: var(--ink); color-scheme: light; box-shadow: 0 10px 26px rgba(4, 16, 19, .45); border-left: 6px solid var(--paper-3);
+  }
+  .merge-bar.open { border-left-color: var(--teal); } .merge-bar.ok { border-left-color: var(--ok); }
+  .merge-bar.bad { border-left-color: var(--bad); } .merge-bar.warn { border-left-color: var(--warn); }
+  .merge-info { flex: 1 1 170px; min-width: 0; display: grid; gap: 4px; }
+  .merge-title { display: flex; align-items: center; gap: 7px; font-weight: 750; font-size: 15px; min-width: 0; }
+  .merge-title a { color: inherit; text-underline-offset: 3px; }
+  .merge-title svg.icon { flex: none; }
+  .merge-detail { display: flex; gap: 5px 8px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--ink-2); }
+  .merge-btn {
+    flex: 0 0 auto; min-height: 48px; padding: 0 22px; border-radius: 13px; border: 2px solid transparent; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; font-weight: 750;
+    background: var(--rust-strong); color: #FFF8EE;
+  }
+  .merge-btn.careful { background: var(--field); border-color: var(--bad); color: var(--bad-ink); }
+  .merge-btn.quiet { background: var(--field); border-color: var(--paper-line); color: var(--ink); font-size: 14.5px; }
+  .merge-btn:disabled { opacity: .55; cursor: default; }
+  .merge-btn.working svg.icon { animation: spin 1.2s linear infinite; }
+  .merge-error { flex: 1 0 100%; display: flex; gap: 6px; align-items: flex-start; font-size: 13px; color: var(--bad-ink); font-weight: 600; overflow-wrap: anywhere; }
+  .merge-error svg.icon { flex: none; margin-top: 2px; }
+  @media (max-width: 420px) { .merge-btn { flex: 1 1 100%; } }
 
   .chat-head { display: flex; gap: 6px 8px; flex-wrap: wrap; align-items: center; min-width: 0; }
   .chat-head h2 { margin: 0; flex: 1 1 200px; min-width: 0; font-size: 17px; line-height: 1.25; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -605,6 +677,8 @@
   // Sessions of the repository on screen; which one is selected (null: a new session) per repository.
   let chatData = null;
   const sessionsExpanded = new Set(), expandedText = new Set(), openAttach = new Set();
+  // Folded groups of the session tree that are open, and merges under way or refused, per session.
+  const openGroups = new Set(), mergeBusy = new Set(), mergeErrors = new Map();
   const nowSlot = $("now-slot");
   // How often a working agent is looked at.
   const LIVE_MS = 5000;
@@ -1312,12 +1386,16 @@
     ];
   }
 
-  /** The pull request of a session's branch, when the server opened one. */
-  function sessionPullRequest(p, s) {
-    const wt = s.branch ? p.worktrees.find((w) => w.branch === s.branch) : null;
-    const pr = wt && wt.publish ? wt.publish.pullRequest : null;
-    return pr && httpsOnly(pr.url) ? pr : null;
+  /** The pull request of a session's branch, as the server last saw it on the forge. */
+  const sessionPullRequest = (p, s) => (s && s.pullRequest) || null;
+  /** How a session's branch ended: still open, merged, or closed (its branch is gone, unmerged). */
+  function sessionKind(s) {
+    const pr = s.pullRequest;
+    if (pr && pr.state === "merged") return "merged";
+    return s.open && !(pr && pr.state === "closed") ? "open" : "closed";
   }
+  const CHECKS = { success: ["checks passed", "ok", "check"], failure: ["checks failed", "bad", "alert"], pending: ["checks running", "warn", "clock"] };
+  const prNoun = (p, short) => ((FORGE[p.forge] || {}).mr ? (short ? "MR" : "Merge request") : (short ? "PR" : "Pull request"));
 
   function sessionState(s) {
     const last = s.turns.length ? s.turns[s.turns.length - 1].runs : [];
@@ -1325,46 +1403,169 @@
     return active || last[last.length - 1] || null;
   }
 
-  /** The sessions to choose from; "New session" starts one on a branch of its own. */
-  function sessionColumn(p, sessions, chat) {
-    const expanded = sessionsExpanded.has(p.id);
-    const shown = expanded || sessions.length <= 8 ? sessions : sessions.slice(0, 7);
-    const row = (s) => {
-      const pr = sessionPullRequest(p, s), state = sessionState(s);
-      return el("button", { class: "session", type: "button", "aria-pressed": String(s.id === chat), onclick: () => go(repoHash(p.id, "s/" + s.id)) },
-        el("span", { class: "session-top" }, agentMark(s.agent), el("span", { class: "session-title" }, s.title), state ? runStatus(state) : null),
-        el("span", { class: "session-meta" },
-          s.branch ? el("span", { class: "mono" }, s.branch) : null,
-          s.sharesBranch ? el("span", null, "shared branch") : null,
-          pr ? el("span", null, (FORGE[p.forge] && FORGE[p.forge].mr ? "MR " : "PR ") + prRef(p, pr.number) + " " + pr.state) : null,
-          el("span", null, relative(s.updatedAt))));
+  /** A piece of a lane: 46 wide, 22 high; the rail is at x 11, the branch at x 33. */
+  function lanePiece(d, dot) {
+    const svg = svgEl("svg", { viewBox: "0 0 46 22" });
+    svg.append(svgEl("path", { d }));
+    if (dot) svg.append(svgEl("circle", { cx: dot[0], cy: dot[1], r: dot[2], class: dot[3] }));
+    return svg;
+  }
+
+  /**
+   * The drawing beside a session: its branch forks off main at the bottom, carries a dot per
+   * message (oldest lowest) and ends at the top: back in main when merged, an open tip while
+   * it can take messages, a stop when the branch is gone.
+   */
+  function lane(kind, turns, selected) {
+    const shown = turns.slice(-6), more = turns.length - shown.length;
+    const dot = (t) => {
+      const last = t.runs[t.runs.length - 1] || {};
+      const working = t.runs.some((r) => r.status === "queued" || r.status === "running");
+      return el("i", { class: working ? "run" : last.status === "failed" ? "bad" : "" });
     };
+    const end = kind === "merged" ? lanePiece("M33 22C33 9 11 14 11 3", [11, 3, 4, "solid"])
+      : kind === "closed" ? lanePiece("M33 22V13M28 13h10")
+      : lanePiece("M33 22V15", [33, 10, 4.5, "hole"]);
+    return el("span", { class: "lane " + kind + (selected ? " on" : ""), "aria-hidden": "true" },
+      end,
+      el("span", { class: "lane-mid" }, more > 0 ? el("b", null, "+" + more) : null, shown.map(dot)),
+      lanePiece("M11 22C11 9 33 14 33 0"));
+  }
+
+  /** One session in the tree: what was asked, where it works, and how far its pull request is. */
+  function sessionRow(p, s, chat) {
+    const pr = sessionPullRequest(p, s), state = sessionState(s), kind = sessionKind(s);
+    const checks = pr && pr.state === "open" ? CHECKS[s.ci] : null;
+    const words = kind === "merged" ? "merged " + relative(s.mergedAt || s.updatedAt) : relative(s.updatedAt);
+    return el("div", { class: "tree-row" },
+      lane(kind, s.turns, s.id === chat),
+      el("button", { class: "session " + kind, type: "button", "aria-pressed": String(s.id === chat), onclick: () => go(repoHash(p.id, "s/" + s.id)) },
+        el("span", { class: "session-top" }, agentMark(s.agent), el("span", { class: "session-title" }, s.title),
+          kind === "merged" ? chip("merged", "ok", "merge") : kind === "closed" && !s.busy ? chip("closed", null, "x") : state ? runStatus(state) : null),
+        s.branch ? el("span", { class: "session-branch", title: s.branch }, icon("branch"), el("span", null, el("bdi", null, s.branch))) : null,
+        el("span", { class: "session-meta" },
+          pr && kind !== "merged" ? chip(prNoun(p, true) + " " + prRef(p, pr.number) + (pr.state === "open" ? "" : " " + pr.state), pr.state === "open" ? "live" : null, "pr") : null,
+          checks ? chip(checks[0], checks[1], checks[2]) : null,
+          s.sharesBranch ? el("span", null, "shared branch") : null,
+          el("span", null, plural(s.turns.length, "message", "messages")),
+          el("span", null, words))));
+  }
+
+  /** A folded group of the tree: sessions whose branches are no longer open. */
+  function sessionGroup(p, key, label, note, sessions, chat) {
+    if (!sessions.length) return null;
+    const id = p.id + ":" + key, open = openGroups.has(id) || sessions.some((s) => s.id === chat);
     return [
-      el("button", { class: "new-session", type: "button", "aria-pressed": String(chat === "new"), onclick: () => go(repoHash(p.id, "new")) }, icon("plus"), "New session"),
-      sessions.length ? null : el("p", { class: "hint" }, p.server
-        ? "No sessions yet. A session here is a conversation with an agent that works on this server itself."
-        : "No sessions yet. A session is a conversation with an agent; each one works on its own branch of this repository."),
-      shown.map(row),
-      sessions.length > shown.length || expanded && sessions.length > 8
-        ? el("button", { class: "small-btn more", type: "button", onclick: () => {
-            if (expanded) sessionsExpanded.delete(p.id); else sessionsExpanded.add(p.id);
-            renderRepo();
-          } }, expanded ? "Show fewer" : "Show all " + sessions.length + " sessions")
-        : null,
+      el("div", { class: "tree-row" }, el("span", { class: "lane knot", "aria-hidden": "true" }, el("i")),
+        el("button", { class: "tree-fold", type: "button", "aria-expanded": String(open), onclick: () => {
+          if (open) openGroups.delete(id); else openGroups.add(id);
+          if (open && sessions.some((s) => s.id === chat)) go(repoHash(p.id, wideScreen.matches ? "new" : "")); else renderRepo();
+        } }, icon(key === "merged" ? "merge" : "x"), el("span", null, label + " · " + sessions.length, " ", el("small", null, note)), icon("chevron"))),
+      open ? sessions.map((s) => sessionRow(p, s, chat)) : null,
     ];
   }
 
-  /** Above the conversation: which session this is, its branch and its pull request. */
+  /**
+   * The sessions to choose from, drawn as the repository's branches: the default branch is the
+   * rail, "New session" starts a branch off it, and merged sessions fold away below.
+   */
+  function sessionColumn(p, sessions, chat) {
+    const by = { open: [], merged: [], closed: [] };
+    sessions.forEach((s) => by[sessionKind(s)].push(s));
+    by.merged.sort((a, b) => (b.mergedAt || b.updatedAt).localeCompare(a.mergedAt || a.updatedAt));
+    const expanded = sessionsExpanded.has(p.id);
+    const shown = expanded || by.open.length <= 8 ? by.open : by.open.slice(0, 7);
+    return el("div", { class: "tree" + (p.server ? " flat" : "") },
+      p.server ? null : el("div", { class: "tree-row" }, el("span", { class: "lane head", "aria-hidden": "true" }, el("i")),
+        el("div", { class: "tree-main" }, el("span", { class: "chip mono" }, icon("branch"), el("span", { class: "t" }, p.defaultBranch || "default branch")),
+          el("span", null, sessions.length ? plural(by.open.length, "open branch", "open branches") + (by.merged.length ? " · " + by.merged.length + " merged" : "") : "no session branches yet"))),
+      el("div", { class: "tree-row" }, lane("new", [], chat === "new"),
+        el("button", { class: "new-session", type: "button", "aria-pressed": String(chat === "new"), onclick: () => go(repoHash(p.id, "new")) }, icon("plus"), "New session")),
+      sessions.length ? null : el("div", { class: "tree-row" }, el("span", { class: "lane" }), el("p", { class: "hint" }, p.server
+        ? "No sessions yet. A session here is a conversation with an agent that works on this server itself."
+        : "No sessions yet. A session is a conversation with an agent; each one works on its own branch of this repository.")),
+      shown.map((s) => sessionRow(p, s, chat)),
+      by.open.length > shown.length || expanded && by.open.length > 8
+        ? el("div", { class: "tree-row" }, el("span", { class: "lane" }), el("button", { class: "small-btn more", type: "button", onclick: () => {
+            if (expanded) sessionsExpanded.delete(p.id); else sessionsExpanded.add(p.id);
+            renderRepo();
+          } }, expanded ? "Show fewer" : "Show all " + by.open.length + " open sessions"))
+        : null,
+      sessionGroup(p, "merged", "Merged", "in " + (p.defaultBranch || "the default branch"), by.merged, chat),
+      sessionGroup(p, "closed", "Closed", "branch removed, not merged", by.closed, chat),
+      p.server ? null : el("div", { class: "tree-row" }, el("span", { class: "lane foot", "aria-hidden": "true" }), el("span")));
+  }
+
+  /** Above the conversation: which session this is and its branch. Its pull request is in the merge bar. */
   function chatHead(p, session) {
-    const pr = session ? sessionPullRequest(p, session) : null;
     return [
       el("button", { class: "back", type: "button", onclick: () => go(repoHash(p.id)) }, icon("back"), "Sessions"),
       el("h2", null, session ? session.title : "New session"),
       session && session.branch ? el("span", { class: "chip mono" }, icon("branch"), el("span", { class: "t" }, session.branch)) : null,
       session && session.sharesBranch ? chip("shared with another session", "warn", "alert") : null,
-      pr ? el("a", { class: "chip " + (pr.state === "merged" || pr.state === "completed" ? "ok" : "running"), href: httpsOnly(pr.url), target: "_blank", rel: "noopener noreferrer" },
-        icon("pr"), el("span", { class: "t" }, (FORGE[p.forge] && FORGE[p.forge].mr ? "Merge request " : "Pull request ") + prRef(p, pr.number) + " · " + pr.state)) : null,
     ];
+  }
+
+  /** Opens the session's pull request, or merges it: at once, through the forge, which still applies its own rules. */
+  async function sessionAction(p, s, action) {
+    mergeBusy.add(s.id);
+    mergeErrors.delete(s.id);
+    renderRepo();
+    const result = await postJson("/api/projects/" + encodeURIComponent(p.id) + "/branches/" + action, { branch: s.branch });
+    mergeBusy.delete(s.id);
+    if (result.ok) toast(result.body.message);
+    else mergeErrors.set(s.id, result.body.error || "Failed (" + result.status + ")");
+    renderRepo();
+    loadRepo();
+  }
+
+  /**
+   * The bar that stays on top of an open session: how far its pull request is, what the checks
+   * say, and one large button for the next step. Merging asks nothing; the branch is removed after.
+   */
+  function mergeBar(p, s) {
+    if (!s || p.server || !s.branch) return null;
+    const pr = sessionPullRequest(p, s), kind = sessionKind(s), base = p.defaultBranch || "the default branch";
+    const working = mergeBusy.has(s.id), link = pr ? httpsOnly(pr.url) : null;
+    const button = (action, label, look, name, during) => el("button", {
+      class: "merge-btn " + (look || "") + (working ? " working" : ""), type: "button", disabled: working || s.busy,
+      title: s.busy ? "Wait until the agent is done" : null, onclick: () => sessionAction(p, s, action),
+    }, icon(working ? "loader" : name), working ? during : label);
+    const ref = pr ? prNoun(p) + " " + prRef(p, pr.number) : "";
+    const title = (name, text) => el("div", { class: "merge-title" }, icon(name),
+      link && pr ? el("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, text) : el("span", null, text));
+    const changes = plural(s.commits, "commit", "commits");
+    let tone = "", head, detail, action = null;
+    if (kind === "merged") {
+      tone = "ok"; head = title("merge", "Merged into " + base);
+      detail = [el("span", null, ref), el("span", null, relative(s.mergedAt || s.updatedAt)),
+        el("span", null, s.open ? "The branch is still on the server." : "The branch was removed. Start a new session for the next change.")];
+      if (s.open) action = button("merge", "Clean up", "quiet", "check", "Cleaning up");
+    } else if (pr && pr.state === "closed") {
+      head = title("x", ref + " was closed"); detail = [el("span", null, "It was closed on " + (FORGE[p.forge] ? FORGE[p.forge].label : "the forge") + " without merging.")];
+    } else if (kind === "closed") {
+      head = title("x", "Branch removed"); detail = [el("span", null, "This session's worktree is gone, so it can't be merged from here.")];
+    } else if (pr) {
+      const checks = CHECKS[s.ci];
+      tone = checks ? (checks[1] === "ok" ? "open" : checks[1]) : "open";
+      head = title("pr", ref);
+      detail = [checks ? chip(checks[0], checks[1], checks[2]) : chip("no checks reported", null, "clock"), el("span", null, changes + " into " + base)];
+      action = button("merge", checks && checks[1] !== "ok" ? "Merge anyway" : "Merge", checks && checks[1] !== "ok" ? "careful" : "", "merge", "Merging");
+    } else if (!s.commits) {
+      head = title("branch", "No changes yet"); detail = [el("span", null, "When the agent commits work, its " + prNoun(p).toLowerCase() + " shows here.")];
+    } else if (!p.forge) {
+      head = title("branch", changes + ", kept on the server");
+      detail = [el("span", null, "This repository has no GitHub, GitLab or Azure DevOps remote, so there is nothing to merge into.")];
+    } else {
+      tone = "open"; head = title("branch", changes + " not in a " + prNoun(p).toLowerCase() + " yet");
+      detail = [el("span", null, "Pushes the branch and opens it against " + base + ".")];
+      action = button("pull-request", "Open " + prNoun(p).toLowerCase(), "", "pr", "Opening");
+    }
+    const error = mergeErrors.get(s.id);
+    return el("div", { class: "merge-bar " + tone, role: "group", "aria-label": prNoun(p) },
+      el("div", { class: "merge-info" }, head, el("div", { class: "merge-detail" }, detail)),
+      action,
+      error ? el("div", { class: "merge-error", role: "alert" }, icon("alert"), el("span", null, error)) : null);
   }
 
   /** The selected session's conversation, or what a new session does. */
@@ -1449,6 +1650,7 @@
       review.replaceChildren(icon(state.review ? "check" : "plus"), "Cross-review");
       if (reviewer) review.title = AGENT[reviewer].label + " reviews the change, " + AGENT[agent].label + " addresses it";
       const blocked = s && s.busy ? AGENT[agent].label + " is still working on the last message. Send the next one when it's done."
+        : s && sessionKind(s) === "merged" ? "This session was merged and its branch removed. Start a new session for the next change."
         : s && !s.open ? "This session's worktree was removed, so it can't continue. Start a new session." : null;
       hint.textContent = blocked
         || (!ok.length ? "No coding agent is installed on the server." : null)
@@ -1573,7 +1775,7 @@
         icon("pr"), el("span", { class: "t" }, (mr ? "!" : "#") + pr.number + " " + pr.state)) : null,
       !pr && !pub.blocked ? act("pull-request", mr ? "Create MR" : "Create PR", "plus", "go") : null,
       open && !pub.blocked ? act("merge", "Merge", "check", null,
-        "Merge " + w.branch + " into " + (project.defaultBranch || "the default branch") + "? The forge's required checks and approvals still apply.") : null,
+        "Merge " + w.branch + " into " + (project.defaultBranch || "the default branch") + "? The forge's required checks and approvals still apply. After the merge the branch and its worktree are removed.") : null,
       pub.blocked ? el("span", { class: "note" }, pub.blocked) : null);
   }
 
@@ -1687,10 +1889,11 @@
       tabs: el("nav", { class: "subtabs", "aria-label": "Parts of this repository", hidden: !!p.server }),
       sessions: el("aside", { class: "session-col", "aria-label": "Sessions" }),
       head: el("div", { class: "chat-head" }),
+      merge: el("div", { class: "merge-slot" }),
       thread: el("div", { class: "thread", "aria-live": "polite" }),
       other: el("div", { class: "repo-part" }),
     };
-    view.layout = el("div", { class: "chat-layout" }, view.sessions, el("section", { class: "chat-col" }, view.head, view.thread, composer.node));
+    view.layout = el("div", { class: "chat-layout" }, view.sessions, el("section", { class: "chat-col" }, view.head, view.merge, view.thread, composer.node));
     repoTab.replaceChildren(
       el("button", { class: "back", type: "button", onclick: () => go("") }, icon("back"), "All repositories"),
       view.top,
@@ -1752,9 +1955,13 @@
       view.fresh = false;
       return;
     }
-    setPart(view, view.sessions, JSON.stringify([sessions.map((s) => [s.id, s.title, s.agent, s.branch, s.sharesBranch, s.updatedAt, sessionState(s), sessionPullRequest(p, s)]),
-      chat, sessionsExpanded.has(p.id), minute]), () => sessionColumn(p, sessions, chat));
-    setPart(view, view.head, JSON.stringify([session && [session.id, session.title, session.branch, session.sharesBranch, sessionPullRequest(p, session)]]), () => chatHead(p, session));
+    const turnMarks = (s) => s.turns.map((t) => t.runs.map((r) => r.status[0]).join(""));
+    setPart(view, view.sessions, JSON.stringify([sessions.map((s) => [s.id, s.title, s.agent, s.branch, s.sharesBranch, s.updatedAt, sessionState(s), s.pullRequest, s.ci, s.open, s.mergedAt, turnMarks(s)]),
+      chat, sessionsExpanded.has(p.id), [...openGroups], p.defaultBranch, minute]), () => sessionColumn(p, sessions, chat));
+    setPart(view, view.head, JSON.stringify([session && [session.id, session.title, session.branch, session.sharesBranch]]), () => chatHead(p, session));
+    document.documentElement.style.setProperty("--header-h", document.querySelector("header").offsetHeight + "px");
+    setPart(view, view.merge, JSON.stringify([session && [session.id, session.branch, session.pullRequest, session.ci, session.open, session.busy, session.commits, session.mergedAt,
+      mergeBusy.has(session.id), mergeErrors.get(session.id)], p.forge, p.defaultBranch, minute]), () => mergeBar(p, session));
     const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 140;
     view.thread.classList.toggle("intro", !session);
     const changed = setPart(view, view.thread, JSON.stringify([session, p.server, p.name, p.forge, session && session.busy ? liveLog : null, [...expandedText], needsSignIn(session ? session.agent : ""), session && session.busy ? beat : minute]),

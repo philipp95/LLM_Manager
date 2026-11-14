@@ -1,5 +1,6 @@
 package com.llmmanager.android.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,15 +9,14 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,7 +27,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,31 +38,56 @@ import com.llmmanager.android.data.Run
 import com.llmmanager.android.data.ScheduleResponse
 
 /**
- * Talk to the agents about this repository, in sessions. A new session works on a branch of its
+ * What the chat shows: talk to the agents about this repository, in sessions. A new session works on a branch of its
  * own; its next messages continue the same conversation there, and when the project has a forge
  * the branch's pull request is opened and then kept up to date.
  */
+class ChatScreen(
+    val project: Project,
+    val chats: ChatViewModel.State,
+    val schedule: ScheduleResponse?,
+    val selectedId: String?,
+    val select: (String?) -> Unit,
+) {
+    val sessions: List<ChatView> = chats.chats.takeIf { chats.projectId == project.id }.orEmpty()
+    val selected: ChatView? = sessions.firstOrNull { it.id == selectedId }
+}
+
+/** Opening a repository starts with a new session; picking one from the tree continues it. */
 @Composable
-fun ChatPanel(project: Project, chats: List<ChatView>?, schedule: ScheduleResponse?, sending: Boolean, actions: ChatActions) {
-    // Opening a repository starts with a new session; picking one from the list continues it.
+fun rememberChatScreen(project: Project, chats: ChatViewModel.State, schedule: ScheduleResponse?): ChatScreen {
     var selectedId by rememberSaveable(project.id) { mutableStateOf<String?>(null) }
-    val sessions = chats.orEmpty()
-    val selected = sessions.firstOrNull { it.id == selectedId }
-    Panel {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            PanelTitle("Sessions", Modifier.weight(1f))
-            Text(if (project.isServer) "Each session works on the server" else "Each session works on its own branch", color = Palette.ink2, fontSize = 12.5.sp)
+    return ChatScreen(project, chats, schedule, selectedId) { selectedId = it }
+}
+
+/**
+ * The chat's rows in a screen's list: the session tree, the selected session's merge bar, which
+ * stays at the top while its conversation scrolls, and the conversation with the message box.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+fun LazyListScope.chatItems(chat: ChatScreen, actions: ChatActions) {
+    val project = chat.project
+    val selected = chat.selected
+    item(key = "sessions") { SessionTree(project, chat.sessions, selected?.id, chat.select) }
+    if (selected != null && !project.isServer && selected.branch != null) {
+        stickyHeader(key = "merge") {
+            MergeBar(
+                project, selected, working = chat.chats.acting == selected.id,
+                error = chat.chats.actionError?.takeIf { it.chatId == selected.id }?.message,
+            ) { actions.onBranch(selected, it) }
         }
-        Spacer(Modifier.size(10.dp))
-        SessionList(project, sessions, selected?.id) { selectedId = it }
-        HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(vertical = 12.dp))
-        if (selected == null) {
-            Text(newSessionNote(project), color = Palette.ink2, fontSize = 13.5.sp)
-        } else {
-            Conversation(project, selected, schedule, actions)
+    }
+    item(key = "chat") {
+        Panel {
+            if (selected == null) {
+                PanelTitle("New session")
+                Text(newSessionNote(project), color = Palette.ink2, fontSize = 13.5.sp, modifier = Modifier.padding(top = 6.dp))
+            } else {
+                Conversation(project, selected, chat.schedule, actions)
+            }
+            HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(top = 14.dp, bottom = 12.dp))
+            Composer(project, ComposerTarget(chat.schedule, chat.sessions, selected), chat.chats.sending, actions) { sent -> chat.select(sent.id) }
         }
-        HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(top = 14.dp, bottom = 12.dp))
-        Composer(project, ComposerTarget(schedule, sessions, selected), sending, actions) { sent -> selectedId = sent.id }
     }
 }
 
@@ -73,22 +97,14 @@ private fun newSessionNote(project: Project): String = when {
     else -> "Your message starts a new session on a new branch."
 }
 
-/** A session's branch, its pull request, and its messages with their answers. */
+/** A session's branch and its messages with their answers; its pull request is in the merge bar above. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Conversation(project: Project, session: ChatView, schedule: ScheduleResponse?, actions: ChatActions) {
-    val uriHandler = LocalUriHandler.current
-    val pr = sessionPullRequest(project, session)
+    Text(session.title, color = Palette.ink, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Chip(workplace(project, session), mono = true)
         if (session.sharesBranch) Chip("shared with another session", ChipTone.Warn)
-    }
-    if (pr != null) {
-        TextButton(onClick = { uriHandler.openUri(pr.url) }, modifier = Modifier.heightIn(min = 32.dp)) {
-            Icon(Glyphs.pullRequest, contentDescription = null, modifier = Modifier.size(15.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("${if (project.forge == "gitlab") "Merge request" else "Pull request"} ${prRef(project.forge, pr.number)} · ${pr.state}", fontSize = 13.sp)
-        }
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {
         session.turns.takeLast(MAX_TURNS).forEach { turn ->

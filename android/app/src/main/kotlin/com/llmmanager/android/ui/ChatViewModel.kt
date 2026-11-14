@@ -31,7 +31,13 @@ class ChatViewModel(
         val chats: List<ChatView>? = null,
         val error: String? = null,
         val sending: Boolean = false,
+        /** The session whose pull request is being opened or merged right now. */
+        val acting: String? = null,
+        /** Why the last such step failed, shown in that session's merge bar. */
+        val actionError: ActionError? = null,
     )
+
+    data class ActionError(val chatId: String, val message: String)
 
     private val mutableState = MutableStateFlow(State())
     val state: StateFlow<State> = mutableState.asStateFlow()
@@ -77,6 +83,20 @@ class ChatViewModel(
             } else {
                 messages.send(describe(result))
             }
+        }
+    }
+
+    /** Opens [session]'s pull request or merges it, at once; the server and the forge decide whether it may. */
+    fun act(session: ChatView, action: String, onDone: () -> Unit) {
+        val target = server ?: return
+        val branch = session.branch ?: return
+        viewModelScope.launch {
+            mutableState.update { it.copy(acting = session.id, actionError = null) }
+            val result = credentials.call(target) { client.branchAction(target, it, session.projectId, action, branch) }
+            mutableState.update { it.copy(acting = null, actionError = if (result is ApiResult.Ok) null else ActionError(session.id, describe(result))) }
+            if (result is ApiResult.Ok) messages.send(result.value)
+            load(session.projectId)
+            onDone()
         }
     }
 }

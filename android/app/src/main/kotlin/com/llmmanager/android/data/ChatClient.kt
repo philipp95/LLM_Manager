@@ -14,4 +14,12 @@ class ChatClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         request(json, server, Call("POST", "/api/chats", json.encodeToString(ChatRequest.serializer(), message)), token) {
             json.decodeFromString(ChatView.serializer(), it)
         }
+
+    /** Opens the pull request of a session's [branch] (pull-request) or merges it (merge); returns the server's message. */
+    suspend fun branchAction(server: ServerAddress, token: String, projectId: String, action: String, branch: String): ApiResult<String> {
+        val body = json.encodeToString(BranchRequest.serializer(), BranchRequest(branch))
+        return request(json, server, Call("POST", "/api/projects/${encode(projectId)}/branches/${encode(action)}", body), token) {
+            json.decodeFromString(BranchResult.serializer(), it).message
+        }
+    }
 }
