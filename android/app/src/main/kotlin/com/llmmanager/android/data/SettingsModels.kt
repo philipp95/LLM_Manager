@@ -24,6 +24,8 @@ data class AgentSettings(
     val installed: Boolean = false,
     val enabled: Boolean = true,
     val model: String = "",
+    /** The models its CLI offers; empty when the server is older. */
+    val models: List<ModelOption> = emptyList(),
     val signedIn: Boolean = false,
     /** How it is signed in, e.g. "Claude Pro", "ChatGPT", "Google account", "API key". */
     val method: String? = null,

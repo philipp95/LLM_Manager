@@ -7,4 +7,6 @@ class Workspace(
     val commands: AgentCommands,
     val git: Git = Git(),
     val sandbox: AgentSandbox = AgentSandbox.disabled(),
+    /** Null when the server chat is turned off. */
+    val serverChat: ServerChat? = null,
 )

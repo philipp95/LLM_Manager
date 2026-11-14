@@ -20,6 +20,10 @@ data class AgentPreference(
     val model: String = "",
 )
 
+/** How a repository is kept on the home screen: pinned ones first, then by stars. */
+@Serializable
+data class RepoPreference(val pinned: Boolean = false, val stars: Int = 0)
+
 @Serializable
 data class Preferences(
     val profile: Profile = Profile(),
@@ -28,6 +32,8 @@ data class Preferences(
     val agents: Map<Agent, AgentPreference> = emptyMap(),
     /** Who a code host's token belongs to, as checked when it was saved, e.g. "gitlab:gitlab.com" to a user name. */
     val forgeAccounts: Map<String, String> = emptyMap(),
+    /** Pins and stars, by project id. */
+    val repos: Map<String, RepoPreference> = emptyMap(),
 )
 
 /** [Preferences] in `settings.json` in the state folder, written atomically. Nothing secret is kept here. */

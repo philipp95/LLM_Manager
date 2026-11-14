@@ -10,25 +10,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,7 +44,6 @@ fun AgentsPanel(agents: List<AgentSettings>, actions: SettingsActions) {
 @Composable
 private fun AgentRow(a: AgentSettings, actions: SettingsActions) {
     var confirmSignOut by remember { mutableStateOf(false) }
-    var model by rememberSaveable(a.agent, a.model) { mutableStateOf(a.model) }
     val label = agentLabel(a.agent)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -77,20 +71,11 @@ private fun AgentRow(a: AgentSettings, actions: SettingsActions) {
             else Button(onClick = { actions.onSignIn(a.agent) }) { Text(signInLabel) }
             if (a.signedIn) TextButton(onClick = { confirmSignOut = true }) { Text("Sign out", color = Palette.badInk) }
         }
-        Row(Modifier.fillMaxWidth().clickable { actions.onSaveAgent(a.agent, !a.enabled, model) }, verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = a.enabled, onCheckedChange = { actions.onSaveAgent(a.agent, it, model) })
+        Row(Modifier.fillMaxWidth().clickable { actions.onSaveAgent(a.agent, !a.enabled, a.model) }, verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = a.enabled, onCheckedChange = { actions.onSaveAgent(a.agent, it, a.model) })
             Text("Offer $label in the chat and in new jobs", color = Palette.ink, fontSize = 13.5.sp)
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = model, onValueChange = { model = it }, label = { Text("Model") }, placeholder = { Text("CLI default") },
-                singleLine = true, modifier = Modifier.weight(1f), textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp),
-                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-            )
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = { actions.onSaveAgent(a.agent, a.enabled, model) }, enabled = model != a.model) { Text("Save") }
-        }
-        Text("The name $label's --model option takes. Empty uses the CLI's default.", color = Palette.ink2, fontSize = 12.sp)
+        ModelPicker(label, a.model, a.models) { actions.onSaveAgent(a.agent, a.enabled, it) }
     }
     if (confirmSignOut) {
         AlertDialog(

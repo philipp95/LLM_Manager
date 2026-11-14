@@ -7,8 +7,12 @@ package com.llmmanager.server.api
  * Permissions are pinned here, never taken from the agents' own config:
  * - work: Claude may edit files and run only [claudeAllowedTools]; anything else is
  *   denied (print mode never prompts). Codex runs in its workspace-write sandbox,
- *   which confines writes to the worktree and has no network.
+ *   which confines writes to the worktree and has no network. Where that sandbox cannot
+ *   start but the server confines the run itself ([codexContained]), Codex runs without
+ *   its own sandbox inside the server's.
  * - review: read-only for both.
+ * - the server chat ([work] and [resume] with `server = true`): no restrictions. It exists
+ *   to change this machine, and is offered only when the server was started with it.
  */
 class AgentCommands(
     private val claude: String?,
@@ -20,27 +24,37 @@ class AgentCommands(
     /** The model chosen in Settings for an agent, already validated; null for the CLI's default. */
     private val model: (Agent) -> String? = { null },
 ) {
+    /**
+     * Whether the server itself confines Codex runs in place of Codex's own sandbox. Set once
+     * the sandbox is known, which in turn needs these commands for its self-test.
+     */
+    @Volatile
+    var codexContained: () -> Boolean = { false }
+
     fun available(agent: Agent): Boolean = binary(agent) != null
 
     /** A new session; Claude's id is chosen up front so it is known before the run ends. */
-    fun work(agent: Agent, newSessionId: String): List<String> = when (agent) {
-        Agent.CLAUDE -> claudeBase() + listOf("--session-id", newSessionId, "--permission-mode", "acceptEdits", "--allowedTools") + claudeAllowedTools
-        Agent.CODEX -> codexExec() + "-"
-        Agent.GEMINI -> geminiEdit(listOf("--session-id", newSessionId))
+    fun work(agent: Agent, newSessionId: String, server: Boolean = false): List<String> = when (agent) {
+        Agent.CLAUDE -> claudeBase + listOf("--session-id", newSessionId) + claudeTools(server)
+        Agent.CODEX -> codexExec(server) + "-"
+        Agent.GEMINI -> geminiEdit(listOf("--session-id", newSessionId), server)
     }
 
-    fun resume(agent: Agent, sessionId: String): List<String> = when (agent) {
-        Agent.CLAUDE -> claudeBase() + listOf("--resume", sessionId, "--permission-mode", "acceptEdits", "--allowedTools") + claudeAllowedTools
-        Agent.CODEX -> codexExec() + listOf("resume", sessionId, "-")
-        Agent.GEMINI -> geminiEdit(listOf("--resume", sessionId))
+    fun resume(agent: Agent, sessionId: String, server: Boolean = false): List<String> = when (agent) {
+        Agent.CLAUDE -> claudeBase + listOf("--resume", sessionId) + claudeTools(server)
+        Agent.CODEX -> codexExec(server) + listOf("resume", sessionId, "-")
+        Agent.GEMINI -> geminiEdit(listOf("--resume", sessionId), server)
     }
 
     /** Reviews [commit] without changing anything; the instructions arrive on stdin. */
     fun review(agent: Agent, commit: String): List<String> = when (agent) {
-        Agent.CLAUDE -> claudeBase() + listOf("--permission-mode", "default", "--allowedTools") + CLAUDE_REVIEW_TOOLS
-        Agent.CODEX -> codexCli + listOf("review", "-c", "sandbox_mode=\"read-only\"", "--commit", commit, "-")
+        Agent.CLAUDE -> claudeBase + listOf("--permission-mode", "default", "--allowedTools") + CLAUDE_REVIEW_TOOLS
+        Agent.CODEX -> {
+            val sandbox = if (codexContained()) CODEX_UNSANDBOXED else "read-only"
+            codexCli + listOf("review", "-c", "sandbox_mode=\"$sandbox\"", "--commit", commit, "-")
+        }
         // Plan mode is Gemini's read-only mode.
-        Agent.GEMINI -> geminiBase() + listOf("--approval-mode", "plan")
+        Agent.GEMINI -> geminiBase + listOf("--approval-mode", "plan")
     }
 
     /**
@@ -49,16 +63,26 @@ class AgentCommands(
      * "ask" means deny in headless mode. --skip-trust: run worktrees are new folders it has
      * not seen, created by this server from the user's own repositories.
      */
-    private fun geminiBase() =
-        listOf(required(Agent.GEMINI), "--output-format", "stream-json", "--skip-trust") + model(Agent.GEMINI)?.let { listOf("--model", it) }.orEmpty()
+    private val geminiBase: List<String>
+        get() = listOf(required(Agent.GEMINI), "--output-format", "stream-json", "--skip-trust") + model(Agent.GEMINI)?.let { listOf("--model", it) }.orEmpty()
 
-    private fun geminiEdit(session: List<String>) = geminiBase() + session + listOf("--approval-mode", "auto_edit") +
-        (geminiPolicyFile?.let { listOf("--policy", it) } ?: emptyList())
+    private fun geminiEdit(session: List<String>, server: Boolean) = geminiBase + session +
+        if (server) listOf("--approval-mode", "yolo")
+        else listOf("--approval-mode", "auto_edit") + (geminiPolicyFile?.let { listOf("--policy", it) } ?: emptyList())
 
-    private fun claudeBase() =
-        listOf(required(Agent.CLAUDE), "-p", "--output-format", "stream-json", "--verbose") + model(Agent.CLAUDE)?.let { listOf("--model", it) }.orEmpty()
+    private val claudeBase: List<String>
+        get() = listOf(required(Agent.CLAUDE), "-p", "--output-format", "stream-json", "--verbose") +
+            model(Agent.CLAUDE)?.let { listOf("--model", it) }.orEmpty()
 
-    private fun codexExec() = codexCli + listOf("exec", "--json", "--sandbox", "workspace-write")
+    private fun claudeTools(server: Boolean) =
+        listOf("--permission-mode", "acceptEdits", "--allowedTools") + if (server) CLAUDE_SERVER_TOOLS else claudeAllowedTools
+
+    /** The server chat starts in the home directory, which is not a git repository. */
+    private fun codexExec(server: Boolean) = codexCli + listOf("exec", "--json", "--sandbox") + when {
+        server -> listOf(CODEX_UNSANDBOXED, "--skip-git-repo-check")
+        codexContained() -> listOf(CODEX_UNSANDBOXED)
+        else -> listOf("workspace-write")
+    }
 
     /** Codex takes the model as a config override, which every subcommand accepts. */
     private val codexCli: List<String> get() = listOf(required(Agent.CODEX)) + model(Agent.CODEX)?.let { listOf("-c", "model=\"$it\"") }.orEmpty()
@@ -73,6 +97,8 @@ class AgentCommands(
     private fun required(agent: Agent) = checkNotNull(binary(agent)) { "${agent.label} CLI is not installed" }
 
     companion object {
+        private const val CODEX_UNSANDBOXED = "danger-full-access"
+        private val CLAUDE_SERVER_TOOLS = listOf("Read", "Glob", "Grep", "Edit", "Write", "Bash")
         /** Build, test and read-only git commands an unattended Claude run may use. */
         val DEFAULT_CLAUDE_TOOLS = listOf(
             "Read", "Glob", "Grep", "Edit", "Write",

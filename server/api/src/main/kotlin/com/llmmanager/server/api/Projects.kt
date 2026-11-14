@@ -13,6 +13,10 @@ data class ProjectsResponse(
     val analytics: Analytics,
     /** Present when an Android APK is available from [AndroidApp.url]. */
     val androidApp: AndroidApp? = null,
+    /** The Server chat is offered: an agent that may change the server machine itself. */
+    val serverChat: Boolean = false,
+    /** Repositories can be added by their address. */
+    val canClone: Boolean = false,
 )
 
 @Serializable
@@ -52,6 +56,10 @@ data class Project(
     val commitsPerDay: List<Int> = emptyList(),
     /** Pull request activity on the forge, when it has been read. */
     val insights: RepoInsights? = null,
+    /** Pinned to the top of the home screen. */
+    val pinned: Boolean = false,
+    /** 0 to 5; more stars sort higher. */
+    val stars: Int = 0,
 ) {
     @Serializable
     enum class Kind {

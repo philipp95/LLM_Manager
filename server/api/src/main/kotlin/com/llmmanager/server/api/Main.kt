@@ -44,8 +44,16 @@ class ApiServer : CliktCommand(name = "api") {
     ).multiple()
     private val agentSandbox by option(
         "--agent-sandbox",
-        help = "auto: sandbox agent runs with bubblewrap when it works; on: refuse runs that cannot be sandboxed; off: never",
+        help = "auto: sandbox agent runs with bubblewrap, or Landlock, when one works; on: refuse runs that cannot be sandboxed; off: never",
     ).choice("auto" to AgentSandbox.Mode.AUTO, "on" to AgentSandbox.Mode.ON, "off" to AgentSandbox.Mode.OFF).default(AgentSandbox.Mode.AUTO)
+    private val serverChatMode by option(
+        "--server-chat",
+        help = "on: offer the Server chat, whose agent may change this machine itself, unsandboxed; off: repository sessions only",
+    ).choice("on", "off").default("on")
+    private val cloneDir by option(
+        "--clone-dir",
+        help = "Folder that repositories added by URL are cloned into; add it to --projects as <folder>/* so they are found",
+    ).default("~/repos")
     private val pairingMode by option(
         "--pairing",
         help = "on: devices signed in to this server's Tailscale account pair without the access token; off: the token only",
@@ -58,7 +66,8 @@ class ApiServer : CliktCommand(name = "api") {
         val state = SecureFiles.privateDir(File(stateDir), tighten = true)
         val token = ApiToken.loadOrCreate(File(tokenFile))
         val sessions = TmuxSessions()
-        val scanner = ProjectScanner(projects.filter { it.isNotBlank() }, sessions = sessions)
+        // Repositories added by address land in the clone folder, so it is always looked in.
+        val scanner = ProjectScanner((projects.filter { it.isNotBlank() } + "$cloneDir/*").distinct(), sessions = sessions)
         val codexPath = codex ?: CodexLauncher.findCodex()
         val policy = File(state, "gemini-policy.toml").apply { writeText(AgentCommands.geminiPolicy()) }
         val preferences = PreferencesStore(state)
@@ -66,16 +75,17 @@ class ApiServer : CliktCommand(name = "api") {
             claude ?: CodexLauncher.findBinary("claude"), codexPath,
             gemini = gemini ?: CodexLauncher.findBinary("gemini"), geminiPolicyFile = policy.path, model = preferences::model,
         )
-        val sandbox = sandbox(state, policy, commands)
+        val sandbox = sandbox(state, policy, commands).also { commands.codexContained = it::replacesCodexSandbox }
         val launcher = CodexLauncher(
             scanner, sessions,
             CodexLauncher.Settings(File(codexWorktrees), codexPath, scriptDir = File(state, "sessions"), sandbox = sandbox),
         )
-        val workspace = Workspace(scanner, sessions, commands, sandbox = sandbox)
+        val workspace = Workspace(scanner, sessions, commands, sandbox = sandbox, serverChat = serverChat(state))
         val credentials = ForgeCredentials(File(tokenFile).absoluteFile.parentFile, CodexLauncher.findBinary("gh"))
         val accounts = AgentAccounts(commands::binary)
         val signIn = AgentSignIn(TmuxTerminals(), accounts, commands::binary, File(state, "sign-in"))
-        val settings = SettingsApi(preferences, accounts, signIn, ForgeAccounts(credentials, preferences))
+        val models = AgentModels(File(System.getProperty("user.home")), commands::binary)
+        val settings = SettingsApi(preferences, accounts, signIn, ForgeAccounts(credentials, preferences), models)
         val store = StateStore(state).also {
             it.pruneRunDirs()
             it.adoptIntoSessions()
@@ -89,25 +99,45 @@ class ApiServer : CliktCommand(name = "api") {
         log.info("Codex: {}. Token in {}. State in {}. Answering for {}", codexPath ?: "not found", tokenFile, stateDir, hosts)
         log.info("Pairing: {}", if (pairing != null) "devices of this server's Tailscale account pair without the token" else "off")
         embeddedServer(Netty, port = port, host = address.hostAddress) {
-            val services = DashboardServices(launcher, ApkFile(File(apk)), schedule, insights, pairing, settings = settings)
+            val services = DashboardServices(
+                launcher, ApkFile(File(apk)), schedule, insights, pairing, settings = settings,
+                cloner = RepoCloner(File(ProjectScanner.expandHome(cloneDir)), credentials, scanner), serverChat = workspace.serverChat != null,
+            )
             dashboardModule(scanner, token, services, allowedHosts = hosts)
         }.start(wait = true)
     }
 
-    /** Agent containment: bubblewrap with secrets hidden, when it is installed and passes its self-test. */
+    /** The server chat, with what its agent should know about this machine; null when turned off. */
+    private fun serverChat(state: File): ServerChat? {
+        if (serverChatMode != "on") return null
+        val home = File(System.getProperty("user.home"))
+        return ServerChat(
+            home,
+            listOf(
+                "The server's user is ${System.getProperty("user.name")}; this chat starts in the home directory $home.",
+                "LLM Manager was started in ${File("").absolutePath} on port $port; when that is a checkout, it is LLM Manager's own code.",
+                "Repositories are looked for in: ${projects.joinToString()}. New ones are cloned into $cloneDir.",
+                "Sessions work in worktrees under $runWorktrees. The server keeps its state in $state and its API token in $tokenFile; do not print the token.",
+                "Agent runs, this one too, are tmux sessions named run-<id>; they outlive a restart of the server.",
+            ),
+        )
+    }
+
+    /**
+     * Agent containment with secrets hidden: bubblewrap when it is installed and passes its
+     * self-test, otherwise Landlock when the kernel offers it.
+     */
     private fun sandbox(state: File, policy: File, commands: AgentCommands): AgentSandbox {
         val home = File(System.getProperty("user.home"))
         val uid = runCatching { java.nio.file.Files.getAttribute(java.nio.file.Path.of("/proc/self"), "unix:uid") as Int }.getOrNull()?.toLong()
-        val profile = { bwrap: String ->
-            AgentSandbox.Profile(
-                bwrap, home,
-                hiddenServerPaths = listOf(state, File(tokenFile).absoluteFile.parentFile),
-                visible = listOf(policy),
-                uid = uid,
-            )
-        }
+        val hidden = listOf(state, File(tokenFile).absoluteFile.parentFile)
+        val profile = { bwrap: String -> AgentSandbox.Profile(bwrap, home, hiddenServerPaths = hidden, visible = listOf(policy), uid = uid) }
+        val python = CodexLauncher.findBinary("python3")
+        val helper = if (agentSandbox == AgentSandbox.Mode.OFF) null else LandlockProfile.install(state)
+        val landlock = if (python == null || helper == null) null
+        else LandlockProfile(LandlockProfile.launcher(python, helper), home, hidden, listOf(policy), uid)
         val agents = Agent.entries.associateWith { commands.binary(it) }
-        return AgentSandbox.detect(agentSandbox, profile, agents, File(state, "sandbox-check"))
+        return AgentSandbox.detect(agentSandbox, AgentSandbox.Means(profile, fallback = landlock), agents, File(state, "sandbox-check"))
     }
 
     /** Scheduling and publishing: persistent jobs and runs, ticking in the background for the server's lifetime. */

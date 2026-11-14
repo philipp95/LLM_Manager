@@ -146,6 +146,7 @@ private fun reviewerFor(agent: String, available: List<String>): String? {
 
 private fun composerHint(project: Project, available: List<String>, session: ChatView?, shared: ChatView?): String = when {
     available.isEmpty() -> "No coding agent is installed on the server."
+    project.isServer -> if (session != null) "Continues this server session." else "Starts a new server session. It is not confined to a repository."
     session != null ->
         "Continues this session on ${session.branch ?: "its branch"}" + (if (project.forge != null) "; its pull request is updated when it's done." else ".")
     shared != null -> "Works on ${shared.branch} together with “${shared.title.take(CHOICE_TITLE)}”: their runs take turns, and both change that branch."

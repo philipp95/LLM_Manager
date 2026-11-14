@@ -127,7 +127,10 @@ private fun Route.runRoutes(api: ScheduleApi, access: Access) {
             return@get
         }
         val events = File(api.store.runDir(run.id), "events.jsonl")
-        call.respond(RunLog(run, withContext(Dispatchers.IO) { RunActivity.activity(run.agent, run.stage, events) }))
+        // `tail` asks for only the last few steps: what a chat shows while its agent is working.
+        val max = call.request.queryParameters["tail"]?.toIntOrNull()?.coerceIn(1, MAX_ACTIVITY) ?: MAX_ACTIVITY
+        call.respond(RunLog(run, withContext(Dispatchers.IO) { RunActivity.activity(run.agent, run.stage, events, max) }))
     }
 }
 
+private const val MAX_ACTIVITY = 150

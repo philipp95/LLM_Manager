@@ -81,26 +81,39 @@ class ChatService(
     /** The project's sessions, most recently active first. */
     fun list(projectId: String): List<ChatView> = history.list(projectId)
 
+    /** The sessions an agent is working on now, in any project; each with only its latest message. */
+    fun active(): List<ChatView> = history.active()
+
     fun send(request: ChatRequest): Outcome {
-        val located = workspace.scanner.locate(request.projectId) ?: return Outcome.Invalid("Unknown project")
+        val server = request.projectId == ServerChat.PROJECT_ID
+        val projectName = if (server) ServerChat.PROJECT_NAME.takeIf { workspace.serverChat != null }
+        else workspace.scanner.locate(request.projectId)?.project?.name
+        projectName ?: return Outcome.Invalid(if (server) "The server chat is turned off on this server" else "Unknown project")
         val prompt = request.prompt.trim()
-        val chatRuns = request.chatId?.let { id -> history.runsOf(request.projectId, id) }
-        val planned = when {
-            prompt.isEmpty() -> Planned.Refused("Write a message first")
-            prompt.length > MAX_PROMPT -> Planned.Refused("The message is too long (max $MAX_PROMPT characters)")
-            chatRuns != null && chatRuns.isEmpty() -> Planned.Refused("Unknown session")
-            chatRuns != null -> followUp(chatRuns)
-            else -> start(request)
-        }.let { if (it is Planned.Ready) reviewProblem(it.plan.agent, request.reviewer)?.let(Planned::Refused) ?: it else it }
-        return when (planned) {
+        return when (val planned = plan(request, prompt, server)) {
             is Planned.Refused -> Outcome.Invalid(planned.reason)
             is Planned.Ready -> {
-                store.putJob(job(request, located.project.name, prompt, planned.plan))
+                // The server chat is not a repository: there is nothing to push.
+                store.putJob(job(request.copy(publish = request.publish && !server), projectName, prompt, planned.plan))
                 scheduler.tick()
                 pruneChatJobs()
                 Outcome.Ok(list(request.projectId).first { it.id == planned.plan.chatId })
             }
         }
+    }
+
+    private fun plan(request: ChatRequest, prompt: String, server: Boolean): Planned {
+        val chatRuns = request.chatId?.let { id -> history.runsOf(request.projectId, id) }
+        val planned = when {
+            prompt.isEmpty() -> Planned.Refused("Write a message first")
+            prompt.length > MAX_PROMPT -> Planned.Refused("The message is too long (max $MAX_PROMPT characters)")
+            server && (request.reviewer != null || request.sameBranchAs != null) -> Planned.Refused("The server chat has no branches and no review")
+            chatRuns != null && chatRuns.isEmpty() -> Planned.Refused("Unknown session")
+            chatRuns != null -> followUp(chatRuns)
+            else -> start(request)
+        }
+        val problem = (planned as? Planned.Ready)?.let { reviewProblem(it.plan.agent, request.reviewer) }
+        return if (problem != null) Planned.Refused(problem) else planned
     }
 
     /** The next message of a session: resume its agent session in its worktree, once the last message is done. */
@@ -110,9 +123,10 @@ class ChatService(
         val worktree = runs.sortedByDescending { it.createdAt }.firstNotNullOfOrNull { it.worktree }
         val session = runs.filter { it.agent == agent && it.sessionId != null && it.worktree == worktree && it.status in RESUMABLE }
             .maxByOrNull { it.createdAt }
+        val unavailable = unavailable(agent)
         return when {
             runs.any { !it.status.finished } -> Planned.Refused("${agent.label} is still working on the last message in this session")
-            !available(agent) -> Planned.Refused(unavailable(agent))
+            unavailable != null -> Planned.Refused(unavailable)
             // Its first message never got as far as a worktree: start it now.
             worktree == null -> Planned.Ready(Plan(agent, chatId, resume = null, worktree = null, context = history.context(runs)))
             !File(worktree).isDirectory -> Planned.Refused("This session's worktree was removed; start a new session")
@@ -128,8 +142,12 @@ class ChatService(
         val shared = request.sameBranchAs?.let { id ->
             history.runsOf(request.projectId, id).sortedByDescending { it.createdAt }.firstNotNullOfOrNull { it.worktree }
         }
+        val unavailable = unavailable(agent)
         return when {
-            !available(agent) -> Planned.Refused(unavailable(agent))
+            unavailable != null -> Planned.Refused(unavailable)
+            // Server chat sessions all work in the server user's home, so they take turns there.
+            request.projectId == ServerChat.PROJECT_ID ->
+                Planned.Ready(Plan(agent, newChatId(), resume = null, worktree = workspace.serverChat?.home?.path, context = null))
             request.sameBranchAs == null -> Planned.Ready(Plan(agent, newChatId(), resume = null, worktree = null, context = null))
             shared == null || !File(shared).isDirectory -> Planned.Refused("That session's branch is no longer checked out")
             else -> Planned.Ready(Plan(agent, newChatId(), resume = null, worktree = shared, context = null))
@@ -156,10 +174,12 @@ class ChatService(
         else -> null
     }
 
-    private fun available(agent: Agent) = workspace.commands.available(agent) && choices.enabled(agent)
-
-    private fun unavailable(agent: Agent) =
-        if (!workspace.commands.available(agent)) "${agent.label} CLI is not installed on the server" else "${agent.label} is turned off in Settings"
+    /** Why [agent] cannot be asked; null when it can. */
+    private fun unavailable(agent: Agent): String? = when {
+        !workspace.commands.available(agent) -> "${agent.label} CLI is not installed on the server"
+        !choices.enabled(agent) -> "${agent.label} is turned off in Settings"
+        else -> null
+    }
 
     /** A chat message's job is only needed while its runs are in the history. */
     private fun pruneChatJobs() {
@@ -187,6 +207,12 @@ private class ChatHistory(private val store: StateStore) {
             view(id, chatRuns, sharesBranch = branch != null && branches.any { (other, b) -> other != id && b == branch })
         }.sortedByDescending { it.updatedAt }
     }
+
+    /** Sessions with a message still being worked on, most recently active first: what the home screen shows. */
+    fun active(): List<ChatView> =
+        store.runs().filter { it.chatId != null && !it.status.finished }.map { it.projectId }.distinct()
+            .flatMap(::list).filter { it.busy }
+            .map { it.copy(turns = it.turns.takeLast(1)) }.sortedByDescending { it.updatedAt }
 
     fun runsOf(projectId: String, chatId: String) = store.runs().filter { it.projectId == projectId && it.chatId == chatId }
 

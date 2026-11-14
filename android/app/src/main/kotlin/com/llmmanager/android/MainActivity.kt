@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.llmmanager.android.data.ChatClient
+import com.llmmanager.android.data.RepoClient
 import com.llmmanager.android.data.Credentials
 import com.llmmanager.android.data.ServerClient
 import com.llmmanager.android.data.SettingsClient
@@ -18,6 +19,7 @@ import com.llmmanager.android.ui.ChatViewModel
 import com.llmmanager.android.ui.DashboardScreen
 import com.llmmanager.android.ui.DashboardViewModel
 import com.llmmanager.android.ui.LlmManagerTheme
+import com.llmmanager.android.ui.ReposViewModel
 import com.llmmanager.android.ui.ScheduleViewModel
 import com.llmmanager.android.ui.SettingsViewModel
 import com.llmmanager.android.ui.SignInViewModel
@@ -35,6 +37,7 @@ class MainActivity : ComponentActivity() {
         val credentials = Credentials(settings, client)
         val settingsClient = SettingsClient()
         val chatClient = ChatClient()
+        val repoClient = RepoClient()
         setContent {
             LlmManagerTheme {
                 val viewModel: DashboardViewModel = viewModel(
@@ -54,7 +57,10 @@ class MainActivity : ComponentActivity() {
                 val chatViewModel: ChatViewModel = viewModel(
                     factory = viewModelFactory { initializer { ChatViewModel(settings, chatClient, credentials) } },
                 )
-                DashboardScreen(ViewModels(viewModel, scheduleViewModel, settingsViewModel, signInViewModel, chatViewModel))
+                val reposViewModel: ReposViewModel = viewModel(
+                    factory = viewModelFactory { initializer { ReposViewModel(settings, repoClient, credentials) } },
+                )
+                DashboardScreen(ViewModels(viewModel, scheduleViewModel, settingsViewModel, signInViewModel, chatViewModel, reposViewModel))
             }
         }
     }

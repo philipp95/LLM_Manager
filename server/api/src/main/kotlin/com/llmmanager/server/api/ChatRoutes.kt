@@ -9,11 +9,15 @@ import io.ktor.server.routing.post
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** The repository chat's sessions: list them, start one, or send the next message in one. */
+/** The repository chat's sessions: list them, list the ones being worked on, start one, or send the next message in one. */
 fun Route.chatRoutes(chats: ChatService, access: Access, onChange: (projectId: String) -> Unit) {
     get("/api/projects/{id}/chats") {
         if (!call.authorized(access)) return@get
         call.respond(ChatsResponse(withContext(Dispatchers.IO) { chats.list(call.parameters["id"].orEmpty()) }))
+    }
+    get("/api/chats/active") {
+        if (!call.authorized(access)) return@get
+        call.respond(ChatsResponse(withContext(Dispatchers.IO) { chats.active() }))
     }
     post("/api/chats") {
         if (!call.authorized(access)) return@post

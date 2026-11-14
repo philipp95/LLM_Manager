@@ -8,6 +8,7 @@ import com.llmmanager.android.data.ChatRequest
 import com.llmmanager.android.data.ChatView
 import com.llmmanager.android.data.ScheduleResponse
 import com.llmmanager.android.data.Project
+import com.llmmanager.android.data.RepoPreference
 import com.llmmanager.android.data.Run
 
 /** What the chat needs from the screen around it. */
@@ -38,7 +39,23 @@ class ViewModels(
     val settings: SettingsViewModel,
     val signIn: SignInViewModel,
     val chats: ChatViewModel,
+    val repos: ReposViewModel,
 )
+
+/** What the home screen can do, routed to the view models by the caller. */
+class HomeActions(
+    val onRetry: () -> Unit,
+    val onSettings: () -> Unit,
+    /** Opens a repository by its id, or the Server chat by [SERVER_ID]. */
+    val onOpen: (String) -> Unit,
+    val onUpdate: (AndroidApp) -> Unit,
+    val onPrefer: (Project, RepoPreference) -> Unit,
+    /** Adds a repository by its address; the callback runs once the server has started cloning. */
+    val onAdd: (url: String, onStarted: () -> Unit) -> Unit,
+)
+
+/** The id the server gives its Server chat, where a project's id goes. */
+const val SERVER_ID = "server"
 
 /** What the sign-in pop-up can do, routed to [SignInViewModel] by the caller. */
 class SignInActions(

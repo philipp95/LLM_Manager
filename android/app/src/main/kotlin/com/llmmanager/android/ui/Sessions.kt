@@ -44,7 +44,7 @@ fun SessionList(project: Project, sessions: List<ChatView>, selected: String?, o
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SessionRow(selected == null, onClick = { onSelect(null) }) {
             Text("+  New session", color = Palette.rustStrong, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text("Starts on a branch of its own", color = Palette.ink2, fontSize = 12.sp)
+            Text(if (project.isServer) "Works on the server itself" else "Starts on a branch of its own", color = Palette.ink2, fontSize = 12.sp)
         }
         shown.forEach { session ->
             SessionRow(session.id == selected, onClick = { onSelect(session.id) }) {
@@ -61,7 +61,7 @@ fun SessionList(project: Project, sessions: List<ChatView>, selected: String?, o
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(session.branch ?: "new branch", color = Palette.ink2, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    Text(workplace(project, session), color = Palette.ink2, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                     if (session.sharesBranch) Text("shared branch", color = Palette.warnInk, fontSize = 12.sp)
                     sessionPullRequest(project, session)?.let { pr ->
                         val kind = if (project.forge == "gitlab") "MR" else "PR"

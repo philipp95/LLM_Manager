@@ -94,8 +94,19 @@ security model, including the admin steps it relies on, is in
 
 ### Repositories, chat and pull requests
 
-The **Repos** tab is a grid of tiles, one per repository: the forge (GitHub,
-GitLab or Azure DevOps), the name, the first sentence of the README on the
+The **Repos** tab shows the repositories as large cards, at most two side by
+side (one on a phone); scroll for the rest. Pin a card to keep it at the top and
+give it zero to five stars: pinned cards come first, then the most stars. **Add a
+repository** takes the `https://` address of a GitHub, GitLab or Azure DevOps
+repository; the server clones it in the background into `--clone-dir` (default
+`~/repos`), with the token saved for that host in Settings when it is private,
+and the card appears when the clone is done.
+
+A session can change only its own repository. To change the server itself there
+is the **Server chat** at the top of the tab: its agent works as the server's
+user, without a sandbox, and is labelled that way. `--server-chat off` removes it.
+
+Each card shows the forge (GitHub, GitLab or Azure DevOps), the name, the first sentence of the README on the
 default branch, the latest merged pull request (number, author, the agent that
 made it and its CI/CD result), the past week's merged and open pull requests,
 and a link to the repository on its forge.
@@ -181,8 +192,8 @@ chosen weekday at a time. Each job is one of:
   worktree (never your main checkout), with an optional message.
 
 Runs execute unattended with a minimal environment (no SSH agent, forge tokens
-or other agents' keys) and, when bubblewrap is installed, inside an OS sandbox
-that hides secrets and leaves only the worktree writable; the Schedule tab shows
+or other agents' keys) and inside an OS sandbox (bubblewrap when installed,
+otherwise Landlock) that hides secrets and leaves only the worktree writable; the Schedule tab shows
 which applies. They work in a new `run/<project>-<time>` branch and worktree
 under `~/agent-work/runs/`, inside a tmux session `run-<id>` (attachable, and
 surviving server restarts). Permissions are pinned on the command line:
@@ -239,7 +250,7 @@ The **Settings** tab, on the page and in the app, holds:
 - **Agents**: whether each CLI is signed in on the server (`claude auth status`,
   `codex login status`, Gemini's own files), signing in, switching accounts and
   signing out, an API key instead of an account (Codex, Gemini), whether the chat
-  and new jobs offer the agent, and its model (passed as `--model`; for Codex as
+  and new jobs offer the agent, and its default model, picked from a list (passed as `--model`; for Codex as
   `-c model="…"`).
 - **Code hosts**: GitHub through the `gh` CLI (sign in with a token, sign out),
   and tokens for GitLab (per host) and Azure DevOps. Each token is checked with
@@ -355,6 +366,6 @@ coding agents to that single library. Skills are loaded as needed for each task.
 See [environment setup](docs/environment-setup.md) and the
 [architecture status](docs/architecture-decision.md), and the
 [security model](docs/security.md). Worktrees isolate edits, not OS permissions:
-agent runs are contained by the OS only when bubblewrap is installed (see the
-security model). Per-device identity, approvals and durable audit storage remain
+agent runs are contained by the OS with bubblewrap or, without it, Landlock (see
+the security model). Per-device identity, approvals and durable audit storage remain
 future work.

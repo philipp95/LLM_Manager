@@ -13,6 +13,10 @@ data class ProjectsResponse(
     val analytics: Analytics? = null,
     /** The APK the server offers, when it has one. */
     val androidApp: AndroidApp? = null,
+    /** The server offers its Server chat, whose agent may change the server itself. */
+    val serverChat: Boolean = false,
+    /** Repositories can be added by their address. */
+    val canClone: Boolean = false,
 )
 
 /** The app build the server offers for download; its version decides whether to offer an update. */
@@ -66,6 +70,9 @@ data class Project(
     val commitsPerDay: List<Int> = emptyList(),
     /** Pull request activity on the forge, once the server has read it. */
     val insights: RepoInsights? = null,
+    val pinned: Boolean = false,
+    /** 0 to 5; more stars sort higher. */
+    val stars: Int = 0,
 )
 
 /** A pull request (GitLab: merge request) as the dashboard shows it. */

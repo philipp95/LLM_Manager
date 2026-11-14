@@ -19,6 +19,8 @@ class SettingsApi(
     val accounts: AgentAccounts,
     val signIn: AgentSignIn,
     val forges: ForgeAccounts? = null,
+    /** The models to choose from, per agent. */
+    val models: AgentModels? = null,
 )
 
 /** One agent on the settings page: its preferences and how its CLI is signed in. */
@@ -35,6 +37,8 @@ data class AgentSettings(
     val apiKey: Boolean,
     /** A sign-in in progress, so the pop-up can pick up where it was. */
     val signIn: SignInView? = null,
+    /** The models to choose from; the saved one is among them. An empty [model] is the CLI's own default. */
+    val models: List<ModelOption> = emptyList(),
 )
 
 @Serializable
@@ -166,9 +170,13 @@ fun SettingsApi.view(message: String? = null): SettingsResponse {
     val saved = preferences.get()
     val agents = Agent.entries.map { agent ->
         val status = accounts.status(agent)
+        val model = saved.agents[agent]?.model.orEmpty()
+        val offered = models?.options(agent).orEmpty()
         AgentSettings(
-            agent, status.installed, preferences.enabled(agent), saved.agents[agent]?.model.orEmpty(),
+            agent, status.installed, preferences.enabled(agent), model,
             status.signedIn, status.method, status.account, apiKey = accounts.takesApiKey(agent), signIn = signIn.active(agent),
+            // A model typed earlier, or one the CLI no longer lists, stays selectable.
+            models = if (model.isEmpty() || offered.any { it.id == model }) offered else offered + ModelOption(model, model, "Saved earlier"),
         )
     }
     return SettingsResponse(saved.profile, saved.defaultAgent, agents, forges?.list().orEmpty(), message)

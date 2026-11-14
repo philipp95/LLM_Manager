@@ -48,6 +48,10 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 | Agent permissions pinned on the command line: edits plus an allowlist of build/test/read-only git commands (Claude, Gemini policy), Codex's workspace-write sandbox; reviews read-only | `AgentCommands` |
 | Agents start with a minimal environment: no `SSH_AUTH_SOCK`, `GH_TOKEN`, tmux/D-Bus variables or other agents' keys | `AgentEnvironment` |
 | With bubblewrap: read-only root; secrets, other agents' logins and runtime sockets hidden; only the worktree, the agent's own state and build caches writable; agent config (hooks, settings, MCP servers) read-only | `AgentSandbox` |
+| Without a working bubblewrap: Landlock, the kernel's unprivileged sandbox, through a packaged helper. Only the worktree, the agent's own state, build caches, `/tmp` and `/dev` are writable; this server's state, credentials, keys and the other agents' logins are unreadable; Unix sockets (tmux, D-Bus, systemd, Docker) are refused by a seccomp filter. Self-tested at startup with a write outside the worktree that must fail | `LandlockProfile`, `sandbox/landlock.py` |
+| A repository session changes only its own repository: its agent starts in that session's worktree, the sandbox makes everything else read-only, and the briefing says so. Work on anything else is refused and pointed to that repository's chat | `ChatService`, `AgentSandbox` |
+| The Server chat is the one exception, set apart and labelled "Unconfined" in the page and the app: its agent works as the server's user with no sandbox, to change the server itself. `--server-chat off` removes it | `ServerChat`, `Workspace` |
+| A repository added by address is never cloned from what was typed: the address is only parsed into a forge (GitHub, GitLab, Azure DevOps), an owner and a repository, and the clone address is rebuilt as `https://` from those checked parts, so nothing typed reaches git as an option, another protocol or another host. The clone lands inside `--clone-dir`, and the token reaches git through the environment, never argv | `RepoCloner` |
 | Server-side git never runs repository-defined programs (fsmonitor, hooks, signing, `ext::`), and runs inside a linked worktree only while its `.git` link points into the repository | `Git.HARDENING`, `WorktreeGuard` |
 | Publishing only for agent branches; pushes never forced; merges through the forge's API so its checks and approvals apply | `BranchService` |
 | A chat message may ask for publishing; the server then pushes that run's own branch and opens a pull request after the run (and its review) finished, on a separate thread, never the default branch | `Scheduler` (`FollowUps`), `BranchService` |
@@ -59,8 +63,8 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 
 ## Admin steps this account cannot do itself
 
-1. **Install bubblewrap** so agent runs are contained:
-   `sudo apt install bubblewrap`. With the default `--agent-sandbox auto`, the next
+1. **Install bubblewrap** for the stronger containment (without it the server falls back
+   to Landlock, see the residual risks): `sudo apt install bubblewrap`. With the default `--agent-sandbox auto`, the next
    server start self-tests the profile with each agent's `--version` and sandboxes the
    agents that pass. The Schedule tab shows the result. Use `--agent-sandbox on` to
    refuse runs that cannot be sandboxed.
@@ -76,13 +80,21 @@ The phone (web page or app) steers agents that edit those repositories, unattend
   DevOps organisation-scoped, Code read & write). Global Azure DevOps PATs stop working
   on 1 December 2026.
 - **Repositories**: allowed build commands run the repository's own build scripts.
-  Without bubblewrap, a run can do anything this account can.
+  Without bubblewrap or Landlock, a run can do anything this account can.
+- **Server chat**: use it only for work on the server itself. It is as powerful as an SSH
+  session of this account; start with `--server-chat off` if the phone should not have that.
 
 ## Residual risks
 
-- **No OS sandbox until bubblewrap is installed.** Until then the environment allowlist
-  and permission pinning reduce exposure, but a run that executes build scripts can read
-  every file this account can read.
+- **Landlock is weaker than bubblewrap.** Where bubblewrap is missing or may not create
+  its namespaces, runs are confined with Landlock: the agent's own configuration (hooks,
+  settings, MCP servers) stays writable, `/tmp` is shared with the rest of the machine, and
+  a file created later next to a hidden one is unreadable until the next run. With neither,
+  only the environment allowlist and permission pinning apply, and a run that executes
+  build scripts can read every file this account can read.
+- **The Server chat is unconfined by design.** Whoever holds the access token or a paired
+  device can have an agent run any command as the server's user. Its briefing tells the
+  agent not to print the API token, which is advice, not a control.
 - **Network access is not restricted** for agents, even when sandboxed: they need their
   model APIs. A run can send anything it can read to the internet.
 - **Build caches are writable** inside the sandbox (`~/.gradle`, `~/.npm`, ...), so a
@@ -96,5 +108,6 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 - **API access includes the agents' and code hosts' sign-ins.** Whoever holds the access token
   or a paired device can sign the agent CLIs in or out, switch their accounts and replace code
   host tokens on the server (never read them). That is the same trust as starting agent runs.
-- **The sandbox profile is untested on this machine** because bubblewrap is not installed;
-  it is unit-tested as an argument list and self-tested at startup before use.
+- **The bubblewrap profile is untested on this machine** because bubblewrap is not installed;
+  it is unit-tested as an argument list and self-tested at startup before use. The Landlock
+  profile is what runs here.

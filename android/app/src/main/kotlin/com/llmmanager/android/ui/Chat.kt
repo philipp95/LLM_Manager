@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
@@ -51,20 +52,25 @@ fun ChatPanel(project: Project, chats: List<ChatView>?, schedule: ScheduleRespon
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PanelTitle("Sessions", Modifier.weight(1f))
-            Text("Each session works on its own branch", color = Palette.ink2, fontSize = 12.5.sp)
+            Text(if (project.isServer) "Each session works on the server" else "Each session works on its own branch", color = Palette.ink2, fontSize = 12.5.sp)
         }
         Spacer(Modifier.size(10.dp))
         SessionList(project, sessions, selected?.id) { selectedId = it }
         HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(vertical = 12.dp))
         if (selected == null) {
-            val after = if (project.forge != null) "; when it's done, the branch is pushed and a pull request is opened." else "."
-            Text("Your message starts a new session on a new branch$after", color = Palette.ink2, fontSize = 13.5.sp)
+            Text(newSessionNote(project), color = Palette.ink2, fontSize = 13.5.sp)
         } else {
             Conversation(project, selected, schedule, actions)
         }
         HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(top = 14.dp, bottom = 12.dp))
         Composer(project, ComposerTarget(schedule, sessions, selected), sending, actions) { sent -> selectedId = sent.id }
     }
+}
+
+private fun newSessionNote(project: Project): String = when {
+    project.isServer -> "Your message starts a new server session. Its agent works on the server itself, not on a branch."
+    project.forge != null -> "Your message starts a new session on a new branch; when it's done, the branch is pushed and a pull request is opened."
+    else -> "Your message starts a new session on a new branch."
 }
 
 /** A session's branch, its pull request, and its messages with their answers. */
@@ -74,7 +80,7 @@ private fun Conversation(project: Project, session: ChatView, schedule: Schedule
     val uriHandler = LocalUriHandler.current
     val pr = sessionPullRequest(project, session)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Chip(session.branch ?: "new branch", mono = true)
+        Chip(workplace(project, session), mono = true)
         if (session.sharesBranch) Chip("shared with another session", ChipTone.Warn)
     }
     if (pr != null) {
@@ -151,12 +157,18 @@ private fun Answer(turn: TurnView, actions: ChatActions, needsSignIn: Boolean) {
             }
         }
         turn.summary?.let { Text(it.take(MAX_SUMMARY), color = Palette.ink, fontSize = 13.5.sp) }
-        turn.progress?.let { Text(it, color = Palette.ink2, fontSize = 12.5.sp) }
+        turn.progress?.let { progress ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(14.dp), color = Palette.teal, strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(progress, color = Palette.ink2, fontSize = 13.sp)
+            }
+        }
         turn.failure?.let { Text(it.take(MAX_SUMMARY), color = Palette.badInk, fontSize = 13.sp) }
         turn.note?.let { Text(it, color = Palette.ink2, fontSize = 12.5.sp) }
-        turn.attach?.let { AttachCommand(it, actions.onCopy) }
         Text(turn.footer, color = Palette.ink2, fontSize = 11.5.sp)
         AnswerActions(turn, first.agent, actions, needsSignIn)
+        turn.attach?.let { AttachDisclosure(it, actions.onCopy) }
     }
 }
 

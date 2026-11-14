@@ -184,6 +184,23 @@ class ChatServiceTest {
     }
 
     @Test
+    fun `sessions being worked on are listed across projects, with their latest message, until they are done`() {
+        val f = fixture()
+        assertTrue(f.chats.active().isEmpty())
+
+        val first = f.send(ChatRequest(f.projectId, "Add a greeting", Agent.CLAUDE)).chat()
+        assertEquals(listOf(first.id), f.chats.active().map { it.id })
+        f.settle()
+        assertTrue(f.chats.active().isEmpty(), "a finished session is no longer being worked on")
+
+        f.send(ChatRequest(f.projectId, "Now add tests", Agent.CLAUDE, chatId = first.id)).chat()
+        val working = f.chats.active().single()
+        assertEquals("Add a greeting" to f.projectId, working.title to working.projectId)
+        assertEquals(listOf("Now add tests"), working.turns.map { it.message }, "only the message being worked on")
+        assertEquals(2, f.chat(first.id).turns.size)
+    }
+
+    @Test
     fun `sessions over HTTP need the token`() = testApplication {
         val f = fixture()
         val secret = "t".repeat(40)
@@ -191,6 +208,7 @@ class ChatServiceTest {
 
         assertEquals(HttpStatusCode.Unauthorized, client.get("/api/projects/${f.projectId}/chats").status)
         assertEquals(HttpStatusCode.Unauthorized, client.post("/api/chats").status)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/chats/active").status)
         val created = client.post("/api/chats") {
             header(HttpHeaders.Authorization, "Bearer $secret")
             contentType(ContentType.Application.Json)
@@ -201,6 +219,7 @@ class ChatServiceTest {
         val chats = Json { ignoreUnknownKeys = true }.decodeFromString<ChatsResponse>(listed.bodyAsText()).chats
         assertEquals("Add a greeting", chats.single().title)
         assertNotNull(chats.single().branch)
+        assertEquals(HttpStatusCode.OK, client.get("/api/chats/active") { header(HttpHeaders.Authorization, "Bearer $secret") }.status)
     }
 
     private fun awaitTrue(condition: () -> Boolean) {

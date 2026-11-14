@@ -36,7 +36,8 @@ class RunEngine(
 
     private fun launch(prepared: Run): Run {
         val run = prepared
-        val refusal = workspace.sandbox.refusal(run.agent)
+        // The server chat is unconfined by design, so there is no sandbox to insist on.
+        val refusal = workspace.sandbox.refusal(run.agent).takeUnless { ServerChat.owns(run) }
         val started = refusal == null && startSession(run)
         return when {
             refusal != null -> finish(run.copy(status = RunStatus.FAILED, error = refusal))
@@ -51,17 +52,18 @@ class RunEngine(
     /** Writes the prompt and run script, then starts the tmux session; records the run as RUNNING when it starts. */
     private fun startSession(run: Run): Boolean {
         val dir = store.runDir(run.id)
-        File(dir, "prompt.txt").writeText(run.prompt)
+        val server = ServerChat.owns(run)
+        File(dir, "prompt.txt").writeText(RunRules.prompt(run, workspace.serverChat))
         // New work: Claude and Gemini accept a chosen session id; Codex reports its own when it starts.
         // A resume or fix must name an existing session; a made-up id would "resume" nothing.
         val sessionId = run.sessionId ?: if (run.stage == Stage.WORK && run.agent != Agent.CODEX) UUID.randomUUID().toString() else null
         val command = when (run.stage) {
-            Stage.WORK -> commands.work(run.agent, sessionId ?: "")
+            Stage.WORK -> commands.work(run.agent, sessionId ?: "", server)
             Stage.REVIEW -> commands.review(run.agent, checkNotNull(run.resultCommit))
-            Stage.FIX, Stage.RESUME -> commands.resume(run.agent, checkNotNull(sessionId) { "no session to resume" })
+            Stage.FIX, Stage.RESUME -> commands.resume(run.agent, checkNotNull(sessionId) { "no session to resume" }, server)
         }
         val worktree = File(checkNotNull(run.worktree))
-        val wrapped = workspace.sandbox.wrap(run.agent, worktree, command, workspace.sandbox.scratchClaudeJson(run.agent, dir))
+        val wrapped = if (server) command else workspace.sandbox.wrap(run.agent, worktree, command, workspace.sandbox.scratchClaudeJson(run.agent, dir))
         val script = File(dir, "run.sh").apply { writeText(wrapper(worktree, dir, wrapped, run.agent)) }
         val tmux = "run-${run.id}"
         val started = sessions.start(tmux, worktree, listOf("bash", script.path))
@@ -95,7 +97,8 @@ class RunEngine(
             error = outcome.error,
             limitResetsAt = outcome.limitResetsAt?.toString(),
         )
-        if (status != RunStatus.SUCCEEDED || run.stage == Stage.REVIEW) return finish(finished)
+        // A review changes nothing, and the server chat is not a repository: nothing to commit.
+        if (status != RunStatus.SUCCEEDED || run.stage == Stage.REVIEW || ServerChat.owns(run)) return finish(finished)
         // Committing runs git inside the worktree, so its link to the repository must be intact.
         val commonDir = workspace.scanner.locate(run.projectId)?.commonDir
         val intact = commonDir != null && WorktreeGuard.intact(File(checkNotNull(run.worktree)), commonDir)
@@ -111,9 +114,12 @@ class RunEngine(
         return finish(run.copy(status = RunStatus.CANCELLED, error = "Cancelled"))
     }
 
-    /** Resolves the worktree: a new one for fresh work, the given one otherwise. */
+    /** Resolves the worktree: a new one for fresh work, the given one otherwise; the home directory for the server chat. */
     private fun prepare(run: Run): Run {
         if (!commands.available(run.agent)) return run.copy(error = "${run.agent.label} CLI is not installed on the server")
+        if (ServerChat.owns(run)) {
+            return workspace.serverChat?.let { run.copy(worktree = it.home.path) } ?: run.copy(error = "The server chat is turned off on this server")
+        }
         if (run.worktree != null) return existing(run, File(run.worktree))
         val located = workspace.scanner.locate(run.projectId) ?: return run.copy(error = "Project no longer found")
         return when (val made = Worktrees(git, worktreeRoot, clock).create(located, RUN_BRANCH_PREFIX)) {
