@@ -55,6 +55,7 @@ fun Composer(project: Project, target: ComposerTarget, sending: Boolean, actions
     val available = AGENT_ORDER.filter { schedule == null || schedule.agents[it] == true }
     var chosen by rememberSaveable { mutableStateOf<String?>(null) }
     var text by rememberSaveable(project.id) { mutableStateOf("") }
+    var publishWhenDone by rememberSaveable(project.id) { mutableStateOf(false) }
     var review by rememberSaveable(project.id) { mutableStateOf(false) }
     var shareWith by rememberSaveable(project.id) { mutableStateOf<String?>(null) }
     val agent = session?.agent ?: listOfNotNull(chosen, schedule?.defaultAgent).firstOrNull { it in available } ?: available.firstOrNull() ?: "claude"
@@ -71,16 +72,23 @@ fun Composer(project: Project, target: ComposerTarget, sending: Boolean, actions
         colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Palette.field, unfocusedContainerColor = Palette.field),
     )
     reviewer?.let { ReviewToggle(review, agent, it) { checked -> review = checked } }
+    if (project.forge != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = publishWhenDone, onCheckedChange = { publishWhenDone = it })
+            Text("Push and create or update PR when finished", color = Palette.ink2, fontSize = 12.sp)
+        }
+    }
     val blocked = blocked(session, agent)
     SendButton(sending, enabled = text.isNotBlank() && available.isNotEmpty() && blocked == null) {
         val request = ChatRequest(
             projectId = project.id, prompt = text.trim(), agent = agent, reviewer = reviewer.takeIf { review },
-            chatId = session?.id, sameBranchAs = shared?.id, publish = project.forge != null,
+            chatId = session?.id, sameBranchAs = shared?.id, publish = publishRequested(project, publishWhenDone),
         )
         val send = {
             actions.onSend(request) { sent ->
                 text = ""
                 review = false
+                publishWhenDone = false
                 shareWith = null
                 onSent(sent)
             }
@@ -148,10 +156,10 @@ private fun composerHint(project: Project, available: List<String>, session: Cha
     available.isEmpty() -> "No coding agent is installed on the server."
     project.isServer -> if (session != null) "Continues this server session." else "Starts a new server session. It is not confined to a repository."
     session != null ->
-        "Continues this session on ${session.branch ?: "its branch"}" + (if (project.forge != null) "; its pull request is updated when it's done." else ".")
+        "Continues this session on ${session.branch ?: "its branch"}" + ". Push and create a pull request from its branch card when ready."
     shared != null -> "Works on ${shared.branch} together with “${shared.title.take(CHOICE_TITLE)}”: their runs take turns, and both change that branch."
     project.forge != null ->
-        "Starts a new session on a new branch. When it's done, the branch is pushed and a pull request is opened on ${forgeName(project.forge)}."
+        "Starts a new branch. Push and create a pull request from its branch card when ready, or enable automatic publishing above."
     else -> "Starts a new session on a new branch. This repository has no GitHub, GitLab or Azure DevOps remote, so the work stays local."
 }
 

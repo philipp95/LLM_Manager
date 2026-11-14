@@ -552,6 +552,42 @@
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
   .toast.bad { background: var(--bad-ink); color: #FFF8EE; }
+
+  /* Branch cards connect sessions to their publishing workflow. */
+  .branch-board { display: grid; gap: 14px; margin: 16px 0; }
+  .branch-board .wt { padding: 16px; border: 1px solid var(--paper-line); border-radius: 16px; background: var(--field); }
+  .branch-board .wt:first-child { padding-top: 16px; }
+  .branch-flow { display: grid; gap: 12px; padding: 14px 0 4px; }
+  .branch-flow > .chip { justify-self: start; }
+  .branch-origin { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12px; }
+  .branch-origin b { color: var(--teal-ink); font-family: var(--mono); overflow-wrap: anywhere; }
+  .flow-arrow { color: var(--teal); font-size: 22px; line-height: 1; }
+  .flow-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 0; margin: 0; list-style: none; }
+  .flow-steps li { position: relative; display: grid; justify-items: center; align-content: start; gap: 5px; text-align: center; color: var(--ink-2); font-size: 11px; }
+  .flow-steps li::before { content: ""; position: absolute; height: 2px; background: var(--paper-line); top: 11px; left: -50%; width: 100%; }
+  .flow-steps li:first-child::before { display: none; }
+  .flow-dot { z-index: 1; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--paper-line); background: var(--field); font-size: 11px; font-weight: 750; }
+  .flow-steps .reached { color: var(--teal-ink); font-weight: 700; }
+  .flow-steps .reached::before, .flow-steps .reached .flow-dot { background: var(--teal-ink); border-color: var(--teal-ink); }
+  .flow-steps .reached .flow-dot { color: #FFF; }
+  .branch-sessions { display: grid; gap: 6px; margin-top: 12px; }
+  .branch-session { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--paper-line); border-radius: 10px; background: var(--paper); color: var(--ink); text-align: left; cursor: pointer; }
+  .branch-session > span:not(.agent-mark):not(.chip) { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+  .session { gap: 10px; padding: 14px; }
+  .session-meta { gap: 6px 10px; align-items: center; }
+  .session-branch { display: flex; align-items: center; gap: 5px; flex-basis: 100%; color: var(--teal-ink); min-width: 0; }
+  .session-branch svg { flex: none; }
+  .session-publish { flex-basis: 100%; padding: 14px; }
+  .session-publish .wt { padding: 0; }
+  .session-publish .chip { color: var(--ink-2); background: var(--paper-2); border-color: var(--paper-line); }
+  .session-publish .chip.ok { color: var(--ok-ink); }
+  .session-publish .chip.running { color: var(--teal-ink); }
+  .work-items { display: grid; margin-bottom: 14px; }
+  .work-item { display: flex; align-items: flex-start; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--paper-line); color: var(--ink); text-decoration: none; }
+  .work-item-number { color: var(--teal-ink); background: var(--paper-2); padding: 5px 8px; border-radius: 8px; font: 700 12px var(--mono); }
+  .work-item-body { flex: 1; min-width: 0; overflow-wrap: anywhere; display: grid; gap: 8px; }
+  .work-item > svg { margin-top: 6px; color: var(--ink-2); }
+
   /* Keep the workspace heading distinct from compact panel labels. */
   .workspace-heading { display: grid; gap: 4px; min-width: 0; }
   #home-head .section-head { align-items: center; flex-wrap: wrap; }
@@ -1360,10 +1396,13 @@
     const shown = expanded || sessions.length <= 8 ? sessions : sessions.slice(0, 7);
     const row = (s) => {
       const pr = sessionPullRequest(p, s), state = sessionState(s);
+      const worktree = s.branch ? p.worktrees.find((w) => w.branch === s.branch) : null;
+      const progress = worktree ? branchProgress(worktree) : null;
       return el("button", { class: "session", type: "button", "aria-pressed": String(s.id === chat), onclick: () => go(repoHash(p.id, "s/" + s.id)) },
         el("span", { class: "session-top" }, agentMark(s.agent), el("span", { class: "session-title" }, s.title), state ? runStatus(state) : null),
         el("span", { class: "session-meta" },
-          s.branch ? el("span", { class: "mono" }, s.branch) : null,
+          s.branch ? el("span", { class: "session-branch" }, icon("branch"), el("span", { class: "mono" }, s.branch)) : null,
+          progress ? chip(progress.label, progress.tone) : null,
           s.sharesBranch ? el("span", null, "shared branch") : null,
           pr ? el("span", null, (FORGE[p.forge] && FORGE[p.forge].mr ? "MR " : "PR ") + prRef(p, pr.number) + " " + pr.state) : null,
           el("span", null, relative(s.updatedAt))));
@@ -1404,7 +1443,7 @@
         el("span", null, p.server
           ? "Your message starts a new session on the server itself: the agent starts in the home directory and can change the machine's setup and LLM Manager's own backend."
           : "Your message starts a new session on a new branch of " + splitName(p.name).repo +
-            (p.forge ? "; when it's done, the branch is pushed and a pull request is opened." : ".")));
+            ". Follow its progress here, then push and create a pull request when ready."));
     }
     const turns = session.turns.slice(-12);
     return [
@@ -1450,11 +1489,17 @@
       text.style.height = "auto";
       text.style.height = Math.min(text.scrollHeight + 2, Math.round(window.innerHeight * 0.4)) + "px";
     };
+    const autoPublish = el("button", { class: "opt", type: "button", "aria-pressed": "false" }, icon("pr"), "Auto PR");
+    let publishWhenDone = false;
+    autoPublish.addEventListener("click", () => { publishWhenDone = !publishWhenDone; render(); });
     branchSelect.addEventListener("change", render);
     review.addEventListener("click", () => { state.review = !state.review; render(); });
 
     function render() {
       const p = state.project, s = state.session;
+      autoPublish.hidden = !p.forge || !!p.server;
+      autoPublish.setAttribute("aria-pressed", String(publishWhenDone));
+      autoPublish.title = "Push and create or update a pull request automatically when this message finishes";
       const ok = available();
       if (!ok.includes(state.agent)) state.agent = ok[0] || "claude";
       const agent = agentNow();
@@ -1484,9 +1529,9 @@
         || (needsSignIn(agent) ? AGENT[agent].label + " is not signed in on the server yet. Sending asks you to sign in first." : null)
         || (state.review ? "Cross-review: " + AGENT[reviewer].label + " reviews the change first, then " + AGENT[agent].label + " addresses it." : null)
         || (p.server ? (s ? "Continues this session on the server." : "Works on the server itself, outside any repository and outside the sandbox. Ask only for what you would do there yourself.")
-          : s ? "Continues this session on " + (s.branch || "its branch") + (p.forge ? "; its pull request is updated when " + AGENT[agent].label + " is done." : ".")
+          : s ? "Continues this session on " + (s.branch || "its branch") + (publishWhenDone ? "; its pull request is updated when the agent is done." : ". Push and create a pull request from the branch card when ready.")
           : shared ? "This session works on " + shared.branch + " together with “" + clamp(shared.title, 40) + "”: their runs take turns, and both change that branch."
-          : p.forge ? "Starts a new session on a new branch. When it's done, the branch is pushed and a pull request is opened on " + FORGE[p.forge].label + "."
+          : p.forge ? (publishWhenDone ? "Starts a new branch, then pushes and opens a pull request when done." : "Starts a new branch. Push and create a pull request from the branch card when ready.")
           : "Starts a new session on a new branch. This repository has no GitHub, GitLab or Azure DevOps remote, so the work stays local.");
       send.disabled = !ok.length || !!blocked;
     }
@@ -1504,7 +1549,7 @@
         scheduleData.signedIn[a] = true;
         render();
       }
-      const request = p.server ? { projectId: p.id, prompt, agent } : { projectId: p.id, prompt, agent, publish: !!p.forge };
+      const request = p.server ? { projectId: p.id, prompt, agent } : { projectId: p.id, prompt, agent, publish: !!p.forge && publishWhenDone };
       if (reviewer) request.reviewer = reviewer;
       if (s) request.chatId = s.id;
       else if (branchSelect.value) request.sameBranchAs = branchSelect.value;
@@ -1515,6 +1560,7 @@
         text.value = "";
         grow();
         state.review = false;
+        publishWhenDone = false;
         branchSelect.value = "";
         const chats = chatData && chatData.projectId === p.id ? chatData.chats.filter((c) => c.id !== result.body.id) : [];
         chatData = { projectId: p.id, chats: [result.body, ...chats] };
@@ -1537,7 +1583,7 @@
       const desktop = window.matchMedia("(pointer: fine)").matches;
       if (e.ctrlKey || e.metaKey || (desktop && !e.shiftKey)) { e.preventDefault(); submit(); }
     });
-    const node = el("div", { class: "composer" }, el("div", { class: "composer-opts" }, picker, branchSelect, review),
+    const node = el("div", { class: "composer" }, el("div", { class: "composer-opts" }, picker, branchSelect, review, autoPublish),
       el("div", { class: "composer-main" }, text, send), hint);
     return {
       projectId, node,
@@ -1582,6 +1628,29 @@
     return details;
   }
 
+  /** Progress describes recorded publish state, not inferred commit ancestry. */
+  function branchProgress(w) {
+    const pub = w.publish, pr = pub && pub.pullRequest;
+    if (pr && ["merged", "completed"].includes(pr.state)) return { step: 3, label: "Merged", tone: "ok" };
+    if (pr && ["closed", "abandoned"].includes(pr.state)) return { step: 2, label: "PR closed", tone: "warn" };
+    if (pr) return { step: 2, label: "PR open", tone: "running" };
+    if (pub && pub.upToDate) return { step: 1, label: "Pushed · ready for PR", tone: "ok" };
+    if (pub && pub.pushed) return { step: 0, label: "Push update", tone: "warn" };
+    return { step: 0, label: "Local branch", tone: "" };
+  }
+
+  function branchFlow(w, project) {
+    const progress = branchProgress(w), mr = project.forge === "gitlab";
+    const labels = ["Local", "Pushed", mr ? "Merge request" : "Pull request", "Merged"];
+    return el("div", { class: "branch-flow" },
+      el("div", { class: "branch-origin" }, icon("branch"), el("span", null, "Target: " + (project.defaultBranch || "Default branch")),
+        el("span", { class: "flow-arrow", "aria-hidden": "true" }, "←"), el("b", null, w.branch || "Detached HEAD")),
+      el("ol", { class: "flow-steps", "aria-label": "Branch publishing progress" }, labels.map((label, index) =>
+        el("li", { class: index <= progress.step ? "reached" : "", "aria-current": index === progress.step ? "step" : null },
+          el("span", { class: "flow-dot", "aria-hidden": "true" }, index < progress.step ? "✓" : String(index + 1)), label))),
+      chip(progress.label, progress.tone));
+  }
+
   /** Push / pull request / merge for an agent branch. Merging happens on the forge. */
   function publishRow(w, project) {
     const pub = w.publish;
@@ -1590,36 +1659,49 @@
     const act = (action, label, iconName, cls, confirmText) => el("button", { class: "small-btn " + (cls || ""), type: "button", onclick: async (event) => {
       if (confirmText && !confirm(confirmText)) return;
       event.currentTarget.disabled = true;
-      const result = await postJson("/api/projects/" + encodeURIComponent(project.id) + "/branches/" + action, { branch: w.branch });
-      toast(result.ok ? result.body.message : (result.body.error || "Failed (" + result.status + ")"), !result.ok);
-      refreshActive();
+      const button = event.currentTarget;
+      try {
+        const result = await postJson("/api/projects/" + encodeURIComponent(project.id) + "/branches/" + action, { branch: w.branch });
+        toast(result.ok ? result.body.message : (result.body.error || "Failed (" + result.status + ")"), !result.ok);
+        await refreshActive();
+      } catch (error) {
+        toast("Could not publish: " + error.message, true);
+      } finally { button.disabled = false; }
     } }, icon(iconName), label);
     const open = pr && ["open", "opened", "active"].includes(pr.state);
     const prUrl = pr ? httpsOnly(pr.url) : null;
     return el("div", { class: "publish" },
-      pub.upToDate ? chip("pushed", "ok", "check") : act("push", pub.pushed ? "Push update" : "Push", "play"),
+      pub.upToDate ? chip("pushed", "ok", "check") : act("push", pub.pushed ? "Push update" : "Push branch", "play", "go"),
       prUrl ? el("a", { class: "chip " + (pr.state === "merged" || pr.state === "completed" ? "ok" : "running"), href: prUrl, target: "_blank", rel: "noopener noreferrer" },
         icon("pr"), el("span", { class: "t" }, (mr ? "!" : "#") + pr.number + " " + pr.state)) : null,
-      !pr && !pub.blocked ? act("pull-request", mr ? "Create MR" : "Create PR", "plus", "go") : null,
+      !pr && !pub.blocked && pub.upToDate ? act("pull-request", mr ? "Create merge request" : "Create pull request", "pr", "go") : null,
+      !pr && !pub.blocked && !pub.upToDate ? el("span", { class: "note" }, "Push the branch, then create a " + (mr ? "merge request." : "pull request.")) : null,
       open && !pub.blocked ? act("merge", "Merge", "check", null,
         "Merge " + w.branch + " into " + (project.defaultBranch || "the default branch") + "? The forge's required checks and approvals still apply.") : null,
+      pub.branchUrl && httpsOnly(pub.branchUrl) ? el("a", { class: "small-btn", href: httpsOnly(pub.branchUrl), target: "_blank", rel: "noopener noreferrer" }, icon("link"), "View branch") : null,
+      w.changedFiles ? el("span", { class: "note" }, "Uncommitted changes stay local; push sends commits only.") : null,
       pub.blocked ? el("span", { class: "note" }, pub.blocked) : null);
   }
 
-  function worktreeRow(w, project) {
+  function worktreeRow(w, project, sessions = []) {
     const label = w.branch || ("detached @ " + (w.head ? w.head.slice(0, 8) : "?"));
     const tags = [
       w.codex ? chip(w.codex.running ? "Codex live" : "Codex", w.codex.running ? "live" : null, "terminal") : null,
       w.scheduledRun ? chip("agent run", null, "clock") : w.agentRun ? chip("agent branch", null, "branch") : null,
       w.main ? chip("main worktree", null, "folder") : null,
     ].filter(Boolean);
-    return el("div", { class: "wt" },
+    const linked = sessions.filter((session) => session.branch && session.branch === w.branch);
+    return el("article", { class: "wt" },
       el("div", { class: "bar " + worktreeState(w) }),
       el("div", { class: "wt-top" }, el("span", { class: "branch", title: label }, label), changesChip(w)),
       el("div", null,
         el("div", { class: "wt-meta" },
           el("span", { title: w.lastCommitAt || "" }, icon("clock"), relative(w.lastCommitAt, "no commits")),
           w.head ? el("span", null, icon("branch"), w.head.slice(0, 7)) : null),
+        w.branch && !w.main ? branchFlow(w, project) : null,
+        linked.length ? el("div", { class: "branch-sessions" }, linked.map((session) =>
+          el("button", { class: "branch-session", type: "button", onclick: () => go(repoHash(project.id, "s/" + session.id)) },
+            agentMark(session.agent), el("span", null, session.title), sessionState(session) ? runStatus(sessionState(session)) : null, icon("chevron")))) : null,
         tags.length ? el("div", { class: "chips" }, tags) : null,
         w.codex ? attachBox(w.codex) : null,
         w.publish && w.branch ? publishRow(w, project) : null));
@@ -1643,12 +1725,13 @@
     }
   }
 
-  function branchesPanel(p) {
+  function branchesPanel(p, sessions) {
     const button = el("button", { class: "small-btn", type: "button", disabled: !codexAvailable }, icon("terminal"), "Start Codex");
     button.addEventListener("click", () => startCodex(p, button));
     return el("section", { class: "panel" },
       el("div", { class: "panel-head" }, el("h2", null, "Branches"), el("span", { class: "panel-sub" }, plural(p.worktrees.length, "worktree", "worktrees"))),
-      el("div", null, p.worktrees.map((w) => worktreeRow(w, p))),
+      el("p", { class: "muted" }, "Follow each session’s branch from local work to a merged " + (p.forge === "gitlab" ? "merge request." : "pull request.")),
+      el("div", { class: "branch-board" }, p.worktrees.map((w) => worktreeRow(w, p, sessions))),
       el("div", { class: "codex-start" },
         el("span", { class: "muted" }, codexAvailable ? "Or work with Codex yourself: a new worktree with Codex in tmux, to attach over SSH." : "Codex CLI not found on the server."),
         button));
@@ -1683,6 +1766,30 @@
       el("div", { class: "panel-head" }, el("h2", null, "Branch history"),
         ins && ins.fetchedAt ? el("span", { class: "panel-sub" }, "from " + (forge ? forge.label : "the forge") + " · " + relative(ins.fetchedAt)) : null),
       body);
+  }
+
+  function workItemsPanel(p) {
+    const data = p.workItems, azure = p.forge === "azure-devops";
+    const url = httpsOnly(p.webUrl || p.gitHubUrl);
+    const browse = azure ? (url ? url.split("/_git/")[0] + "/_workitems" : null) : (url ? url + "/issues" : null);
+    return el("section", { class: "panel" },
+      el("div", { class: "panel-head" }, el("h2", null, azure ? "Linked work items" : "GitHub issues"),
+        data && data.fetchedAt ? el("span", { class: "panel-sub" }, "Updated " + relative(data.fetchedAt)) : null),
+      data && data.error ? el("div", { class: "notice" }, icon("alert"), el("span", null, "Couldn't refresh: " + data.error)) : null,
+      !data ? el("p", { class: "muted" }, "Reading " + (azure ? "linked work items" : "open issues") + "…") : null,
+      data && data.fetchedAt ? el("p", { class: data.truncated ? "notice" : "muted" }, data.scope) : null,
+      data && data.fetchedAt && !data.items.length ? el("p", { class: "muted" }, azure ? "No repository-linked work items found in this scan." : "No open issues in this repository.") : null,
+      data ? el("div", { class: "work-items" }, data.items.map((item) => {
+        const itemUrl = httpsOnly(item.url);
+        const content = [el("span", { class: "work-item-number" }, "#" + item.number),
+          el("div", { class: "work-item-body" }, el("b", null, item.title),
+            el("div", { class: "chips" }, chip(item.type), chip(item.state),
+              item.assignee ? chip(item.assignee) : null, (item.labels || []).map((label) => chip(label)))),
+          icon("link")];
+        return itemUrl ? el("a", { class: "work-item", href: itemUrl, target: "_blank", rel: "noopener noreferrer" }, content)
+          : el("div", { class: "work-item" }, content);
+      })) : null,
+      browse ? el("a", { class: "small-btn", href: browse, target: "_blank", rel: "noopener noreferrer" }, icon("link"), azure ? "Open Azure Boards" : "All issues on GitHub") : null);
   }
 
   function pathsPanel(p) {
@@ -1767,23 +1874,26 @@
       ];
     });
     if (!p.server) {
-      setPart(view, view.tabs, JSON.stringify([part, sessions.length, mr, ins && ins.openCount, branches]), () =>
-        [["sessions", "Sessions", sessions.length], ["prs", mr ? "Merge requests" : "Pull requests", ins ? ins.openCount : null], ["branches", "Branches", branches]].map((t) =>
+      setPart(view, view.tabs, JSON.stringify([part, sessions.length, mr, ins && ins.openCount, branches, p.workItems]), () =>
+        [["sessions", "Sessions", sessions.length], ["branches", "Branch board", branches], ...(["github", "azure-devops"].includes(p.forge) ? [["issues", p.forge === "github" ? "Issues" : "Work items", p.workItems ? p.workItems.items.length : null]] : []), ["prs", mr ? "Merge requests" : "Pull requests", ins ? ins.openCount : null]].map((t) =>
           el("button", { type: "button", "aria-current": t[0] === part ? "page" : null, onclick: () => go(repoHash(p.id, t[0] === "sessions" ? "" : t[0])) },
             t[1], t[2] ? el("span", { class: "count" }, t[2]) : null)));
     }
     view.layout.hidden = part !== "sessions";
     view.other.hidden = part === "sessions";
     if (part !== "sessions") {
-      setPart(view, view.other, JSON.stringify([part, p, codexAvailable, minute]), () =>
-        (part === "prs" ? [statsPanel(p), historyPanel(p)] : [branchesPanel(p), pathsPanel(p)]));
+      setPart(view, view.other, JSON.stringify([part, p, sessions, codexAvailable, minute]), () =>
+        (part === "prs" ? [statsPanel(p), historyPanel(p)] : part === "issues" ? [workItemsPanel(p)] : [branchesPanel(p, sessions), pathsPanel(p)]));
       if (toBottom || view.fresh) window.scrollTo(0, 0);
       view.fresh = false;
       return;
     }
     setPart(view, view.sessions, JSON.stringify([sessions.map((s) => [s.id, s.title, s.agent, s.branch, s.sharesBranch, s.updatedAt, sessionState(s), sessionPullRequest(p, s)]),
-      chat, sessionsExpanded.has(p.id), minute]), () => sessionColumn(p, sessions, chat));
-    setPart(view, view.head, JSON.stringify([session && [session.id, session.title, session.branch, session.sharesBranch, sessionPullRequest(p, session)]]), () => chatHead(p, session));
+      p.worktrees, chat, sessionsExpanded.has(p.id), minute]), () => sessionColumn(p, sessions, chat));
+    setPart(view, view.head, JSON.stringify([session && [session.id, session.title, session.branch, session.sharesBranch], p.worktrees]), () => [chatHead(p, session),
+      session && session.branch && p.worktrees.find((w) => w.branch === session.branch && w.publish)
+        ? el("section", { class: "session-publish panel", "aria-label": "Session branch" },
+            worktreeRow(p.worktrees.find((w) => w.branch === session.branch), p)) : null]);
     const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 140;
     view.thread.classList.toggle("intro", !session);
     const changed = setPart(view, view.thread, JSON.stringify([session, p.server, p.name, p.forge, session && session.busy ? liveLog : null, [...expandedText], needsSignIn(session ? session.agent : ""), session && session.busy ? beat : minute]),
@@ -1864,12 +1974,12 @@
   function route() {
     const hash = location.hash.replace(/^#/, "");
     if (activeTab === "overview") gridScroll = window.scrollY;
-    const match = /^(?:repo\/([^/]+)|(server))(?:\/(new|prs|branches|s\/([^/]+)))?$/.exec(hash);
+    const match = /^(?:repo\/([^/]+)|(server))(?:\/(new|prs|branches|issues|s\/([^/]+)))?$/.exec(hash);
     if (match) {
       const id = match[2] ? ServerProject.id : match[1];
       const same = activeTab === "repo" && currentRepo === id && repoView && repoView.id === id;
       currentRepo = id;
-      repoRoute = { view: match[3] === "prs" || match[3] === "branches" ? match[3] : "sessions", chat: match[3] === "new" ? "new" : match[4] || null };
+      repoRoute = { view: ["prs", "branches", "issues"].includes(match[3]) ? match[3] : "sessions", chat: match[3] === "new" ? "new" : match[4] || null };
       liveLog = null;
       if (same) {
         // Within a repository: show what is known at once, then look for news.
@@ -2198,7 +2308,7 @@
       const org = textInput("", { placeholder: "Organisation, as in dev.azure.com/<organisation>", "aria-label": "Azure DevOps organisation" });
       rows.push(forgeRow(azure, "Azure DevOps", forgeBadge("azure-devops"), {
         connectLabel: "Add a token", removeLabel: "Remove token", removeText: "Remove the Azure DevOps token?", fields: [{ key: "organization", node: org }],
-        help: "A personal access token with Code (Read & write), created in your organisation's user settings.",
+        help: "An organisation-scoped token with Code (Read & write) and Work Items (Read), created in your organisation's user settings.",
       }));
     }
     return rows;

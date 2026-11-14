@@ -52,6 +52,7 @@ data class DashboardServices(
     val cloner: RepoCloner? = null,
     /** The Server chat is turned on. */
     val serverChat: Boolean = false,
+    val workItems: WorkItemsService? = null,
 )
 
 /**
@@ -172,7 +173,8 @@ internal suspend fun ApplicationCall.authorized(access: Access): Boolean {
 private fun projectsResponse(scanner: ProjectScanner, services: DashboardServices): ProjectsResponse {
     val snapshot = scanner.snapshot()
     val published = services.schedule?.branches?.annotate(snapshot.projects) ?: snapshot.projects
-    val projects = (services.insights?.annotate(published) ?: published).arranged(services.settings?.preferences?.get()?.repos.orEmpty())
+    val activity = services.insights?.annotate(published) ?: published
+    val projects = (services.workItems?.annotate(activity) ?: activity).arranged(services.settings?.preferences?.get()?.repos.orEmpty())
     val now = OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
     return ProjectsResponse(
         now, services.launcher?.available == true, projects, snapshot.analytics, services.apk?.describe(),

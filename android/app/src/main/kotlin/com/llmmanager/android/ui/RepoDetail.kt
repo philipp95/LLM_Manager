@@ -49,11 +49,19 @@ fun RepoDetail(
 ) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
         item(key = "head") { RepoHeader(project) }
-        item(key = "chat") { ChatPanel(project, chats.chats.takeIf { chats.projectId == project.id }, schedule, chats.sending, actions.chat) }
-        item(key = "history") { HistoryPanel(project) }
-        item(key = "branches") {
-            BranchesPanel(project, codexAvailable, launching, actions.onStartCodex, actions.chat.onCopy, actions.onPublish)
+        item(key = "chat") {
+            ChatPanel(project, chats.chats.takeIf { chats.projectId == project.id }, schedule, chats.sending, actions.chat, actions.onPublish)
         }
+        item(key = "branches") {
+            BranchesPanel(
+                project, codexAvailable, launching, actions.onStartCodex, actions.chat.onCopy, actions.onPublish,
+                chats.chats.takeIf { chats.projectId == project.id }.orEmpty(),
+            )
+        }
+        if (project.forge in setOf("github", "azure-devops")) {
+            item(key = "issues") { WorkItemsPanel(project) }
+        }
+        item(key = "history") { HistoryPanel(project) }
         item(key = "paths") { PathsPanel(project) }
     }
 }

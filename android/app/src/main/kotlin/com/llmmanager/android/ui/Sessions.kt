@@ -61,11 +61,16 @@ fun SessionList(project: Project, sessions: List<ChatView>, selected: String?, o
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(workplace(project, session), color = Palette.ink2, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    Text("↗ " + workplace(project, session), color = Palette.ink2, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                     if (session.sharesBranch) Text("shared branch", color = Palette.warnInk, fontSize = 12.sp)
                     sessionPullRequest(project, session)?.let { pr ->
                         val kind = if (project.forge == "gitlab") "MR" else "PR"
                         Text("$kind ${prRef(project.forge, pr.number)} ${pr.state}", color = Palette.ink2, fontSize = 12.sp)
+                    }
+                    session.branch?.let { branch ->
+                        project.worktrees.firstOrNull { it.branch == branch }?.let { worktree ->
+                            Text(branchProgress(worktree.publish).label, color = Palette.tealInk, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                     Text(relativeTime(session.updatedAt), color = Palette.ink2, fontSize = 12.sp)
                 }

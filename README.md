@@ -29,6 +29,9 @@ an Android SDK, provider credentials, or a live agent.
 bash ./gradlew check :server:spike:installDist :server:api:installDist
 ```
 
+`node scripts/dashboard-ui.test.cjs` also checks the dashboard’s branch workflow
+without a browser or extra dependencies.
+
 `check` runs tests and Detekt static analysis. Tests cover JSON parsing,
 redaction, process timeouts/cancellation, repository isolation, and CLI cleanup.
 They launch local Java fixtures and temporary Git repositories, without paid
@@ -120,18 +123,32 @@ Tap a tile for the repository's screen:
   from the list to continue it: the next message resumes the same agent session
   on the same branch, so the agent remembers the conversation, and waits until
   the last one is done. Tick **Cross-review first** and a second agent reviews
-  the commit before the session's agent addresses the review. When a message's
-  work is done, the server pushes the branch and opens its pull request into the
-  default branch (GitLab: a merge request), or updates the one already open.
-  Work that changed nothing opens nothing; repositories without a forge remote
-  keep the work on the local branch. A new session can instead work on another
-  session's branch (**Same as …** under Branch); both sessions then change that
+  the commit before the session's agent addresses the review. Work stays local
+  until you choose **Push branch**, followed by **Create pull request** (GitLab:
+  **Create merge request**) on the session's branch card. For automatic publishing,
+  enable **Auto PR** in the dashboard, or **Push and create or update PR when
+  finished** in the app, before sending the message. This pushes and creates or
+  updates the request when that message finishes. Work that changed nothing opens
+  nothing; repositories without a forge remote keep the work local. A new session
+  can instead work on another session's branch (**Same as …** under Branch); both sessions then change that
   branch, taking turns in its worktree. Each firing of a scheduled job is a
   session too, so you can follow up on it in the chat.
 - **Branch history**: the pull requests most recently updated on the forge,
   with state, branch, author, agent and CI/CD.
-- **Branches**: the worktrees, with push, pull request and merge controls, and
-  Codex in tmux for hands-on work.
+- **Branch board**: each worktree shows its target branch, connected sessions and
+  progress through Local → Pushed → Pull request → Merged. Push sends commits;
+  uncommitted files stay local. Pushed branches offer a separate create-request
+  action, a forge link, and merge controls when a request is open. Codex in tmux
+  remains available for hands-on work.
+- **Issues / Work items**: open GitHub issues with labels, state and assignees,
+  or Azure DevOps work items explicitly linked to this repository through a Git
+  branch, commit or pull request. Azure project items without a repository link
+  are excluded. These are read-only lists with links to the forge, cached for five
+  minutes independently of pull requests. GitHub shows up to 100 open issues;
+  Azure checks the 200 most recently changed work items in the project and warns
+  when older links may be missing. The Azure PAT needs **Work Items: Read** as well
+  as the existing **Code: Read & write** scope. Failed refreshes keep previous data
+  visible with an error.
 
 Pull request activity is read on the server, cached for five minutes and
 refreshed in the background, so pages never wait on a forge: GitHub through one

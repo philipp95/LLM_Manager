@@ -56,6 +56,8 @@ data class Project(
     val commitsPerDay: List<Int> = emptyList(),
     /** Pull request activity on the forge, when it has been read. */
     val insights: RepoInsights? = null,
+    /** GitHub issues or Azure work items explicitly linked to this repository. */
+    val workItems: RepoWorkItems? = null,
     /** Pinned to the top of the home screen. */
     val pinned: Boolean = false,
     /** 0 to 5; more stars sort higher. */
