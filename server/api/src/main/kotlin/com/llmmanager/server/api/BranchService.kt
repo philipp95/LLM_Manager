@@ -13,6 +13,7 @@ data class BranchRecord(
     val pushedCommit: String? = null,
     val pushedAt: String? = null,
     val pullRequest: PullRequestRef? = null,
+    val mergedAt: String? = null,
 )
 
 /** Shown per worktree: whether its branch can be published, and how far it got. */
@@ -31,6 +32,7 @@ data class Publish(
  * Push, open a pull request for, and merge agent branches (issue #1). Only branches
  * that agents created (`run/`, `codex/`, `agent/`) in linked worktrees qualify; the
  * default branch and people's checkouts are never touched, and pushes are never forced.
+ * A merged branch is cleaned up: see [MergeCleanup].
  */
 class BranchService(
     private val store: StateStore,
@@ -44,6 +46,10 @@ class BranchService(
         data class Ok(val record: BranchRecord, val message: String) : Outcome
         data class Invalid(val reason: String) : Outcome
     }
+
+    /** What the forge last said about a pull request, to notice one that was merged there. */
+    var pullRequests: PullRequestLookup = PullRequestLookup { _, _ -> null }
+    private val cleanup = MergeCleanup(workspace.git)
 
     private data class Target(val located: ProjectScanner.Located, val worktree: Worktree, val forge: Forge?, val base: String?)
 
@@ -83,15 +89,36 @@ class BranchService(
         }
     }
 
-    /** Merges through the forge, so required checks, approvals and branch protection apply. */
+    /**
+     * Merges through the forge, so required checks, approvals and branch protection apply, then
+     * cleans the branch up. Commits the forge has not seen are pushed first, so what is merged is
+     * what the session shows; a pull request that was already merged on the forge is only cleaned up.
+     */
     fun merge(projectId: String, branch: String): Outcome = withTarget(projectId, branch) { target ->
         val forge = target.forge ?: return@withTarget Outcome.Invalid("No forge for this project")
-        val pr = branches.get(projectId, branch)?.pullRequest ?: return@withTarget Outcome.Invalid("Open a pull request first")
-        when (val result = forges.merge(forge, pr)) {
-            is ForgeClient.Result.Failed -> Outcome.Invalid(result.reason)
-            is ForgeClient.Result.Ok -> record(projectId, branch) { it.copy(pullRequest = result.pullRequest) }
-                .let { Outcome.Ok(it, "Merged into ${target.base}") }
+        val known = branches.get(projectId, branch)
+        val pr = known?.pullRequest ?: return@withTarget Outcome.Invalid("Open a pull request first")
+        if (store.runs().any { it.projectId == projectId && it.branch == branch && !it.status.finished }) {
+            return@withTarget Outcome.Invalid("An agent is still working on this branch")
         }
+        val alreadyMerged = SessionPulls.isMerged(pr.state) || pullRequests.find(projectId, pr.number)?.state == SessionPulls.MERGED
+        if (!alreadyMerged && known.pushedCommit != target.worktree.head) {
+            (pushTarget(target) as? Outcome.Invalid)?.let { return@withTarget it }
+        }
+        when (val result = if (alreadyMerged) ForgeClient.Result.Ok(pr.copy(state = SessionPulls.MERGED)) else forges.merge(forge, pr)) {
+            is ForgeClient.Result.Failed -> Outcome.Invalid(result.reason)
+            is ForgeClient.Result.Ok -> cleanUp(target, forge, result.pullRequest)
+        }
+    }
+
+    private fun cleanUp(target: Target, forge: Forge, merged: PullRequestRef): Outcome {
+        val record = record(target.located.project.id, checkNotNull(target.worktree.branch)) {
+            it.copy(pullRequest = merged, mergedAt = it.mergedAt ?: Instant.now(clock).toString())
+        }
+        val env = credentials.pushEnvironment(forge, rawOrigin(target.located.commonDir))
+        val kept = cleanup.run(target.located.commonDir, target.worktree, env)
+        val done = if (kept.isEmpty()) "The branch and its worktree were removed." else kept.joinToString(" ")
+        return Outcome.Ok(record, "Merged into ${target.base}. $done")
     }
 
     private fun withTarget(projectId: String, branch: String, action: (Target) -> Outcome): Outcome {
@@ -146,8 +173,6 @@ class BranchService(
     private fun record(projectId: String, branch: String, change: (BranchRecord) -> BranchRecord): BranchRecord =
         change(branches.get(projectId, branch) ?: BranchRecord(projectId, branch)).also(branches::put)
 
-    private fun label(forge: Forge) = if (forge is Forge.GitLab) "merge request" else "pull request"
-
     companion object {
         private const val TITLE_CHARS = 72
         val AGENT_PREFIXES = listOf("run/", "codex/", "agent/")
@@ -161,3 +186,5 @@ fun BranchService.publish(run: Run): String = when (val outcome = openPullReques
     is BranchService.Outcome.Ok -> outcome.message
     is BranchService.Outcome.Invalid -> "Could not open a pull request: ${outcome.reason}"
 }
+
+private fun label(forge: Forge) = if (forge is Forge.GitLab) "merge request" else "pull request"

@@ -91,7 +91,7 @@ class ApiServer : CliktCommand(name = "api") {
             it.adoptIntoSessions()
         }
         val insights = InsightsService(InsightSources(credentials), agentForBranch = { projectId, branch -> agentOf(store, projectId, branch) })
-        val schedule = schedule(store, workspace, credentials, settings, onPublished = { insights.invalidate(it.projectId) })
+        val schedule = schedule(store, workspace, credentials, settings, insights)
         val hosts = BindAddress.allowedHosts(address, port, BindAddress.tailscaleNames(), allowedHost)
         val pairing = if (pairingMode == "on") Pairing(CachedTailnet(TailscaleCli()), state) else null
         val log = LoggerFactory.getLogger(ApiServer::class.java)
@@ -146,18 +146,19 @@ class ApiServer : CliktCommand(name = "api") {
         workspace: Workspace,
         credentials: ForgeCredentials,
         settings: SettingsApi,
-        onPublished: (Run) -> Unit,
+        insights: InsightsService,
     ): ScheduleApi {
         val usage = UsageReader(File(System.getProperty("user.home")), store.dir)
         val preferences = settings.preferences
         val engine = RunEngine(store, workspace, File(runWorktrees), committer = preferences::committer)
-        val branches = BranchService(store, BranchStore(store.dir), workspace, ForgeClient(credentials), credentials)
-        val publisher = { run: Run -> branches.publish(run).also { onPublished(run) } }
+        val records = BranchStore(store.dir)
+        val branches = BranchService(store, records, workspace, ForgeClient(credentials), credentials).also { it.pullRequests = insights }
+        val publisher = { run: Run -> branches.publish(run).also { insights.invalidate(run.projectId) } }
         val scheduler = Scheduler(store, engine, workspace.sessions, hooks = FollowUpHooks(usage::resetHint, publisher))
         scheduler.launch(CoroutineScope(SupervisorJob()))
         val choices = AgentChoices(preferences::enabled, { settings.accounts.status(it).signedIn }, { preferences.get().defaultAgent })
         val jobs = JobService(store, scheduler, workspace, SessionCatalog(), choices = choices)
-        return ScheduleApi(jobs, store, usage, branches, ChatService(store, scheduler, workspace, choices))
+        return ScheduleApi(jobs, store, usage, branches, ChatService(store, scheduler, workspace, choices, pulls = SessionPulls(records, insights)))
     }
 
     /** The agent this server ran on [branch]: the first run's, or Codex for an interactive `codex/` session. */

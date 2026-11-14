@@ -200,6 +200,7 @@ private fun chatActions(models: ViewModels, dialogs: DialogState, copy: (String)
     onCancel = { dialogs.cancelling = it },
     onCopy = copy,
     onSignIn = { agent, then -> models.signIn.open(agent, then) },
+    onBranch = { session, action -> models.chats.act(session, action) { models.dashboard.refresh() } },
 )
 
 @Composable

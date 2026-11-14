@@ -113,7 +113,16 @@ and a link to the repository on its forge.
 
 Tap a tile for the repository's screen:
 
-- **Sessions**: the repository's chat, as sessions to choose from. **New
+- **Sessions**: the repository's chat, as sessions to choose from, drawn as
+  the repository's branches: the default branch is the line on the left, each
+  session's branch forks off it with a dot per message, and a merged one bends
+  back into the line. Each session shows its agent, branch, pull request and
+  checks; merged and closed ones fold away into groups below and stay
+  readable. An open session keeps a bar on top with its pull request, what the
+  checks say and one large **Merge** button (**Merge anyway** when checks
+  failed or still run, **Open pull request** when there is none yet). Merge
+  acts at once, without asking, and afterwards cleans up: see
+  [Publishing agent branches](#publishing-agent-branches). **New
   session** (the default when you open a repository) lets you pick one of the
   agents installed on the server (Claude, Codex with your ChatGPT plan, Gemini);
   its first message starts a new branch in a worktree of its own. Pick a session
@@ -278,6 +287,15 @@ Worktrees on agent branches (`run/…`, `codex/…`, `agent/…`) get **Push**,
 goes through the forge's own API, so required checks, approvals and branch
 protection still decide. The default branch and your own checkouts are never
 published from here.
+
+Merge needs one tap, in the bar on top of a session or under Branches. It first
+pushes commits the forge has not seen, refuses while an agent is still working
+on the branch, and after the forge merged it cleans up: the branch is deleted
+on the forge, its worktree and local branch are removed on the server, and the
+default branch is fetched. Nothing is forced: a worktree with changes that were
+never committed stays, with its branch, and the answer says so. A pull request
+merged on the forge itself shows as merged here too; **Clean up** then removes
+what is left. The session stays readable under **Merged**.
 
 | Forge | Recognised remotes | Credentials (on the server only) |
 | --- | --- | --- |

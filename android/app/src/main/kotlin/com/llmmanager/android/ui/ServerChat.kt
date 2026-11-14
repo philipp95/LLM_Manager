@@ -26,6 +26,7 @@ private val SERVER_PROJECT = Project(id = SERVER_ID, name = "the server")
  */
 @Composable
 fun ServerChatScreen(chats: ChatViewModel.State, schedule: ScheduleResponse?, actions: ChatActions) {
+    val chat = rememberChatScreen(SERVER_PROJECT, chats, schedule)
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
         item(key = "warning") {
             Text(
@@ -35,7 +36,7 @@ fun ServerChatScreen(chats: ChatViewModel.State, schedule: ScheduleResponse?, ac
                 modifier = Modifier.fillMaxWidth().background(Palette.paper, RoundedCornerShape(14.dp)).padding(12.dp),
             )
         }
-        item(key = "chat") { ChatPanel(SERVER_PROJECT, chats.chats.takeIf { chats.projectId == SERVER_ID }, schedule, chats.sending, actions) }
+        chatItems(chat, actions)
     }
 }
 

@@ -20,6 +20,8 @@ class ChatActions(
     val onCopy: (String) -> Unit,
     /** Opens the sign-in pop-up for an agent; [then] runs once it is signed in. */
     val onSignIn: (agent: String, then: () -> Unit) -> Unit = { _, _ -> },
+    /** Opens a session's pull request ("pull-request") or merges it ("merge"). */
+    val onBranch: (session: ChatView, action: String) -> Unit = { _, _ -> },
 )
 
 /** Everything the repository screen can do, routed to the view models by the caller. */

@@ -321,10 +321,11 @@ class InsightsService(
     private val agentForBranch: (projectId: String, branch: String) -> Agent?,
     private val clock: Clock = Clock.systemUTC(),
     private val ttl: Duration = Duration.ofMinutes(5),
-) {
+) : PullRequestLookup {
     private data class Entry(val insights: RepoInsights?, val at: Instant)
 
     private val cache = ConcurrentHashMap<String, Entry>()
+    private val forges = ConcurrentHashMap<String, Forge>()
     private val refreshing = ConcurrentHashMap.newKeySet<String>()
     private val executor = Executors.newSingleThreadExecutor { Thread(it, "insights").apply { isDaemon = true } }
     private val log = LoggerFactory.getLogger(InsightsService::class.java)
@@ -332,6 +333,7 @@ class InsightsService(
     /** [projects] with their latest known insights; stale or missing ones are refreshed in the background. */
     fun annotate(projects: List<Project>): List<Project> = projects.map { project ->
         val forge = project.originUrl?.let { Forge.of(RemoteUrl.of(it)) } ?: return@map project
+        forges[project.id] = forge
         val entry = cache[project.id]
         if (entry == null || entry.at.plus(ttl).isBefore(Instant.now(clock))) refreshLater(project.id, forge)
         project.copy(insights = entry?.insights)
@@ -357,6 +359,17 @@ class InsightsService(
         cache[projectId] = Entry(insights, Instant.now(clock))
     }
 
+    /**
+     * A pull request among the recent ones. Someone is waiting on it (a session shows its checks),
+     * so what is known is refreshed sooner than for the repository tiles.
+     */
+    override fun find(projectId: String, number: Long): PullRequestSummary? {
+        val entry = cache[projectId]
+        val forge = forges[projectId]
+        if (forge != null && (entry == null || entry.at.plus(WATCHED).isBefore(Instant.now(clock)))) refreshLater(projectId, forge)
+        return entry?.insights?.recent?.firstOrNull { it.number == number }
+    }
+
     fun invalidate(projectId: String) {
         cache.remove(projectId)
     }
@@ -376,6 +389,7 @@ class InsightsService(
 
     private companion object {
         val WEEK: Duration = Duration.ofDays(7)
+        val WATCHED: Duration = Duration.ofSeconds(30)
     }
 }
 

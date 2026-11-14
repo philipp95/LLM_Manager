@@ -52,7 +52,11 @@ class BranchServiceTest {
         return "http://127.0.0.1:${http.address.port}"
     }
 
-    private data class Fixture(val service: BranchService, val store: BranchStore, val projectId: String, val origin: File, val branch: String)
+    private data class Fixture(val service: BranchService, val store: BranchStore, val projectId: String, val origin: File, val branch: String) {
+        lateinit var runs: StateStore
+        lateinit var worktree: File
+        lateinit var checkout: File
+    }
 
     /** A checkout whose origin looks like [remote] but pushes to a local bare repo, with an agent worktree. */
     private fun fixture(remote: String, client: (ForgeCredentials) -> ForgeClient, gh: String? = null): Fixture {
@@ -85,7 +89,11 @@ class BranchServiceTest {
         val branches = BranchStore(File(root, "state"))
         val workspace = Workspace(scanner, SessionHost.None, AgentCommands(null, null))
         val service = BranchService(store, branches, workspace, client(credentials), credentials)
-        return Fixture(service, branches, scanner.scan().single().id, origin, branch)
+        return Fixture(service, branches, scanner.scan().single().id, origin, branch).also {
+            it.runs = store
+            it.worktree = wt
+            it.checkout = checkout
+        }
     }
 
     @Test
@@ -116,6 +124,67 @@ class BranchServiceTest {
         assertEquals("merged", f.store.get(f.projectId, f.branch)!!.pullRequest!!.state)
     }
 
+    private fun gitlabFixture(): Fixture {
+        val api = fakeApi { method, _ ->
+            val state = if (method == "POST") "opened" else "merged"
+            Triple(if (method == "POST") 201 else 200, "application/json", """{"iid":7,"web_url":"$MR_URL","state":"$state"}""")
+        }
+        return fixture("https://gitlab.example.com/team/app.git", { ForgeClient(it, gitlabApi = { _ -> api }) })
+    }
+
+    @Test
+    fun `a merge pushes what the forge has not seen, then removes the branch there and here`() {
+        val f = gitlabFixture()
+        f.service.openPullRequest(f.projectId, f.branch)
+        File(f.worktree, "more.txt").writeText("a later message\n")
+        git(f.worktree, "add", "more.txt")
+        commit(f.worktree, "later work")
+        val head = output(f.worktree, "rev-parse", "HEAD")
+
+        val merged = f.service.merge(f.projectId, f.branch) as BranchService.Outcome.Ok
+
+        assertEquals("Merged into main. The branch and its worktree were removed.", merged.message)
+        assertEquals(head, merged.record.pushedCommit)
+        assertTrue(merged.record.mergedAt != null)
+        assertEquals("", output(f.origin, "branch", "--list", f.branch))
+        assertEquals("", output(f.checkout, "branch", "--list", f.branch))
+        assertTrue(!f.worktree.exists())
+        // The default branch is never touched: it is what it was on the forge and here.
+        assertEquals(output(f.checkout, "rev-parse", "main"), output(f.origin, "rev-parse", "main"))
+        assertTrue(f.service.merge(f.projectId, f.branch) is BranchService.Outcome.Invalid)
+    }
+
+    @Test
+    fun `a worktree with uncommitted work survives the merge, and a busy branch is not merged`() {
+        val f = gitlabFixture()
+        f.service.openPullRequest(f.projectId, f.branch)
+        f.runs.putRun(f.runs.run("r1")!!.copy(id = "r2", status = RunStatus.RUNNING))
+        val busy = f.service.merge(f.projectId, f.branch) as BranchService.Outcome.Invalid
+        assertEquals("An agent is still working on this branch", busy.reason)
+        assertEquals(1, requests.size)
+
+        f.runs.putRun(f.runs.run("r2")!!.copy(status = RunStatus.SUCCEEDED))
+        File(f.worktree, "notes.txt").writeText("never committed\n")
+        val merged = f.service.merge(f.projectId, f.branch) as BranchService.Outcome.Ok
+
+        assertTrue(merged.message.contains("never committed, so it and the local branch were kept"), merged.message)
+        assertTrue(File(f.worktree, "notes.txt").isFile)
+        assertEquals("", output(f.origin, "branch", "--list", f.branch))
+    }
+
+    @Test
+    fun `a pull request merged on the forge itself is only cleaned up`() {
+        val f = gitlabFixture()
+        f.service.openPullRequest(f.projectId, f.branch)
+        f.service.pullRequests = PullRequestLookup { _, number -> PullRequestSummary(number, "t", MR_URL, "merged") }
+
+        val merged = f.service.merge(f.projectId, f.branch) as BranchService.Outcome.Ok
+
+        assertEquals(1, requests.size)
+        assertEquals("merged", merged.record.pullRequest!!.state)
+        assertTrue(!f.worktree.exists())
+    }
+
     @Test
     fun `azure devops uses basic auth with an empty user, api-version and full refs, and reports sign-in pages`() {
         var signIn = false
@@ -137,13 +206,14 @@ class BranchServiceTest {
         assertEquals("Basic " + Base64.getEncoder().encodeToString(":ado-pat-value".toByteArray()), headers["Authorization"])
         assertTrue(body.contains("\"sourceRefName\":\"refs/heads/${f.branch}\"") && body.contains("\"targetRefName\":\"refs/heads/main\""))
 
-        val merged = f.service.merge(f.projectId, f.branch) as BranchService.Outcome.Ok
-        assertEquals("completed", merged.record.pullRequest!!.state)
-        assertTrue(requests.last().second.contains("\"commitId\":\"abc123\""))
-
         signIn = true
         val refused = f.service.merge(f.projectId, f.branch) as BranchService.Outcome.Invalid
         assertTrue(refused.reason.contains("did not accept the token"), refused.reason)
+
+        signIn = false
+        val merged = f.service.merge(f.projectId, f.branch) as BranchService.Outcome.Ok
+        assertEquals("completed", merged.record.pullRequest!!.state)
+        assertTrue(requests.last().second.contains("\"commitId\":\"abc123\""))
     }
 
     @Test
