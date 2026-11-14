@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -28,20 +26,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.llmmanager.android.data.ChatView
 import com.llmmanager.android.data.Project
-import com.llmmanager.android.data.Publish
 import com.llmmanager.android.data.Worktree
 
 /** The project's worktrees with push / pull request controls, and Codex in tmux as the hands-on option. */
@@ -53,6 +50,7 @@ fun BranchesPanel(
     onStartCodex: () -> Unit,
     onCopy: (String) -> Unit,
     onPublish: (branch: String, action: String) -> Unit,
+    sessions: List<ChatView> = emptyList(),
 ) {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -61,7 +59,16 @@ fun BranchesPanel(
         }
         project.worktrees.forEachIndexed { index, worktree ->
             if (index > 0) HorizontalDivider(color = Palette.paperLine)
-            WorktreeRow(worktree, onCopy, project.forge, project.defaultBranch, onPublish)
+            Column(Modifier.fillMaxWidth().background(Palette.field, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp)) {
+                WorktreeRow(worktree, onCopy, project.forge, project.defaultBranch, onPublish)
+                sessions.filter { it.branch != null && it.branch == worktree.branch }.forEach { session ->
+                    Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AgentMark(session.agent, size = 16.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(session.title, color = Palette.ink2, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
         HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(top = 4.dp))
         Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -123,49 +130,16 @@ private fun WorktreeRow(
                     Text("Codex session ended · worktree kept", color = Palette.ink2, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 }
             }
+            if (!worktree.main && worktree.branch != null) {
+                Text("Target: ${defaultBranch ?: "Default branch"}  ←  ${worktree.branch}", color = Palette.tealInk,
+                    fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                BranchFlow(worktree.publish, Modifier.padding(top = 10.dp))
+            }
             val branch = worktree.branch
             if (worktree.publish != null && branch != null) {
                 PublishRow(worktree.publish, forge, branch, defaultBranch) { action -> onPublish(branch, action) }
             }
         }
-    }
-}
-
-/** Push / pull request / merge for an agent branch. Merging happens on the forge, with its checks. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PublishRow(publish: Publish, forge: String?, branch: String, defaultBranch: String?, onAction: (String) -> Unit) {
-    val uriHandler = LocalUriHandler.current
-    var confirmMerge by remember { mutableStateOf(false) }
-    val pr = publish.pullRequest
-    val mergeRequests = forge == "gitlab"
-    FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (publish.upToDate) {
-            Chip("pushed", ChipTone.Ok)
-        } else {
-            OutlinedButton(onClick = { onAction("push") }) { Text(if (publish.pushed) "Push update" else "Push", fontSize = 13.sp) }
-        }
-        pr?.takeIf { it.url.startsWith("https://") }?.let {
-            TextButton(onClick = { uriHandler.openUri(it.url) }) {
-                Icon(Glyphs.pullRequest, contentDescription = null, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("${prRef(forge, it.number)} ${it.state}", fontSize = 13.sp)
-            }
-        }
-        if (pr == null && publish.blocked == null) {
-            Button(onClick = { onAction("pull-request") }) { Text(if (mergeRequests) "Create MR" else "Create PR", fontSize = 13.sp) }
-        }
-        if (pr?.open == true && publish.blocked == null) OutlinedButton(onClick = { confirmMerge = true }) { Text("Merge", fontSize = 13.sp) }
-    }
-    publish.blocked?.let { Text(it, color = Palette.ink2, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
-    if (confirmMerge) {
-        AlertDialog(
-            onDismissRequest = { confirmMerge = false },
-            title = { Text("Merge $branch?") },
-            text = { Text("Into ${defaultBranch ?: "the default branch"}. The forge's required checks and approvals still apply.") },
-            confirmButton = { TextButton(onClick = { confirmMerge = false; onAction("merge") }) { Text("Merge") } },
-            dismissButton = { TextButton(onClick = { confirmMerge = false }) { Text("Cancel") } },
-        )
     }
 }
 

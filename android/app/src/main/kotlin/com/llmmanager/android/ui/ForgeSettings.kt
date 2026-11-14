@@ -109,7 +109,8 @@ private fun forgeRows(forges: List<ForgeAccount>): List<ForgeRowSpec> = buildLis
     add(ForgeRowSpec(null, "Another GitLab server", another, "Add a server", "", ""))
     forges.firstOrNull { it.forge == "azure-devops" }?.let { azure ->
         val form = TokenForm(
-            "azure-devops", "Azure DevOps token", "A personal access token with Code (Read & write), made in your organisation's user settings.",
+            "azure-devops", "Azure DevOps token",
+            "An organisation-scoped token with Code (Read & write) and Work Items (Read), made in your organisation's user settings.",
             asksOrganization = true,
         )
         add(ForgeRowSpec(azure, "Azure DevOps", form, "Add a token", "Remove token", "Remove the Azure DevOps token?"))

@@ -193,6 +193,20 @@ class DashboardModuleTest {
         assertEquals(HttpStatusCode.OK, client.get("/readyz") { header(HttpHeaders.Host, "BOX.tail.ts.net:8080") }.status)
     }
 
+    @Test
+    fun `repository issues are delivered only to authenticated clients`() = testApplication {
+        val scanner = scanner()
+        val project = scanner.scan().single()
+        val workItems = WorkItemsService(WorkItemSource {
+            Result.success(RepoWorkItems(items = listOf(RepoWorkItem(17, "Fix layout", "https://github.com/acme/demo/issues/17", "open"))))
+        })
+        workItems.refresh(project.id, Forge.GitHub("acme", "demo"))
+        application { dashboardModule(scanner, token, DashboardServices(workItems = workItems)) }
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/projects").status)
+        val response = Json.decodeFromString<ProjectsResponse>(client.get("/api/projects") { auth() }.bodyAsText())
+        assertEquals(17L, response.projects.single().workItems!!.items.single().number)
+    }
+
     /** Sends one raw HTTP/1.1 request to a real Netty server and returns the status line. */
     private fun raw(port: Int, request: String): String = Socket("127.0.0.1", port).use { socket ->
         socket.soTimeout = 10_000

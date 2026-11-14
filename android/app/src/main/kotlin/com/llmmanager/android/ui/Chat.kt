@@ -40,11 +40,18 @@ import com.llmmanager.android.data.ScheduleResponse
 
 /**
  * Talk to the agents about this repository, in sessions. A new session works on a branch of its
- * own; its next messages continue the same conversation there, and when the project has a forge
- * the branch's pull request is opened and then kept up to date.
+ * own; its next messages continue the same conversation there. Publishing is an explicit
+ * choice, offered beside the branch and as an opt-in when sending a message.
  */
 @Composable
-fun ChatPanel(project: Project, chats: List<ChatView>?, schedule: ScheduleResponse?, sending: Boolean, actions: ChatActions) {
+fun ChatPanel(
+    project: Project,
+    chats: List<ChatView>?,
+    schedule: ScheduleResponse?,
+    sending: Boolean,
+    actions: ChatActions,
+    onPublish: (String, String) -> Unit = { _, _ -> },
+) {
     // Opening a repository starts with a new session; picking one from the list continues it.
     var selectedId by rememberSaveable(project.id) { mutableStateOf<String?>(null) }
     val sessions = chats.orEmpty()
@@ -61,6 +68,12 @@ fun ChatPanel(project: Project, chats: List<ChatView>?, schedule: ScheduleRespon
             Text(newSessionNote(project), color = Palette.ink2, fontSize = 13.5.sp)
         } else {
             Conversation(project, selected, schedule, actions)
+            selected.branch?.let { branch ->
+                project.worktrees.firstOrNull { it.branch == branch }?.publish?.let { publish ->
+                    BranchFlow(publish, Modifier.padding(top = 12.dp))
+                    PublishRow(publish, project.forge, branch, project.defaultBranch) { action -> onPublish(branch, action) }
+                }
+            }
         }
         HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(top = 14.dp, bottom = 12.dp))
         Composer(project, ComposerTarget(schedule, sessions, selected), sending, actions) { sent -> selectedId = sent.id }
@@ -69,7 +82,7 @@ fun ChatPanel(project: Project, chats: List<ChatView>?, schedule: ScheduleRespon
 
 private fun newSessionNote(project: Project): String = when {
     project.isServer -> "Your message starts a new server session. Its agent works on the server itself, not on a branch."
-    project.forge != null -> "Your message starts a new session on a new branch; when it's done, the branch is pushed and a pull request is opened."
+    project.forge != null -> "Your message starts a new branch. Push and create a pull request from its branch card when ready."
     else -> "Your message starts a new session on a new branch."
 }
 

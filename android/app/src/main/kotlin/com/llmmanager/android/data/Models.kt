@@ -70,6 +70,7 @@ data class Project(
     val commitsPerDay: List<Int> = emptyList(),
     /** Pull request activity on the forge, once the server has read it. */
     val insights: RepoInsights? = null,
+    val workItems: RepoWorkItems? = null,
     val pinned: Boolean = false,
     /** 0 to 5; more stars sort higher. */
     val stars: Int = 0,
