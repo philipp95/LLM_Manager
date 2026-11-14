@@ -36,15 +36,22 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 | Every `/api` endpoint needs `Authorization: Bearer <token>`: the access token (256-bit, compared in constant time) or a paired device's token. Open: the static page, `/readyz`, the APK, pairing | `DashboardModule`, `ApiToken`, `Access` |
 | Pairing: tailscaled's whois says who is connecting. Only untagged devices of the person the server is signed in as can pair; the server's own node (so anything running on it, such as an agent) cannot. Each device gets its own 256-bit token, stored as a SHA-256 hash, accepted only from that device's node, listed and revocable; `--pairing off` disables it | `Pairing`, `Tailnet` |
 | Pairing refuses requests another web site makes the browser send (`Sec-Fetch-Site`, `Origin` checked against the allowed hosts); its answer is not readable cross-origin anyway | `PairingRoutes` |
-| In-app updates come only from the configured server's `/download/` path, are checked against the SHA-256 the server reports, and installed through Android's package installer, which asks the user and refuses an APK signed with another key | `AppUpdater` |
+| App updates are offered from the configured server's `/download/` path and opened in the browser; Android's installer, which refuses an APK signed with another key, installs them. The app holds no permission to install packages | `AppDownload` |
 | Host header must be the bind address or the machine's MagicDNS names (`--allowed-host` adds more); others get 421 | `DashboardModule`, `BindAddress.allowedHosts` |
 | CSP allows only the page's own script (by SHA-256); `frame-ancestors 'none'`, COOP/CORP, `nosniff`, `no-referrer`, `no-store` | `DashboardModule` |
 | Request bodies ≤ 64 KiB, `Content-Length` required; unexpected errors become JSON 500 without details | `DashboardModule` |
 | Token, state and run logs private (0600 / 0700); forge token files refused unless owner-only | `SecureFiles`, `StateStore`, `ForgeCredentials` |
 | Forge tokens bound to one host (`gitlab-token` = gitlab.com, `gitlab-token-<host>` otherwise; Azure DevOps = dev.azure.com), never sent across redirects, passed to `git push` via environment, not argv | `ForgeCredentials`, `ForgeClient` |
+| Agent sign-in from the phone runs each CLI's own sign-in command, fixed per agent, in tmux. The pop-up gets only links on that agent's own sign-in hosts plus the CLI's last lines; a pasted code is limited to the characters OAuth codes use, reaches the CLI through a tmux buffer filled from stdin (never a command line), and is not echoed back. One sign-in per agent, ended after 5 to 15 minutes | `AgentSignIn`, `Terminals` |
+| Keys and tokens entered in Settings are write-only: API keys go to `codex login --with-api-key` on stdin or to Gemini's `~/.gemini/.env` (0600); GitHub tokens to `gh auth login --with-token` on stdin; GitLab and Azure DevOps tokens, once their host accepts them, to owner-only files written 0600 from the start. None is returned to a client | `AgentAccounts`, `GeminiFiles`, `ForgeAccounts`, `SecureFiles` |
+| A model chosen in Settings can never read as a command-line option; profile names and emails without `<`, `>` or control characters are the only identities git is given | `PreferencesStore` |
 | Agent permissions pinned on the command line: edits plus an allowlist of build/test/read-only git commands (Claude, Gemini policy), Codex's workspace-write sandbox; reviews read-only | `AgentCommands` |
 | Agents start with a minimal environment: no `SSH_AUTH_SOCK`, `GH_TOKEN`, tmux/D-Bus variables or other agents' keys | `AgentEnvironment` |
 | With bubblewrap: read-only root; secrets, other agents' logins and runtime sockets hidden; only the worktree, the agent's own state and build caches writable; agent config (hooks, settings, MCP servers) read-only | `AgentSandbox` |
+| Without a working bubblewrap: Landlock, the kernel's unprivileged sandbox, through a packaged helper. Only the worktree, the agent's own state, build caches, `/tmp` and `/dev` are writable; this server's state, credentials, keys and the other agents' logins are unreadable; Unix sockets (tmux, D-Bus, systemd, Docker) are refused by a seccomp filter. Self-tested at startup with a write outside the worktree that must fail | `LandlockProfile`, `sandbox/landlock.py` |
+| A repository session changes only its own repository: its agent starts in that session's worktree, the sandbox makes everything else read-only, and the briefing says so. Work on anything else is refused and pointed to that repository's chat | `ChatService`, `AgentSandbox` |
+| The Server chat is the one exception, set apart and labelled "Unconfined" in the page and the app: its agent works as the server's user with no sandbox, to change the server itself. `--server-chat off` removes it | `ServerChat`, `Workspace` |
+| A repository added by address is never cloned from what was typed: the address is only parsed into a forge (GitHub, GitLab, Azure DevOps), an owner and a repository, and the clone address is rebuilt as `https://` from those checked parts, so nothing typed reaches git as an option, another protocol or another host. The clone lands inside `--clone-dir`, and the token reaches git through the environment, never argv | `RepoCloner` |
 | Server-side git never runs repository-defined programs (fsmonitor, hooks, signing, `ext::`), and runs inside a linked worktree only while its `.git` link points into the repository | `Git.HARDENING`, `WorktreeGuard` |
 | Publishing only for agent branches; pushes never forced; merges through the forge's API so its checks and approvals apply | `BranchService` |
 | A chat message may ask for publishing; the server then pushes that run's own branch and opens a pull request after the run (and its review) finished, on a separate thread, never the default branch | `Scheduler` (`FollowUps`), `BranchService` |
@@ -56,8 +63,8 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 
 ## Admin steps this account cannot do itself
 
-1. **Install bubblewrap** so agent runs are contained:
-   `sudo apt install bubblewrap`. With the default `--agent-sandbox auto`, the next
+1. **Install bubblewrap** for the stronger containment (without it the server falls back
+   to Landlock, see the residual risks): `sudo apt install bubblewrap`. With the default `--agent-sandbox auto`, the next
    server start self-tests the profile with each agent's `--version` and sandboxes the
    agents that pass. The Schedule tab shows the result. Use `--agent-sandbox on` to
    refuse runs that cannot be sandboxed.
@@ -73,13 +80,21 @@ The phone (web page or app) steers agents that edit those repositories, unattend
   DevOps organisation-scoped, Code read & write). Global Azure DevOps PATs stop working
   on 1 December 2026.
 - **Repositories**: allowed build commands run the repository's own build scripts.
-  Without bubblewrap, a run can do anything this account can.
+  Without bubblewrap or Landlock, a run can do anything this account can.
+- **Server chat**: use it only for work on the server itself. It is as powerful as an SSH
+  session of this account; start with `--server-chat off` if the phone should not have that.
 
 ## Residual risks
 
-- **No OS sandbox until bubblewrap is installed.** Until then the environment allowlist
-  and permission pinning reduce exposure, but a run that executes build scripts can read
-  every file this account can read.
+- **Landlock is weaker than bubblewrap.** Where bubblewrap is missing or may not create
+  its namespaces, runs are confined with Landlock: the agent's own configuration (hooks,
+  settings, MCP servers) stays writable, `/tmp` is shared with the rest of the machine, and
+  a file created later next to a hidden one is unreadable until the next run. With neither,
+  only the environment allowlist and permission pinning apply, and a run that executes
+  build scripts can read every file this account can read.
+- **The Server chat is unconfined by design.** Whoever holds the access token or a paired
+  device can have an agent run any command as the server's user. Its briefing tells the
+  agent not to print the API token, which is advice, not a control.
 - **Network access is not restricted** for agents, even when sandboxed: they need their
   model APIs. A run can send anything it can read to the internet.
 - **Build caches are writable** inside the sandbox (`~/.gradle`, `~/.npm`, ...), so a
@@ -90,5 +105,9 @@ The phone (web page or app) steers agents that edit those repositories, unattend
   that can reach the server can pair itself, just as it can reach any other service on your
   tailnet. Revoking a device makes it pair again; removing it from your Tailscale account
   locks it out. Use `--pairing off` if that is too much trust.
-- **The sandbox profile is untested on this machine** because bubblewrap is not installed;
-  it is unit-tested as an argument list and self-tested at startup before use.
+- **API access includes the agents' and code hosts' sign-ins.** Whoever holds the access token
+  or a paired device can sign the agent CLIs in or out, switch their accounts and replace code
+  host tokens on the server (never read them). That is the same trust as starting agent runs.
+- **The bubblewrap profile is untested on this machine** because bubblewrap is not installed;
+  it is unit-tested as an argument list and self-tested at startup before use. The Landlock
+  profile is what runs here.

@@ -26,7 +26,10 @@ The repository currently contains five Kotlin/JVM modules and an Android app:
   and resume themselves after plan limits reset; Claude, Codex and Gemini are
   supported. It pushes agent branches and opens and merges pull requests on
   GitHub (via `gh`), GitLab and Azure DevOps (via their REST APIs, with tokens
-  in owner-only files), always through the forge's own merge rules. It reports activity analytics
+  in owner-only files), always through the forge's own merge rules. Its settings
+  page signs the agent CLIs in by relaying their own sign-in (link, device code,
+  pasted code) to a pop-up, keeps code-host tokens, and holds the profile (the
+  committer of agent commits) and per-agent model and visibility. It reports activity analytics
   and plan usage from local records, and serves the Android APK. It uses the
   runner's `SecretRedactor` for run logs but not its harness.
 - `android/app`: a Compose client for that API, restricted to Tailscale hosts,

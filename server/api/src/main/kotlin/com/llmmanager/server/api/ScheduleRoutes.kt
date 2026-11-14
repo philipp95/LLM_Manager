@@ -12,7 +12,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 
 /** Everything the scheduling and usage routes need. */
-class ScheduleApi(val jobs: JobService, val store: StateStore, val usage: UsageReader, val branches: BranchService? = null)
+class ScheduleApi(
+    val jobs: JobService,
+    val store: StateStore,
+    val usage: UsageReader,
+    val branches: BranchService? = null,
+    val chats: ChatService? = null,
+)
 
 @Serializable
 data class BranchRequest(val branch: String)
@@ -33,6 +39,7 @@ fun Route.scheduleRoutes(api: ScheduleApi, access: Access, onChange: (projectId:
     jobRoutes(api, access)
     runRoutes(api, access)
     api.branches?.let { branchRoutes(it, access, onChange) }
+    api.chats?.let { chatRoutes(it, access, onChange) }
 }
 
 private const val USAGE_TTL_MS = 10_000L
@@ -120,7 +127,10 @@ private fun Route.runRoutes(api: ScheduleApi, access: Access) {
             return@get
         }
         val events = File(api.store.runDir(run.id), "events.jsonl")
-        call.respond(RunLog(run, withContext(Dispatchers.IO) { RunActivity.activity(run.agent, run.stage, events) }))
+        // `tail` asks for only the last few steps: what a chat shows while its agent is working.
+        val max = call.request.queryParameters["tail"]?.toIntOrNull()?.coerceIn(1, MAX_ACTIVITY) ?: MAX_ACTIVITY
+        call.respond(RunLog(run, withContext(Dispatchers.IO) { RunActivity.activity(run.agent, run.stage, events, max) }))
     }
 }
 
+private const val MAX_ACTIVITY = 150

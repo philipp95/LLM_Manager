@@ -40,6 +40,21 @@ object SecureFiles {
     /** Whether [file] is readable by the owner only (always true without POSIX permissions). */
     fun isPrivate(file: File): Boolean = !posix(file) || Files.getPosixFilePermissions(file.toPath()).none { it in GROUP_OR_OTHER }
 
+    /**
+     * Writes [text] to [file] as 0600 from the start: a temporary file created owner-only, then
+     * moved over [file], so a secret is never readable by others, not even for a moment.
+     */
+    fun writePrivate(file: File, text: String) {
+        file.parentFile?.mkdirs()
+        val temp = File(file.parentFile, ".${file.name}.tmp")
+        temp.delete()
+        if (posix(file)) {
+            Files.createFile(temp.toPath(), PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+        }
+        temp.writeText(text)
+        Files.move(temp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+    }
+
     /** Tightens a file this server owns, such as its own token, to 0600. */
     fun makePrivate(file: File) {
         if (posix(file) && !isPrivate(file)) {

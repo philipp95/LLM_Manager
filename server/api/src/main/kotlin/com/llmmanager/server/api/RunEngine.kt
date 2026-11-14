@@ -19,6 +19,8 @@ class RunEngine(
     private val workspace: Workspace,
     private val worktreeRoot: File,
     private val clock: Clock = Clock.systemUTC(),
+    /** The person from Settings who commits agent work; null keeps the agent as committer too. */
+    private val committer: () -> Profile? = { null },
 ) {
     private val git = workspace.git
     private val sessions = workspace.sessions
@@ -34,7 +36,8 @@ class RunEngine(
 
     private fun launch(prepared: Run): Run {
         val run = prepared
-        val refusal = workspace.sandbox.refusal(run.agent)
+        // The server chat is unconfined by design, so there is no sandbox to insist on.
+        val refusal = workspace.sandbox.refusal(run.agent).takeUnless { ServerChat.owns(run) }
         val started = refusal == null && startSession(run)
         return when {
             refusal != null -> finish(run.copy(status = RunStatus.FAILED, error = refusal))
@@ -49,21 +52,22 @@ class RunEngine(
     /** Writes the prompt and run script, then starts the tmux session; records the run as RUNNING when it starts. */
     private fun startSession(run: Run): Boolean {
         val dir = store.runDir(run.id)
-        File(dir, "prompt.txt").writeText(run.prompt)
+        val server = ServerChat.owns(run)
+        File(dir, "prompt.txt").writeText(RunRules.prompt(run, workspace.serverChat))
         // New work: Claude and Gemini accept a chosen session id; Codex reports its own when it starts.
         // A resume or fix must name an existing session; a made-up id would "resume" nothing.
         val sessionId = run.sessionId ?: if (run.stage == Stage.WORK && run.agent != Agent.CODEX) UUID.randomUUID().toString() else null
         val command = when (run.stage) {
-            Stage.WORK -> commands.work(run.agent, sessionId ?: "")
+            Stage.WORK -> commands.work(run.agent, sessionId ?: "", server)
             Stage.REVIEW -> commands.review(run.agent, checkNotNull(run.resultCommit))
-            Stage.FIX, Stage.RESUME -> commands.resume(run.agent, checkNotNull(sessionId) { "no session to resume" })
+            Stage.FIX, Stage.RESUME -> commands.resume(run.agent, checkNotNull(sessionId) { "no session to resume" }, server)
         }
         val worktree = File(checkNotNull(run.worktree))
-        val wrapped = workspace.sandbox.wrap(run.agent, worktree, command, workspace.sandbox.scratchClaudeJson(run.agent, dir))
+        val wrapped = if (server) command else workspace.sandbox.wrap(run.agent, worktree, command, workspace.sandbox.scratchClaudeJson(run.agent, dir))
         val script = File(dir, "run.sh").apply { writeText(wrapper(worktree, dir, wrapped, run.agent)) }
         val tmux = "run-${run.id}"
         val started = sessions.start(tmux, worktree, listOf("bash", script.path))
-        if (started) store.putRun(run.copy(status = RunStatus.RUNNING, sessionId = sessionId, tmuxSession = tmux, startedAt = now()))
+        if (started) store.putRun(run.copy(status = RunStatus.RUNNING, sessionId = sessionId, tmuxSession = tmux, startedAt = Instant.now(clock).toString()))
         return started
     }
 
@@ -93,7 +97,8 @@ class RunEngine(
             error = outcome.error,
             limitResetsAt = outcome.limitResetsAt?.toString(),
         )
-        if (status != RunStatus.SUCCEEDED || run.stage == Stage.REVIEW) return finish(finished)
+        // A review changes nothing, and the server chat is not a repository: nothing to commit.
+        if (status != RunStatus.SUCCEEDED || run.stage == Stage.REVIEW || ServerChat.owns(run)) return finish(finished)
         // Committing runs git inside the worktree, so its link to the repository must be intact.
         val commonDir = workspace.scanner.locate(run.projectId)?.commonDir
         val intact = commonDir != null && WorktreeGuard.intact(File(checkNotNull(run.worktree)), commonDir)
@@ -109,12 +114,13 @@ class RunEngine(
         return finish(run.copy(status = RunStatus.CANCELLED, error = "Cancelled"))
     }
 
-    /** Resolves the worktree: a new one for fresh work, the given one otherwise. */
+    /** Resolves the worktree: a new one for fresh work, the given one otherwise; the home directory for the server chat. */
     private fun prepare(run: Run): Run {
         if (!commands.available(run.agent)) return run.copy(error = "${run.agent.label} CLI is not installed on the server")
-        if (run.worktree != null) {
-            return if (File(run.worktree).isDirectory) run else run.copy(error = "Worktree ${run.worktree} no longer exists")
+        if (ServerChat.owns(run)) {
+            return workspace.serverChat?.let { run.copy(worktree = it.home.path) } ?: run.copy(error = "The server chat is turned off on this server")
         }
+        if (run.worktree != null) return existing(run, File(run.worktree))
         val located = workspace.scanner.locate(run.projectId) ?: return run.copy(error = "Project no longer found")
         return when (val made = Worktrees(git, worktreeRoot, clock).create(located, RUN_BRANCH_PREFIX)) {
             is Worktrees.Result.Failed -> run.copy(error = made.reason)
@@ -122,28 +128,53 @@ class RunEngine(
         }
     }
 
-    /** Commits whatever the agent changed, attributed to the agent, never to a person. Returns the commit or the previous one. */
+    /**
+     * A run in a worktree that already exists (a resume, a review, a session's next message):
+     * it works on that worktree's branch, from its current commit. Git runs there only while the
+     * worktree's `.git` link still points into the repository.
+     */
+    private fun existing(run: Run, dir: File): Run {
+        if (!dir.isDirectory) return run.copy(error = "Worktree ${run.worktree} no longer exists")
+        if (run.branch != null && run.baseCommit != null) return run
+        val commonDir = workspace.scanner.locate(run.projectId)?.commonDir
+        if (commonDir == null || !WorktreeGuard.intact(dir, commonDir)) {
+            return run.copy(error = "The worktree's .git link no longer points into its repository; start a new session")
+        }
+        return run.copy(
+            branch = run.branch ?: git.run(dir, "symbolic-ref", "--quiet", "--short", "HEAD")?.trim()?.ifEmpty { null },
+            baseCommit = run.baseCommit ?: git.run(dir, "rev-parse", "HEAD")?.trim()?.ifEmpty { null },
+        )
+    }
+
+    /**
+     * Commits whatever the agent changed. The agent is always the author, never a person; the
+     * person set up in Settings, when there is one, is the committer, so the commit is linked
+     * to their account on the code host. Returns the commit or the previous one.
+     */
     private fun commitChanges(run: Run): String? {
         val dir = File(checkNotNull(run.worktree))
         val dirty = git.run(dir, "status", "--porcelain", "--ignore-submodules=all")?.isNotBlank() == true
         if (!dirty) return run.resultCommit
         val title = run.prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(TITLE_CHARS) ?: "agent changes"
         val message = "${run.agent.label} (${run.stage.name.lowercase()}): $title\n\nRun ${run.id} started by LLM Manager.\n"
-        val identity = listOf("-c", "user.name=${run.agent.label} via LLM Manager", "-c", "user.email=llm-manager@localhost")
-        val committed = git.run(dir, "add", "-A") != null && git.run(dir, identity + listOf("commit", "--no-verify", "-q", "-m", message)) != null
+        val agent = "${run.agent.label} via LLM Manager"
+        val person = committer()
+        val identity = listOf("-c", "user.name=${person?.name ?: agent}", "-c", "user.email=${person?.email ?: AGENT_EMAIL}")
+        val commit = listOf("commit", "--no-verify", "-q", "--author=$agent <$AGENT_EMAIL>", "-m", message)
+        val committed = git.run(dir, "add", "-A") != null && git.run(dir, identity + commit) != null
         return if (committed) git.run(dir, "rev-parse", "HEAD")?.trim() else run.resultCommit
     }
 
     private fun finish(run: Run): Run {
         File(store.runDir(run.id), "claude.json").delete()
-        return run.copy(finishedAt = now()).also(store::putRun)
+        return run.copy(finishedAt = Instant.now(clock).toString()).also(store::putRun)
     }
 
-    private fun now(): String = Instant.now(clock).toString()
 
     companion object {
         const val RUN_BRANCH_PREFIX = "run"
         private const val TITLE_CHARS = 60
+        private const val AGENT_EMAIL = "llm-manager@localhost"
 
         /** Single-quotes [value] for bash, so paths are never interpreted. */
         fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"

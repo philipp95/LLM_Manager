@@ -117,11 +117,4 @@ class ScheduleViewModel(
             mutableState.update { it.copy(loading = false) }
         }
     }
-
-    private fun describe(result: ApiResult<*>): String = when (result) {
-        is ApiResult.Ok -> "OK"
-        is ApiResult.NoRoute -> "Can't reach the server — is Tailscale connected?"
-        ApiResult.Unauthorized -> "The access token was refused"
-        is ApiResult.Failed -> result.message
-    }
 }

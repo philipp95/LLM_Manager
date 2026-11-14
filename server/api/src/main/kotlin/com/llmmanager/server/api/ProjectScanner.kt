@@ -55,7 +55,8 @@ class ProjectScanner(
         val dir = File(expandHome(if (wildcard) source.dropLast(2) else source))
         when {
             !dir.isDirectory -> emptyList()
-            wildcard -> dir.listFiles { child -> child.isDirectory }.orEmpty().sortedBy { it.name }
+            // Hidden folders are not projects; a repository being cloned waits in one.
+            wildcard -> dir.listFiles { child -> child.isDirectory && !child.name.startsWith(".") }.orEmpty().sortedBy { it.name }
             else -> listOf(dir)
         }
     }
@@ -140,10 +141,11 @@ class ProjectScanner(
         return if (bare && !fromOrigin.isNullOrEmpty()) fromOrigin else path.name.removeSuffix(".git")
     }
 
-    private fun expandHome(path: String): String =
-        if (path == "~" || path.startsWith("~/")) System.getProperty("user.home") + path.drop(1) else path
-
     companion object {
+        /** `~` and `~/…` are the server user's home, as in a shell. */
+        fun expandHome(path: String): String =
+            if (path == "~" || path.startsWith("~/")) System.getProperty("user.home") + path.drop(1) else path
+
         const val AGENT_BRANCH_PREFIX = "agent/"
         private const val ID_HEX_CHARS = 16
         private const val MAX_COMMITS_SCANNED = 5000

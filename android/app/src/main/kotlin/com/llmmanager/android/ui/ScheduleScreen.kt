@@ -181,7 +181,7 @@ private fun RunCard(run: Run, onLog: () -> Unit, onCancel: () -> Unit, onCopy: (
         run.summary?.let { Snippet(it, Palette.ink2) }
         run.error?.let { Snippet(it, Palette.badInk) }
         run.publishNote?.let { Snippet(it, Palette.ink2) }
-        if (run.status == "running" && run.tmuxSession != null) AttachCommand("tmux attach -t ${run.tmuxSession}", onCopy)
+        if (run.status == "running" && run.tmuxSession != null) AttachDisclosure("tmux attach -t ${run.tmuxSession}", onCopy)
         Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onLog) { Text("Log") }
             if (run.active) TextButton(onClick = onCancel) { Text("Cancel", color = Palette.badInk) }

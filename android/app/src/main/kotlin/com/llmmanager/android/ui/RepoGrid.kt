@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,12 +32,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.llmmanager.android.data.Project
+import com.llmmanager.android.data.RepoPreference
 
-/** Repository tiles, [columns] to a row; tiles in a row share one height so their parts line up. */
-fun LazyListScope.repoGrid(projects: List<Project>, columns: Int, onOpen: (Project) -> Unit) {
+/** Repository cards, [columns] to a row; cards in a row share one height so their parts line up. */
+fun LazyListScope.repoGrid(projects: List<Project>, columns: Int, onOpen: (Project) -> Unit, onPrefer: (Project, RepoPreference) -> Unit) {
     items(projects.chunked(columns), key = { row -> "row-" + row.first().id }) { row ->
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            row.forEach { project -> RepoTile(project, Modifier.weight(1f).fillMaxHeight(), onOpen = { onOpen(project) }) }
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            row.forEach { project ->
+                RepoTile(project, Modifier.weight(1f).fillMaxHeight(), onOpen = { onOpen(project) }, onPrefer = { onPrefer(project, it) })
+            }
             repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
         }
     }
@@ -47,33 +51,38 @@ fun LazyListScope.repoGrid(projects: List<Project>, columns: Int, onOpen: (Proje
  * agent, CI/CD), the past week's merged and open counts, and a link to the forge.
  */
 @Composable
-fun RepoTile(project: Project, modifier: Modifier = Modifier, onOpen: () -> Unit) {
+fun RepoTile(project: Project, modifier: Modifier = Modifier, onOpen: () -> Unit, onPrefer: (RepoPreference) -> Unit) {
     val uriHandler = LocalUriHandler.current
     val owner = project.name.substringBeforeLast('/', "")
     val repo = project.name.substringAfterLast('/')
     // The server builds the forge link from validated parts; still only open https links.
     val webUrl = (project.webUrl ?: project.gitHubUrl)?.takeIf { it.startsWith("https://") }
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(20.dp)
     Column(
-        modifier.shadow(4.dp, shape).background(Palette.paper, shape).clickable(onClickLabel = "Open $repo", onClick = onOpen).padding(12.dp),
+        modifier.shadow(5.dp, shape).background(Palette.paper, shape).clickable(onClickLabel = "Open $repo", onClick = onOpen)
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp),
     ) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 30.dp), verticalAlignment = Alignment.CenterVertically) {
-            ForgeBadge(project.forge)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            ForgeBadge(project.forge, size = 40.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(repo, color = Palette.ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(owner.ifEmpty { "local" }, color = Palette.ink2, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            PinButton(project.pinned) { onPrefer(RepoPreference(!project.pinned, project.stars)) }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            StarRating(project.stars) { onPrefer(RepoPreference(project.pinned, it)) }
             Spacer(Modifier.weight(1f))
             if (project.worktrees.any { it.codex?.running == true }) Chip("Codex live", ChipTone.Live, dot = true)
         }
-        Text(
-            repo, color = Palette.ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-        Text(owner.ifEmpty { "local" }, color = Palette.ink2, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        // Always three lines tall, as an explicit height: intrinsic measurement (which lines the tiles of a row up) ignores minLines.
+        // Always two lines tall, as an explicit height: intrinsic measurement (which lines the tiles of a row up) ignores minLines.
         val descriptionHeight = with(LocalDensity.current) { (DESCRIPTION_LINE_HEIGHT * DESCRIPTION_LINES).toDp() }
         Text(
-            project.description ?: "No README description.", color = Palette.ink2, fontSize = 12.5.sp, lineHeight = DESCRIPTION_LINE_HEIGHT,
+            project.description ?: "No README description.", color = Palette.ink2, fontSize = 14.sp, lineHeight = DESCRIPTION_LINE_HEIGHT,
             maxLines = DESCRIPTION_LINES, overflow = TextOverflow.Ellipsis,
             fontStyle = if (project.description == null) FontStyle.Italic else FontStyle.Normal,
-            modifier = Modifier.padding(top = 6.dp, bottom = 8.dp).heightIn(min = descriptionHeight),
+            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp).heightIn(min = descriptionHeight),
         )
         TileCell("Latest merged") { LatestMerged(project) }
         TileCell("Past week") { PastWeek(project) }
@@ -156,5 +165,5 @@ private fun CellNote(text: String) {
     Text(text, color = Palette.ink2, fontSize = 12.5.sp)
 }
 
-private val DESCRIPTION_LINE_HEIGHT = 17.sp
-private const val DESCRIPTION_LINES = 3
+private val DESCRIPTION_LINE_HEIGHT = 19.sp
+private const val DESCRIPTION_LINES = 2

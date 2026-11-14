@@ -58,27 +58,36 @@ class Scheduler(
         run.copy(status = RunStatus.FAILED, error = error, finishedAt = Instant.now(clock).toString()).also(store::putRun)
     }
 
-    /** Queues the first run of [job] now, and records the firing. */
+    /**
+     * Queues the first run of [job] now, and records the firing. A job that continues an agent
+     * session (a resume, or a chat message in an existing session) starts by resuming it, in its
+     * worktree; a pipeline then goes on to review and fix as usual.
+     */
     @Synchronized
     fun fire(job: Job): Run {
         val now = Instant.now(clock).toString()
         store.putJob(job.copy(lastFiredAt = now, done = job.schedule.at != null))
-        val base = Run(
-            id = newRunId(), jobId = job.id, projectId = job.projectId, projectName = job.projectName, agent = job.agent,
-            stage = Stage.WORK, status = RunStatus.QUEUED, prompt = job.prompt, createdAt = now,
+        val target = job.resume
+        val run = Run(
+            id = newRunId(), jobId = job.id, projectId = job.projectId, projectName = job.projectName,
+            agent = target?.agent ?: job.agent,
+            stage = if (target != null) Stage.RESUME else Stage.WORK,
+            status = RunStatus.QUEUED,
+            prompt = job.context?.let { "$it\n\n${job.prompt}" } ?: job.prompt,
+            pipelineId = newRunId().takeIf { job.kind == JobKind.PIPELINE },
+            sessionId = target?.sessionId,
+            worktree = target?.worktree ?: job.worktree,
+            createdAt = now,
+            // A scheduled job's every firing is a session of its own; a resume joins the session it continues.
+            chatId = job.chatId ?: target?.let { chatOf(it) } ?: newRunId(),
         )
-        val run = when (job.kind) {
-            JobKind.RUN -> base
-            JobKind.PIPELINE -> base.copy(pipelineId = newRunId())
-            JobKind.RESUME -> {
-                val target = checkNotNull(job.resume)
-                base.copy(stage = Stage.RESUME, agent = target.agent, sessionId = target.sessionId, worktree = target.worktree)
-            }
-        }
         store.putRun(run)
         log.info("Fired job {} ({}) as run {}", job.name, job.kind, run.id)
         return run
     }
+
+    private fun chatOf(session: SessionRef): String? =
+        store.runs().firstOrNull { it.sessionId == session.sessionId && it.worktree == session.worktree && it.chatId != null }?.chatId
 
     @Synchronized
     fun cancel(run: Run): Run = when (run.status) {

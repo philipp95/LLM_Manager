@@ -90,16 +90,16 @@ class AgentSandboxTest {
         val scratch = directory.toFile()
         val claude = mapOf(Agent.CLAUDE to "/bin/claude")
         val missing = listOf("/nonexistent/bwrap")
-        val auto = AgentSandbox.detect(AgentSandbox.Mode.AUTO, { profile }, claude, scratch, candidates = missing)
+        val auto = AgentSandbox.detect(AgentSandbox.Mode.AUTO, AgentSandbox.Means({ profile }, missing), claude, scratch)
         assertFalse(auto.activeFor(Agent.CLAUDE))
         assertNull(auto.refusal(Agent.CLAUDE))
         assertTrue(auto.status().note.contains("apt install bubblewrap"))
         assertEquals(listOf("/bin/claude", "-p"), auto.wrap(Agent.CLAUDE, worktree, listOf("/bin/claude", "-p")))
 
-        val on = AgentSandbox.detect(AgentSandbox.Mode.ON, { profile }, claude, scratch, candidates = missing)
+        val on = AgentSandbox.detect(AgentSandbox.Mode.ON, AgentSandbox.Means({ profile }, missing), claude, scratch)
         assertTrue(on.refusal(Agent.CLAUDE)!!.contains("--agent-sandbox on"))
 
-        val off = AgentSandbox.detect(AgentSandbox.Mode.OFF, { profile }, emptyMap(), scratch)
+        val off = AgentSandbox.detect(AgentSandbox.Mode.OFF, AgentSandbox.Means({ profile }), emptyMap(), scratch)
         assertEquals("off", off.status().mode)
         assertNull(off.refusal(Agent.GEMINI))
     }

@@ -36,7 +36,7 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 /** What the dashboard can do beyond listing projects; each part is optional. */
-class DashboardServices(
+data class DashboardServices(
     val launcher: CodexLauncher? = null,
     val apk: ApkFile? = null,
     val schedule: ScheduleApi? = null,
@@ -46,6 +46,12 @@ class DashboardServices(
     val pairing: Pairing? = null,
     /** The client's tailnet address; tests stand in for other devices with it. */
     val peerAddress: (ApplicationCall) -> String = { it.request.local.remoteAddress },
+    /** Profile, agent sign-ins and code hosts. */
+    val settings: SettingsApi? = null,
+    /** Adds repositories by their address. */
+    val cloner: RepoCloner? = null,
+    /** The Server chat is turned on. */
+    val serverChat: Boolean = false,
 )
 
 /**
@@ -100,6 +106,14 @@ fun Application.dashboardModule(
                 snapshots.invalidate()
                 services.insights?.invalidate(projectId)
             }
+        }
+        services.settings?.let {
+            settingsRoutes(it, access)
+            repoPreferenceRoute(it.preferences, scanner, access, snapshots::invalidate)
+        }
+        services.cloner?.let {
+            it.onAdded = snapshots::invalidate
+            cloneRoutes(it, access)
         }
         // Shape-checked by clients so a captive portal's 200 HTML is not mistaken for the server.
         get("/readyz") {
@@ -158,9 +172,12 @@ internal suspend fun ApplicationCall.authorized(access: Access): Boolean {
 private fun projectsResponse(scanner: ProjectScanner, services: DashboardServices): ProjectsResponse {
     val snapshot = scanner.snapshot()
     val published = services.schedule?.branches?.annotate(snapshot.projects) ?: snapshot.projects
-    val projects = services.insights?.annotate(published) ?: published
+    val projects = (services.insights?.annotate(published) ?: published).arranged(services.settings?.preferences?.get()?.repos.orEmpty())
     val now = OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-    return ProjectsResponse(now, services.launcher?.available == true, projects, snapshot.analytics, services.apk?.describe())
+    return ProjectsResponse(
+        now, services.launcher?.available == true, projects, snapshot.analytics, services.apk?.describe(),
+        serverChat = services.serverChat, canClone = services.cloner != null,
+    )
 }
 
 /**

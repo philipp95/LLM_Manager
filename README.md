@@ -94,22 +94,40 @@ security model, including the admin steps it relies on, is in
 
 ### Repositories, chat and pull requests
 
-The **Repos** tab is a grid of tiles, one per repository: the forge (GitHub,
-GitLab or Azure DevOps), the name, the first sentence of the README on the
+The **Repos** tab shows the repositories as large cards, at most two side by
+side (one on a phone); scroll for the rest. Pin a card to keep it at the top and
+give it zero to five stars: pinned cards come first, then the most stars. **Add a
+repository** takes the `https://` address of a GitHub, GitLab or Azure DevOps
+repository; the server clones it in the background into `--clone-dir` (default
+`~/repos`), with the token saved for that host in Settings when it is private,
+and the card appears when the clone is done.
+
+A session can change only its own repository. To change the server itself there
+is the **Server chat** at the top of the tab: its agent works as the server's
+user, without a sandbox, and is labelled that way. `--server-chat off` removes it.
+
+Each card shows the forge (GitHub, GitLab or Azure DevOps), the name, the first sentence of the README on the
 default branch, the latest merged pull request (number, author, the agent that
 made it and its CI/CD result), the past week's merged and open pull requests,
 and a link to the repository on its forge.
 
 Tap a tile for the repository's screen:
 
-- **Chat**: pick one of the agents installed on the server (Claude, Codex with
-  your ChatGPT plan, Gemini), write what you want, and send. Each message
-  becomes a run on its own new branch. Tick **Cross-review first** and a second
-  agent reviews the commit before the first addresses the review. When the work
-  is done, the server pushes the branch and opens a pull request into the
-  default branch (GitLab: a merge request); the answer links to it. A run that
-  changed nothing opens nothing. Repositories without a forge remote keep the
-  work on the local branch.
+- **Sessions**: the repository's chat, as sessions to choose from. **New
+  session** (the default when you open a repository) lets you pick one of the
+  agents installed on the server (Claude, Codex with your ChatGPT plan, Gemini);
+  its first message starts a new branch in a worktree of its own. Pick a session
+  from the list to continue it: the next message resumes the same agent session
+  on the same branch, so the agent remembers the conversation, and waits until
+  the last one is done. Tick **Cross-review first** and a second agent reviews
+  the commit before the session's agent addresses the review. When a message's
+  work is done, the server pushes the branch and opens its pull request into the
+  default branch (GitLab: a merge request), or updates the one already open.
+  Work that changed nothing opens nothing; repositories without a forge remote
+  keep the work on the local branch. A new session can instead work on another
+  session's branch (**Same as …** under Branch); both sessions then change that
+  branch, taking turns in its worktree. Each firing of a scheduled job is a
+  session too, so you can follow up on it in the chat.
 - **Branch history**: the pull requests most recently updated on the forge,
   with state, branch, author, agent and CI/CD.
 - **Branches**: the worktrees, with push, pull request and merge controls, and
@@ -174,8 +192,8 @@ chosen weekday at a time. Each job is one of:
   worktree (never your main checkout), with an optional message.
 
 Runs execute unattended with a minimal environment (no SSH agent, forge tokens
-or other agents' keys) and, when bubblewrap is installed, inside an OS sandbox
-that hides secrets and leaves only the worktree writable; the Schedule tab shows
+or other agents' keys) and inside an OS sandbox (bubblewrap when installed,
+otherwise Landlock) that hides secrets and leaves only the worktree writable; the Schedule tab shows
 which applies. They work in a new `run/<project>-<time>` branch and worktree
 under `~/agent-work/runs/`, inside a tmux session `run-<id>` (attachable, and
 surviving server restarts). Permissions are pinned on the command line:
@@ -219,8 +237,38 @@ Claude (`CLAUDE.md`), Codex and Gemini (`GEMINI.md`) all read `AGENTS.md`, so
 the skill library and project rules are shared between them; the review prompt
 asks the reviewer to check the change against it.
 
-Install Gemini CLI with `npm install -g --prefix ~/.local @google/gemini-cli`
-and sign in once by running `~/.local/bin/gemini` over SSH.
+Install Gemini CLI with `npm install -g --prefix ~/.local @google/gemini-cli`,
+then sign it in from **Settings** (or once by running `~/.local/bin/gemini` over SSH).
+
+### Settings and sign-ins
+
+The **Settings** tab, on the page and in the app, holds:
+
+- **Profile**: your name and email, and the agent the chat preselects. Agent
+  commits keep the agent as author and name you as committer, so they show up
+  on your account on the forge.
+- **Agents**: whether each CLI is signed in on the server (`claude auth status`,
+  `codex login status`, Gemini's own files), signing in, switching accounts and
+  signing out, an API key instead of an account (Codex, Gemini), whether the chat
+  and new jobs offer the agent, and its default model, picked from a list (passed as `--model`; for Codex as
+  `-c model="…"`).
+- **Code hosts**: GitHub through the `gh` CLI (sign in with a token, sign out),
+  and tokens for GitLab (per host) and Azure DevOps. Each token is checked with
+  its host before it is saved to the files described below, and is never shown
+  again.
+
+Signing in runs the CLI's own sign-in on the server, in a tmux session named
+`sign-in-<agent>`: `claude auth login --claudeai`, `codex login --device-auth`,
+and Gemini's Google sign-in (`NO_BROWSER=true gemini`, after choosing
+`oauth-personal` in `~/.gemini/settings.json`). A pop-up shows the sign-in link,
+and for Codex the one-time code to enter there. Claude and Gemini show a code on
+the page after you sign in; paste it into the pop-up and the server types it into
+the waiting CLI. The credentials end up where the CLI's own sign-in puts them.
+Sending a chat message to an agent that is not signed in opens the pop-up first
+and sends the message once the agent is signed in; a run that failed while its
+agent was signed out offers the sign-in next to the error. Gemini waits five
+minutes for its code, Codex's code lasts 15 minutes. Settings themselves (profile,
+agent preferences) live in `~/.local/share/llm-manager/settings.json`.
 
 ### Publishing agent branches
 
@@ -237,7 +285,9 @@ published from here.
 | GitLab | `gitlab.com` and hosts with a `gitlab` label | token with `api` scope in `~/.config/llm-manager/gitlab-token` (gitlab.com) or `gitlab-token-<host>` (self-hosted) |
 | Azure DevOps | `dev.azure.com`, `ssh.dev.azure.com`, `*.visualstudio.com` | organisation-scoped PAT (Code: Read & write) in `~/.config/llm-manager/azure-devops-token` |
 
-Create token files with `chmod 600`; files readable by other users are refused.
+**Settings → Code hosts** checks a token with its host and writes these files
+(0600) for you. By hand, create token files with `chmod 600`; files readable by
+other users are refused.
 Each token is bound to one host and is never sent to another just because a
 repository's origin names it, nor across redirects. Tokens reach `git push`
 through `GIT_CONFIG_*` environment variables rather than the command line. Azure DevOps
@@ -292,9 +342,10 @@ themed (monochrome) launcher icon is the vector `ic_launcher_monochrome.xml`.
 The version is set in one place, `appVersion` in `android/app/build.gradle.kts`;
 the version code Android compares is derived from it (0.6.0 is 600). Settings in
 the app shows the installed version. When the server offers a newer build, the
-Repos tab shows **Update**: the app downloads the APK from the server, checks its
-SHA-256, and Android asks you to confirm (the first time, allow LLM Manager to
-install apps). Android refuses an update signed with another key. To publish an
+Repos tab shows **Update**: it opens the server's download in the browser, and
+opening the download installs it (Android refuses an update signed with another
+key). The app does not install packages itself: Google Play Protect blocks
+sideloaded apps that update themselves ("Harmful app blocked"). To publish an
 update, raise `appVersion` and build the release APK; the server picks up the new
 APK and its version without a restart.
 
@@ -315,6 +366,6 @@ coding agents to that single library. Skills are loaded as needed for each task.
 See [environment setup](docs/environment-setup.md) and the
 [architecture status](docs/architecture-decision.md), and the
 [security model](docs/security.md). Worktrees isolate edits, not OS permissions:
-agent runs are contained by the OS only when bubblewrap is installed (see the
-security model). Per-device identity, approvals and durable audit storage remain
+agent runs are contained by the OS with bubblewrap or, without it, Landlock (see
+the security model). Per-device identity, approvals and durable audit storage remain
 future work.

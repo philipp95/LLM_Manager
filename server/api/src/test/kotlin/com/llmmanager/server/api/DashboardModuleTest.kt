@@ -101,6 +101,28 @@ class DashboardModuleTest {
     }
 
     @Test
+    fun `the log of a run can be cut to its last steps`() = testApplication {
+        val scanner = scanner()
+        val api = scheduleApi(scanner)
+        application { dashboardModule(scanner, token, DashboardServices(schedule = api)) }
+        val run = Run(
+            id = "0123456789ab", jobId = null, projectId = "p", projectName = "p", agent = Agent.CLAUDE, stage = Stage.WORK,
+            status = RunStatus.RUNNING, prompt = "x", createdAt = "2026-11-13T10:00:00Z",
+        )
+        api.store.putRun(run)
+        val step = { n: Int -> """{"type":"assistant","message":{"content":[{"type":"text","text":"step $n"}]}}""" }
+        File(api.store.runDir(run.id), "events.jsonl").writeText((1..5).joinToString("\n", transform = step))
+
+        val all = Json.decodeFromString<RunLog>(client.get("/api/runs/${run.id}/log") { auth() }.bodyAsText())
+        val tail = Json.decodeFromString<RunLog>(client.get("/api/runs/${run.id}/log?tail=2") { auth() }.bodyAsText())
+        val none = Json.decodeFromString<RunLog>(client.get("/api/runs/${run.id}/log?tail=0") { auth() }.bodyAsText())
+
+        assertEquals((1..5).map { "step $it" }, all.activity.map { it.text })
+        assertEquals(listOf("step 4", "step 5"), tail.activity.map { it.text })
+        assertEquals(listOf("step 5"), none.activity.map { it.text }, "tail is at least one step")
+    }
+
+    @Test
     fun `the page, readiness and the apk stay open and carry no data`() = testApplication {
         val apkFile = directory.resolve("app-release.apk").toFile().apply { writeBytes(ByteArray(1234) { 7 }) }
         application { dashboardModule(ProjectScanner(emptyList()), token, DashboardServices(apk = ApkFile(apkFile))) }

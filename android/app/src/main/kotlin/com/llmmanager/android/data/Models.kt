@@ -13,6 +13,10 @@ data class ProjectsResponse(
     val analytics: Analytics? = null,
     /** The APK the server offers, when it has one. */
     val androidApp: AndroidApp? = null,
+    /** The server offers its Server chat, whose agent may change the server itself. */
+    val serverChat: Boolean = false,
+    /** Repositories can be added by their address. */
+    val canClone: Boolean = false,
 )
 
 /** The app build the server offers for download; its version decides whether to offer an update. */
@@ -66,6 +70,9 @@ data class Project(
     val commitsPerDay: List<Int> = emptyList(),
     /** Pull request activity on the forge, once the server has read it. */
     val insights: RepoInsights? = null,
+    val pinned: Boolean = false,
+    /** 0 to 5; more stars sort higher. */
+    val stars: Int = 0,
 )
 
 /** A pull request (GitLab: merge request) as the dashboard shows it. */
@@ -187,12 +194,20 @@ data class ModelTokens(val model: String, val tokens: Long)
 @Serializable
 data class ScheduleResponse(
     val now: String,
+    /** Agents offered in the pickers: installed and turned on in Settings. */
     val agents: Map<String, Boolean> = emptyMap(),
     val jobs: List<JobView> = emptyList(),
     val runs: List<Run> = emptyList(),
     val resumable: List<ResumeTarget> = emptyList(),
     val sandbox: SandboxStatus? = null,
-)
+    /** Per installed agent: whether its CLI is signed in on the server. */
+    val signedIn: Map<String, Boolean> = emptyMap(),
+    /** Preselected in the chat, from Settings. */
+    val defaultAgent: String? = null,
+) {
+    /** True only when the server says [agent] is not signed in; unknown counts as signed in. */
+    fun needsSignIn(agent: String): Boolean = signedIn[agent] == false
+}
 
 /** Whether agent runs are contained by the OS sandbox on the server. */
 @Serializable
@@ -244,6 +259,8 @@ data class Run(
     val tmuxSession: String? = null,
     /** What publishing did when the work was done: the pull request it opened, or why not. */
     val publishNote: String? = null,
+    /** The chat session the run belongs to. */
+    val chatId: String? = null,
 ) {
     val active: Boolean get() = status == "queued" || status == "running"
 }

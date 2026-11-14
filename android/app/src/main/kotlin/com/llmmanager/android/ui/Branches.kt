@@ -1,6 +1,7 @@
 package com.llmmanager.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -192,6 +194,23 @@ private fun ChangesChip(worktree: Worktree) {
         changed == null -> Chip("status unknown", ChipTone.Bad)
         changed == 0 -> Chip("clean", ChipTone.Ok)
         else -> Chip(plural(changed, "change", "changes"), ChipTone.Warn)
+    }
+}
+
+/**
+ * Every run works in a tmux session of its own on the server, so it survives a restart and can
+ * be watched live over SSH. Most of the time nobody needs that, so the command stays folded away.
+ */
+@Composable
+fun AttachDisclosure(command: String, onCopy: (String) -> Unit) {
+    var open by rememberSaveable(command) { mutableStateOf(false) }
+    Text(
+        if (open) "Hide the terminal command" else "Watch live from a terminal", color = Palette.rustStrong, fontSize = 12.5.sp,
+        fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { open = !open }.padding(vertical = 8.dp),
+    )
+    if (open) {
+        Text("Signed in to the server over SSH, this opens the agent's own terminal.", color = Palette.ink2, fontSize = 12.5.sp)
+        AttachCommand(command, onCopy)
     }
 }
 

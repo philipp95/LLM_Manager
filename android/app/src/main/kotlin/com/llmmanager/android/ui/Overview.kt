@@ -19,43 +19,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.llmmanager.android.BuildConfig
-import com.llmmanager.android.data.AndroidApp
-import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.ProjectsResponse
 import com.llmmanager.android.ui.DashboardViewModel.Connection
 
 private const val TAILSCALE_PACKAGE = "com.tailscale.ipn"
 
-/** The Repos tab: a grid of repository tiles, or what stands in the way of showing it. */
+/** The Repos tab: the Server chat, the repositories as large cards, adding one; or what stands in the way of showing them. */
 @Composable
-fun Overview(
-    state: DashboardViewModel.UiState,
-    onRetry: () -> Unit,
-    onSettings: () -> Unit,
-    onOpen: (Project) -> Unit,
-    onUpdate: (AndroidApp) -> Unit,
-) {
+fun Overview(state: DashboardViewModel.UiState, repos: ReposViewModel.State, actions: HomeActions) {
     val context = LocalContext.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // Two tiles across on a phone, more on wider screens.
-        val columns = maxOf(2, (maxWidth / 180.dp).toInt())
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
-            connectionNotice(state.connection, onSettings = onSettings, onRetry = onRetry, context = context)
+        // One card across on a phone, never more than two: the cards stay large and the list scrolls.
+        val columns = if (maxWidth >= TWO_COLUMNS_FROM) 2 else 1
+        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
+            connectionNotice(state.connection, onSettings = actions.onSettings, onRetry = actions.onRetry, context = context)
             state.data?.androidApp?.takeIf { it.newerThan(BuildConfig.VERSION_CODE) }?.let { app ->
-                item(key = "update") { UpdateBanner(app, state.updating) { onUpdate(app) } }
+                item(key = "update") { UpdateBanner(app) { actions.onUpdate(app) } }
             }
-            state.data?.let { data -> repositories(data, columns, onOpen) }
+            state.data?.let { data ->
+                if (data.serverChat) item(key = "server-chat") { ServerChatEntry { actions.onOpen(SERVER_ID) } }
+                repositories(data, repos, columns, actions)
+                if (data.canClone) item(key = "add") { AddRepository(repos, actions.onAdd) }
+            }
         }
     }
 }
 
-private fun LazyListScope.repositories(data: ProjectsResponse, columns: Int, onOpen: (Project) -> Unit) {
+private fun LazyListScope.repositories(data: ProjectsResponse, repos: ReposViewModel.State, columns: Int, actions: HomeActions) {
     if (data.projects.isEmpty()) {
-        item(key = "empty") { BackgroundNote("No git repositories found in the server's configured folders.") }
+        item(key = "empty") { BackgroundNote("No repositories yet. Add one by its address below.") }
         return
     }
-    repoGrid(data.projects, columns, onOpen)
+    repoGrid(data.projects.arranged(repos.changed), columns, onOpen = { actions.onOpen(it.id) }, onPrefer = actions.onPrefer)
 }
+
+private val TWO_COLUMNS_FROM = 640.dp
 
 private fun LazyListScope.connectionNotice(
     connection: Connection,

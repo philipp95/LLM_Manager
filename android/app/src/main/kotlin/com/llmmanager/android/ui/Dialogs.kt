@@ -103,7 +103,7 @@ private fun VersionRow(update: UpdateState) {
                 color = Palette.ink2, fontSize = 12.5.sp,
             )
         }
-        if (offered != null) UpdateButton(update.updating) { update.onUpdate(offered) }
+        if (offered != null) UpdateButton { update.onUpdate(offered) }
     }
 }
 

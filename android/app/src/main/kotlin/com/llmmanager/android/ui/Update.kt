@@ -4,10 +4,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,9 +19,9 @@ import com.llmmanager.android.data.AndroidApp
 /** The version running on this phone, as people read it. */
 val appVersion: String get() = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
-/** Offers the newer app the server has; Android asks the user to confirm the install. */
+/** Offers the newer app the server has; the browser downloads it and Android installs it. */
 @Composable
-fun UpdateBanner(app: AndroidApp, updating: Boolean, onUpdate: () -> Unit) {
+fun UpdateBanner(app: AndroidApp, onUpdate: () -> Unit) {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -34,24 +32,16 @@ fun UpdateBanner(app: AndroidApp, updating: Boolean, onUpdate: () -> Unit) {
                 )
             }
             Spacer(Modifier.width(10.dp))
-            UpdateButton(updating, onUpdate)
+            UpdateButton(onUpdate)
         }
         Text(
-            "Android asks you to confirm. The first time, allow LLM Manager to install apps.",
+            "Your browser downloads it; open the download to install. Your settings stay.",
             color = Palette.ink2, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp),
         )
     }
 }
 
 @Composable
-fun UpdateButton(updating: Boolean, onUpdate: () -> Unit) {
-    Button(onClick = onUpdate, enabled = !updating) {
-        if (updating) {
-            CircularProgressIndicator(Modifier.size(16.dp), color = Palette.onRust, strokeWidth = 2.dp)
-            Spacer(Modifier.width(8.dp))
-            Text("Downloading")
-        } else {
-            Text("Update")
-        }
-    }
+fun UpdateButton(onUpdate: () -> Unit) {
+    Button(onClick = onUpdate) { Text("Update") }
 }

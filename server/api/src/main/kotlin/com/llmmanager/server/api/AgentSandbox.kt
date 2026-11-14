@@ -60,12 +60,15 @@ data class SandboxStatus(
  * MCP servers, global instructions) stay read-only so a run cannot plant code that runs
  * later outside the sandbox. Network access is unchanged: agents need their APIs.
  *
- * Modes: [Mode.AUTO] sandboxes when bwrap passes a startup self-test and otherwise runs
+ * Where bubblewrap is missing or cannot start, [LandlockProfile] confines runs with the
+ * kernel's Landlock instead: the same paths, enforced as an allowlist.
+ *
+ * Modes: [Mode.AUTO] sandboxes when a mechanism passes a startup self-test and otherwise runs
  * unsandboxed with a warning; [Mode.ON] refuses runs it cannot sandbox; [Mode.OFF] never sandboxes.
  */
 class AgentSandbox private constructor(
     private val mode: Mode,
-    private val profile: Profile?,
+    private val profile: Confinement?,
     private val active: Set<Agent>,
     private val note: String,
 ) {
@@ -92,9 +95,16 @@ class AgentSandbox private constructor(
      */
     fun scratchClaudeJson(agent: Agent, dir: File): File? {
         val real = File(System.getProperty("user.home"), ".claude.json")
-        if (agent != Agent.CLAUDE || !activeFor(agent) || !real.isFile) return null
+        val mounted = activeFor(agent) && profile?.mountsOver == true
+        if (agent != Agent.CLAUDE || !mounted || !real.isFile) return null
         return File(dir, "claude.json").also { real.copyTo(it, overwrite = true) }
     }
+
+    /**
+     * Whether Codex runs are confined by the server in a way Codex's own sandbox cannot nest
+     * in, so that Codex is started without its own.
+     */
+    fun replacesCodexSandbox(): Boolean = profile?.replacesAgentSandbox == true && activeFor(Agent.CODEX)
 
     fun status(): SandboxStatus =
         SandboxStatus(mode.name.lowercase(), Agent.entries.associate { it.name.lowercase() to activeFor(it) }, note)
@@ -104,10 +114,32 @@ class AgentSandbox private constructor(
         fun exists(file: File): Boolean
         fun isDirectory(file: File): Boolean
 
+        fun children(dir: File): List<File> = dir.listFiles()?.toList().orEmpty()
+
+        /** [file] with symbolic links followed. */
+        fun resolved(file: File): File = runCatching { file.canonicalFile }.getOrDefault(file)
+
         object Real : FileView {
             override fun exists(file: File) = Files.exists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
             override fun isDirectory(file: File) = file.isDirectory
         }
+    }
+
+    /** One way to confine an agent process: the arguments that go before `--` and its command. */
+    interface Confinement {
+        /** What the status line says when every installed agent is confined. */
+        val summary: String
+
+        /** Whether files can be mounted over others, as the throwaway `~/.claude.json` is. */
+        val mountsOver: Boolean
+
+        /** Whether an agent's own sandbox cannot start inside this one, so the agent runs without it. */
+        val replacesAgentSandbox: Boolean
+
+        fun args(agent: Agent, worktree: File, scratchClaudeJson: File?, interactive: Boolean): List<String>
+
+        /** A command that must fail inside the confinement around [scratch], or null when there is none to try. */
+        fun escapeProbe(scratch: File): List<String>? = null
     }
 
     /** The bwrap argument list; pure apart from [files], so it can be tested without bwrap. */
@@ -119,29 +151,29 @@ class AgentSandbox private constructor(
         private val visible: List<File>,
         private val uid: Long?,
         private val files: FileView = FileView.Real,
-    ) {
+    ) : Confinement {
+        private val paths = AgentPaths(home)
+        override val summary = "Agent runs are sandboxed with bubblewrap"
+        override val mountsOver = true
+        override val replacesAgentSandbox = false
+
         private fun exists(file: File) = files.exists(file)
 
-        fun args(agent: Agent, worktree: File, scratchClaudeJson: File?, interactive: Boolean): List<String> = buildList {
+        override fun args(agent: Agent, worktree: File, scratchClaudeJson: File?, interactive: Boolean): List<String> = buildList {
             add(bwrap)
             addAll(listOf("--die-with-parent", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try"))
             // No controlling terminal for unattended runs: blocks TIOCSTI-style input injection.
             if (!interactive) add("--new-session")
             addAll(listOf("--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"))
             uid?.let { File("/run/user/$it") }?.takeIf(::exists)?.let { addAll(listOf("--tmpfs", it.path)) }
-            (hiddenServerPaths + SECRET_PATHS.map { File(home, it) } + otherAgents(agent)).forEach { hide(it) }
-            writable(agent, worktree)
+            (hiddenServerPaths + paths.secrets + paths.otherAgents(agent)).forEach { hide(it) }
+            (listOf(worktree) + paths.stateOf(agent) + paths.caches).forEach { bindWritable(it) }
             readOnlyConfigOf(agent).forEach { if (exists(it)) addAll(listOf("--ro-bind", it.path, it.path)) }
             if (agent == Agent.CLAUDE && scratchClaudeJson != null && exists(File(home, ".claude.json"))) {
                 addAll(listOf("--bind", scratchClaudeJson.path, File(home, ".claude.json").path))
             }
             visible.forEach { if (exists(it)) addAll(listOf("--ro-bind", it.path, it.path)) }
             addAll(listOf("--chdir", worktree.path, "--setenv", "TMPDIR", "/tmp"))
-        }
-
-        /** The worktree, the agent's own state and build caches. */
-        private fun MutableList<String>.writable(agent: Agent, worktree: File) {
-            (listOf(worktree) + stateOf(agent) + CACHES.map { File(home, it) }).forEach { bindWritable(it) }
         }
 
         private fun MutableList<String>.hide(path: File) {
@@ -153,16 +185,6 @@ class AgentSandbox private constructor(
             if (exists(path)) addAll(listOf("--bind", path.path, path.path))
         }
 
-        private fun stateOf(agent: Agent): List<File> = when (agent) {
-            Agent.CLAUDE -> listOf(File(home, ".claude"))
-            Agent.CODEX -> listOf(File(home, ".codex"))
-            Agent.GEMINI -> listOf(File(home, ".gemini"))
-        }
-
-        private fun otherAgents(agent: Agent): List<File> = Agent.entries.filter { it != agent }.flatMap {
-            stateOf(it) + if (it == Agent.CLAUDE) listOf(File(home, ".claude.json")) else emptyList()
-        }
-
         /** Files through which a run could make code run later, outside the sandbox. */
         private fun readOnlyConfigOf(agent: Agent): List<File> = when (agent) {
             Agent.CLAUDE -> listOf("settings.json", "settings.local.json", "CLAUDE.md", "commands", "agents", "skills", "plugins", "hooks", "output-styles")
@@ -170,16 +192,15 @@ class AgentSandbox private constructor(
             Agent.CODEX -> listOf("config.toml", "AGENTS.md", "AGENTS.override.md", "prompts", "skills", "rules").map { File(home, ".codex/$it") }
             Agent.GEMINI -> listOf("settings.json", "GEMINI.md", "commands", "extensions", "policies", "agents", "skills").map { File(home, ".gemini/$it") }
         }
-
-        private companion object {
-            val SECRET_PATHS = listOf(
-                ".config/llm-manager", ".config/gh", ".config/glab-cli", ".config/gcloud", ".config/git/credentials",
-                ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".password-store", ".android",
-                ".git-credentials", ".netrc", ".npmrc", ".pypirc",
-            )
-            val CACHES = listOf(".cache", ".gradle", ".m2", ".npm", ".cargo/registry", ".cargo/git", "go/pkg", ".local/share/pnpm")
-        }
     }
+
+    /** What [detect] may confine runs with: bubblewrap at one of [candidates], else [fallback]. */
+    data class Means(
+        val profileFor: (String) -> Profile,
+        /** Only the distribution's bwrap: it carries the AppArmor profile that permits its namespaces. */
+        val candidates: List<String> = listOf("/usr/bin/bwrap", "/bin/bwrap"),
+        val fallback: Confinement? = null,
+    )
 
     companion object {
         private val log = LoggerFactory.getLogger(AgentSandbox::class.java)
@@ -188,35 +209,40 @@ class AgentSandbox private constructor(
 
         /**
          * Detects bwrap and self-tests the profile: a trivial command, then each installed
-         * agent's `--version`, inside the sandbox. Only agents that pass are sandboxed.
+         * agent's `--version`, inside the sandbox. Only agents that pass are sandboxed. Without
+         * a working bwrap the same is tried with [fallback], when there is one.
          */
-        fun detect(
-            mode: Mode,
-            profileFor: (String) -> Profile,
-            agents: Map<Agent, String?>,
-            scratch: File,
-            /** Only the distribution's bwrap: it carries the AppArmor profile that permits its namespaces. */
-            candidates: List<String> = listOf("/usr/bin/bwrap", "/bin/bwrap"),
-        ): AgentSandbox {
+        fun detect(mode: Mode, means: Means, agents: Map<Agent, String?>, scratch: File): AgentSandbox {
             if (mode == Mode.OFF) return AgentSandbox(mode, null, emptySet(), "Agent sandbox is off (--agent-sandbox off)")
-            val bwrap = candidates.firstOrNull { File(it).canExecute() }
-                ?: return AgentSandbox(mode, null, emptySet(), "bubblewrap is not installed; an admin can run `sudo apt install bubblewrap`")
-            val profile = profileFor(bwrap)
             scratch.mkdirs()
-            val base = selfTest(profile, Agent.CODEX, scratch, listOf("/bin/true"))
-            if (base != null) return AgentSandbox(mode, null, emptySet(), "bubblewrap failed its self-test: $base")
+            val fallback = means.fallback
+            val bwrap = means.candidates.firstOrNull { File(it).canExecute() }?.let(means.profileFor)
+            val problem = if (bwrap == null) "bubblewrap is not installed; an admin can run `sudo apt install bubblewrap`"
+            else problemWith(bwrap, scratch)?.let { "bubblewrap failed its self-test: $it" }
+            val profile = bwrap?.takeIf { problem == null } ?: run {
+                val second = fallback?.let { problemWith(it, scratch) }
+                fallback?.takeIf { second == null }
+                    ?: return AgentSandbox(mode, null, emptySet(), checkNotNull(problem) + second?.let { "; Landlock failed its self-test: $it" }.orEmpty())
+            }
             val results = agents.filterValues { it != null }
                 .mapValues { (agent, binary) -> selfTest(profile, agent, scratch, listOf(checkNotNull(binary), "--version")) }
             val active = results.filterValues { it == null }.keys
             val failed = results.filterValues { it != null }
-            val note = if (failed.isEmpty()) "Agent runs are sandboxed with bubblewrap"
+            val note = if (failed.isEmpty()) profile.summary
             else "Sandboxed: ${active.joinToString { it.label }.ifEmpty { "none" }}; failed self-test: " +
                 failed.entries.joinToString { "${it.key.label} (${it.value})" }
             log.info("Agent sandbox: {}", note)
             return AgentSandbox(mode, profile, active, note)
         }
 
-        private fun selfTest(profile: Profile, agent: Agent, scratch: File, command: List<String>): String? {
+        /** Why [profile] cannot be used: a trivial command fails inside it, or its escape probe succeeds. */
+        private fun problemWith(profile: Confinement, scratch: File): String? =
+            selfTest(profile, Agent.CODEX, scratch, listOf("/bin/true"))
+                ?: profile.escapeProbe(scratch)?.let { probe ->
+                    if (selfTest(profile, Agent.CODEX, scratch, probe) == null) null else "a write outside the worktree was not refused"
+                }
+
+        private fun selfTest(profile: Confinement, agent: Agent, scratch: File, command: List<String>): String? {
             val args = profile.args(agent, scratch, null, interactive = false) + "--" + command
             // Same reduced environment as real runs, set directly so no value appears in a command line.
             val environment = AgentEnvironment.names(agent).mapNotNull { name -> System.getenv(name)?.let { name to it } }.toMap()
