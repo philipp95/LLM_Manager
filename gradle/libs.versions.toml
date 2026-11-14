@@ -6,7 +6,7 @@ serialization = "1.7.3"
 clikt = "5.0.1"
 sqldelight = "2.0.2"
 slf4j = "2.0.16"
-logback = "1.5.38"
+logback = "1.6.6"
 # Ktor 3.0.3 brings Netty 4.1.116, which has HTTP request-smuggling and DoS advisories;
 # pin the patched 4.1.x line through Netty's BOM.
 netty = "4.1.139.Final"
