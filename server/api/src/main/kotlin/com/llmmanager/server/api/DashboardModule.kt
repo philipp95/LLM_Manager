@@ -52,6 +52,8 @@ data class DashboardServices(
     val cloner: RepoCloner? = null,
     /** The Server chat is turned on. */
     val serverChat: Boolean = false,
+    /** Issues and work items from the forges, read only. */
+    val issues: IssuesService? = null,
 )
 
 /**
@@ -89,6 +91,7 @@ fun Application.dashboardModule(
             if (!call.authorized(access)) return@get
             call.respond(withContext(Dispatchers.IO) { snapshots.get() })
         }
+        services.issues?.let { issueRoute(it, access, snapshots) }
         services.launcher?.let { codexRoute(it, access, snapshots) }
         services.pairing?.let { pairingRoutes(it, access, allowedHosts) }
         // Open: a browser download link cannot carry the token, and the APK holds no secret.
@@ -142,6 +145,20 @@ private fun Application.guards(allowedHosts: Set<String>?) {
             call.respond(status, ApiError(message))
             finish()
         }
+    }
+}
+
+/** A repository's issues, or its project's work items, as its forge has them. */
+private fun Route.issueRoute(issues: IssuesService, access: Access, snapshots: TtlCache<ProjectsResponse>) {
+    get("/api/projects/{id}/issues") {
+        if (!call.authorized(access)) return@get
+        val id = call.parameters["id"].orEmpty()
+        val found = withContext(Dispatchers.IO) {
+            val project = snapshots.get().projects.firstOrNull { it.id == id } ?: return@withContext null
+            val forge = project.originUrl?.let { Forge.of(RemoteUrl.of(it)) }
+            if (forge == null) RepoIssues(error = "This repository is not on GitHub, GitLab or Azure DevOps") else issues.of(id, forge)
+        }
+        if (found == null) call.respond(HttpStatusCode.NotFound, ApiError("Unknown project")) else call.respond(found)
     }
 }
 

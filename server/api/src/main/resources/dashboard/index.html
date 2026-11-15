@@ -457,6 +457,14 @@
   .pr-name { font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pr-meta { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pr-tags { display: flex; gap: 5px; align-items: center; }
+  .issue-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .issue-labels .chip { min-height: 20px; font-size: 11px; padding: 0 7px; max-width: 100%; }
+  .issue-talk { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .issue-talk svg.icon { width: 13px; height: 13px; }
+  .issue-more { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 13px; font-weight: 650; min-height: 32px; color: var(--teal-ink); }
+  .issue-closed { margin-top: 12px; }
+  .issue-closed summary { margin-bottom: 8px; }
+  .issue-row .pr-name { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 10px 12px; border-radius: 12px; background: rgba(201, 150, 46, .16); color: var(--warn-ink); overflow-wrap: anywhere; }
   .notice svg.icon { margin-top: 2px; }
   .panel details summary { cursor: pointer; list-style: none; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); display: flex; gap: 6px; align-items: center; }
@@ -676,6 +684,8 @@
   let pairing = null, pairRefusal = "", lastApp = null;
   // Sessions of the repository on screen; which one is selected (null: a new session) per repository.
   let chatData = null;
+  // The issues of the repository on screen: { projectId, issues }.
+  let issueData = null;
   const sessionsExpanded = new Set(), expandedText = new Set(), openAttach = new Set();
   // Folded groups of the session tree that are open, and merges under way or refused, per session.
   const openGroups = new Set(), mergeBusy = new Set(), mergeErrors = new Map();
@@ -692,6 +702,7 @@
 
   const ICONS = {
     refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
+    issue: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 13.2a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z",
     link: "M14 3h7v7M10 14 21 3M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5",
     branch: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9",
     terminal: "M4 17l6-6-6-6M12 19h8",
@@ -1840,6 +1851,49 @@
     return url ? el("a", { class: "pr-row", href: url, target: "_blank", rel: "noopener noreferrer" }, parts) : el("div", { class: "pr-row" }, parts);
   }
 
+  /** Azure DevOps has work items, kept per project; the others have issues. */
+  const issueNoun = (p, plural) => (p.forge === "azure-devops" ? "Work item" : "Issue") + (plural ? "s" : "");
+
+  function issueRow(issue) {
+    const closed = issue.state === "closed";
+    const meta = [issue.kind, issue.status, issue.author ? "by " + issue.author : null, "updated " + relative(issue.updatedAt || issue.createdAt, "at some time")].filter(Boolean).join(" · ");
+    const parts = [
+      el("span", { class: "state " + (closed ? "closed" : "open"), role: "img", "aria-label": closed ? "closed" : "open" }, icon(closed ? "check" : "issue")),
+      el("div", { style: "min-width:0" },
+        el("div", { class: "pr-head" }, el("span", { class: "pr-num" }, "#" + issue.number), el("span", { class: "pr-name", title: issue.title }, issue.title)),
+        el("div", { class: "pr-meta" }, meta),
+        issue.labels && issue.labels.length ? el("div", { class: "issue-labels" }, issue.labels.map((label) => chip(label))) : null),
+      el("div", { class: "pr-tags" },
+        issue.comments ? el("span", { class: "issue-talk", title: issue.comments + (issue.comments === 1 ? " comment" : " comments") }, icon("chat"), String(issue.comments)) : null,
+        (issue.assignees || []).map(person)),
+    ];
+    const url = httpsOnly(issue.url);
+    return url ? el("a", { class: "pr-row issue-row", href: url, target: "_blank", rel: "noopener noreferrer" }, parts) : el("div", { class: "pr-row issue-row" }, parts);
+  }
+
+  function issuesPanel(p, data) {
+    const forge = FORGE[p.forge], noun = issueNoun(p, true).toLowerCase();
+    const page = data && httpsOnly(data.url);
+    const more = data ? data.openCount - data.open.length : 0;
+    const body = !p.forge
+      ? el("p", { class: "muted" }, "Issues need a GitHub, GitLab or Azure DevOps remote.")
+      : !data
+        ? el("p", { class: "muted" }, "Reading " + noun + " from " + forge.label + "…")
+        : [
+            data.error ? el("div", { class: "notice" }, icon("alert"), el("span", null, "Couldn't read " + noun + ": " + data.error)) : null,
+            data.open.length ? el("div", null, data.open.map(issueRow))
+              : data.fetchedAt ? el("p", { class: "muted" }, "No open " + noun + ".") : null,
+            page ? el("a", { class: "issue-more", href: page, target: "_blank", rel: "noopener noreferrer" }, icon("link"),
+              more > 0 ? more + " more on " + forge.label : "All " + noun + " on " + forge.label) : null,
+            data.closed.length ? el("details", { class: "issue-closed" }, el("summary", null, icon("check"), "Recently closed · " + data.closed.length),
+              el("div", null, data.closed.map(issueRow))) : null,
+          ];
+    return el("section", { class: "panel" },
+      el("div", { class: "panel-head" }, el("h2", null, "Open " + noun),
+        data && data.fetchedAt ? el("span", { class: "panel-sub" }, (p.forge === "azure-devops" ? "of the project, " : "") + "from " + forge.label + " · " + relative(data.fetchedAt)) : null),
+      body);
+  }
+
   function historyPanel(p) {
     const ins = p.insights;
     const forge = FORGE[p.forge];
@@ -1928,6 +1982,7 @@
     const mr = !!(FORGE[p.forge] || {}).mr;
     const ins = p.insights && p.insights.fetchedAt ? p.insights : null;
     const branches = p.worktrees.filter((w) => !w.main).length;
+    const issues = issueData && issueData.projectId === p.id ? issueData.issues : null;
     document.body.classList.toggle("in-chat", part === "sessions" && chat !== null);
 
     setPart(view, view.top, JSON.stringify([p.name, p.forge, p.webUrl, p.gitHubUrl]), () => {
@@ -1941,16 +1996,17 @@
       ];
     });
     if (!p.server) {
-      setPart(view, view.tabs, JSON.stringify([part, sessions.length, mr, ins && ins.openCount, branches]), () =>
-        [["sessions", "Sessions", sessions.length], ["prs", mr ? "Merge requests" : "Pull requests", ins ? ins.openCount : null], ["branches", "Branches", branches]].map((t) =>
+      setPart(view, view.tabs, JSON.stringify([part, sessions.length, mr, ins && ins.openCount, issues && issues.openCount, branches]), () =>
+        [["sessions", "Sessions", sessions.length], ["prs", mr ? "Merge requests" : "Pull requests", ins ? ins.openCount : null],
+          ["issues", issueNoun(p, true), issues ? issues.openCount : null], ["branches", "Branches", branches]].map((t) =>
           el("button", { type: "button", "aria-current": t[0] === part ? "page" : null, onclick: () => go(repoHash(p.id, t[0] === "sessions" ? "" : t[0])) },
             t[1], t[2] ? el("span", { class: "count" }, t[2]) : null)));
     }
     view.layout.hidden = part !== "sessions";
     view.other.hidden = part === "sessions";
     if (part !== "sessions") {
-      setPart(view, view.other, JSON.stringify([part, p, codexAvailable, minute]), () =>
-        (part === "prs" ? [statsPanel(p), historyPanel(p)] : [branchesPanel(p), pathsPanel(p)]));
+      setPart(view, view.other, JSON.stringify([part, p, part === "issues" ? issues : null, codexAvailable, minute]), () =>
+        (part === "prs" ? [statsPanel(p), historyPanel(p)] : part === "issues" ? [issuesPanel(p, issues)] : [branchesPanel(p), pathsPanel(p)]));
       if (toBottom || view.fresh) window.scrollTo(0, 0);
       view.fresh = false;
       return;
@@ -1977,15 +2033,19 @@
     if (!(await ensureAccess())) { dropRepoView(); repoTab.replaceChildren(lockedPanel(false)); return; }
     spin(true);
     try {
-      const [projects, schedule, chats] = await Promise.all([
+      const [projects, schedule, chats, issues] = await Promise.all([
         fetchProjects(),
         api("/api/schedule", { prompt: false }).catch(() => null),
         api("/api/projects/" + encodeURIComponent(id) + "/chats", { prompt: false }).catch(() => null),
+        id === ServerProject.id ? null : api("/api/projects/" + encodeURIComponent(id) + "/issues", { prompt: false }).catch(() => null),
       ]);
       if (id !== currentRepo) return;
       if (projects.locked) { dropRepoView(); repoTab.replaceChildren(lockedPanel(true)); return; }
       if (schedule && schedule.ok && schedule.json) scheduleData = schedule.body;
       if (chats && chats.ok && chats.json) chatData = { projectId: id, chats: chats.body.chats || [] };
+      if (issues && issues.ok && issues.json) {
+        issueData = { projectId: id, issues: Object.assign({ openCount: 0, open: [], closed: [] }, issues.body) };
+      }
       if (!repoProject()) {
         dropRepoView();
         repoTab.replaceChildren(
@@ -2042,12 +2102,12 @@
   function route() {
     const hash = location.hash.replace(/^#/, "");
     if (activeTab === "overview") gridScroll = window.scrollY;
-    const match = /^(?:repo\/([^/]+)|(server))(?:\/(new|prs|branches|s\/([^/]+)))?$/.exec(hash);
+    const match = /^(?:repo\/([^/]+)|(server))(?:\/(new|prs|issues|branches|s\/([^/]+)))?$/.exec(hash);
     if (match) {
       const id = match[2] ? ServerProject.id : match[1];
       const same = activeTab === "repo" && currentRepo === id && repoView && repoView.id === id;
       currentRepo = id;
-      repoRoute = { view: match[3] === "prs" || match[3] === "branches" ? match[3] : "sessions", chat: match[3] === "new" ? "new" : match[4] || null };
+      repoRoute = { view: ["prs", "issues", "branches"].includes(match[3]) ? match[3] : "sessions", chat: match[3] === "new" ? "new" : match[4] || null };
       liveLog = null;
       if (same) {
         // Within a repository: show what is known at once, then look for news.

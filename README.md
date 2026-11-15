@@ -139,6 +139,11 @@ Tap a tile for the repository's screen:
   session too, so you can follow up on it in the chat.
 - **Branch history**: the pull requests most recently updated on the forge,
   with state, branch, author, agent and CI/CD.
+- **Issues**: the open issues on GitHub or GitLab, most recently updated first,
+  with labels, author, assignees and comment count, and the ones closed lately.
+  For Azure DevOps these are the **work items** of the repository's project,
+  with their type and state. Read only: a tap opens the issue on the forge. They
+  are read when you look and kept for a minute (`GET /api/projects/{id}/issues`).
 - **Branches**: the worktrees, with push, pull request and merge controls, and
   Codex in tmux for hands-on work.
 
@@ -301,7 +306,7 @@ what is left. The session stays readable under **Merged**.
 | --- | --- | --- |
 | GitHub | `github.com` | the signed-in `gh` CLI |
 | GitLab | `gitlab.com` and hosts with a `gitlab` label | token with `api` scope in `~/.config/llm-manager/gitlab-token` (gitlab.com) or `gitlab-token-<host>` (self-hosted) |
-| Azure DevOps | `dev.azure.com`, `ssh.dev.azure.com`, `*.visualstudio.com` | organisation-scoped PAT (Code: Read & write) in `~/.config/llm-manager/azure-devops-token` |
+| Azure DevOps | `dev.azure.com`, `ssh.dev.azure.com`, `*.visualstudio.com` | organisation-scoped PAT (Code: Read & write; Work Items: Read to list work items) in `~/.config/llm-manager/azure-devops-token` |
 
 **Settings → Code hosts** checks a token with its host and writes these files
 (0600) for you. By hand, create token files with `chmod 600`; files readable by

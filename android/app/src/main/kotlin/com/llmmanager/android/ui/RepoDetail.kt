@@ -52,6 +52,7 @@ fun RepoDetail(
         item(key = "head") { RepoHeader(project) }
         chatItems(chat, actions.chat)
         item(key = "history") { HistoryPanel(project) }
+        if (project.forge != null) item(key = "issues") { IssuesPanel(project, chats.issues) }
         item(key = "branches") {
             BranchesPanel(project, codexAvailable, launching, actions.onStartCodex, actions.chat.onCopy, actions.onPublish)
         }

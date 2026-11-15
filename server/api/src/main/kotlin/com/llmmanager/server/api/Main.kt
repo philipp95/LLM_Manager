@@ -102,6 +102,7 @@ class ApiServer : CliktCommand(name = "api") {
             val services = DashboardServices(
                 launcher, ApkFile(File(apk)), schedule, insights, pairing, settings = settings,
                 cloner = RepoCloner(File(ProjectScanner.expandHome(cloneDir)), credentials, scanner), serverChat = workspace.serverChat != null,
+                issues = IssuesService(IssueSources(credentials)),
             )
             dashboardModule(scanner, token, services, allowedHosts = hosts)
         }.start(wait = true)
