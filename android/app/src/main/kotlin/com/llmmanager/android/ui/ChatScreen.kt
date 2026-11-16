@@ -66,10 +66,14 @@ fun rememberChatScreen(project: Project, chats: ChatViewModel.State, schedule: S
  * stays at the top while its conversation scrolls, and the conversation with the message box.
  */
 @OptIn(ExperimentalFoundationApi::class)
-fun LazyListScope.chatItems(chat: ChatScreen, actions: ChatActions) {
+fun LazyListScope.chatItems(chat: ChatScreen, actions: ChatActions, openSessions: (() -> Unit)? = null) {
     val project = chat.project
     val selected = chat.selected
-    item(key = "sessions") { SessionTree(project, chat.sessions, selected?.id, chat.select) }
+    item(key = "sessions") {
+        // With a bar of sessions beside the page, the page only says which one is shown.
+        if (openSessions != null) SessionsBar(chat.sessions, selected, openSessions)
+        else SessionTree(project, chat.sessions, selected?.id, chat.select)
+    }
     if (selected != null && !project.isServer && selected.branch != null) {
         stickyHeader(key = "merge") {
             MergeBar(

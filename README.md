@@ -137,6 +137,13 @@ Tap a tile for the repository's screen:
   session's branch (**Same as …** under Branch); both sessions then change that
   branch, taking turns in its worktree. Each firing of a scheduled job is a
   session too, so you can follow up on it in the chat.
+  The session tree is also a **bar on the left** of the whole repository view:
+  which sessions are open, how each is doing and which pull request it belongs
+  to, while the detail (the chat, pull requests, issues, branches) stays in the
+  middle. On a wide screen the bar stays beside every part. On a phone it
+  slides in from the left: swipe from the edge in the app, tap the tab on the
+  left edge showing the number of open sessions, or tap the sessions row. Pick
+  a session there to open it.
 - **Branch history**: the pull requests most recently updated on the forge,
   with state, branch, author, agent and CI/CD.
 - **Issues**: the open issues on GitHub or GitLab, most recently updated first,

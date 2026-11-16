@@ -48,15 +48,20 @@ fun RepoDetail(
     actions: RepoActions,
 ) {
     val chat = rememberChatScreen(project, chats, schedule)
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
-        item(key = "head") { RepoHeader(project) }
-        chatItems(chat, actions.chat)
-        item(key = "history") { HistoryPanel(project) }
-        if (project.forge != null) item(key = "issues") { IssuesPanel(project, chats.issues) }
-        item(key = "branches") {
-            BranchesPanel(project, codexAvailable, launching, actions.onStartCodex, actions.chat.onCopy, actions.onPublish)
+    SessionDrawer(chat) { openSessions ->
+        LazyColumn(
+            contentPadding = PaddingValues(start = 28.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "head") { RepoHeader(project) }
+            chatItems(chat, actions.chat, openSessions)
+            item(key = "history") { HistoryPanel(project) }
+            if (project.forge != null) item(key = "issues") { IssuesPanel(project, chats.issues) }
+            item(key = "branches") {
+                BranchesPanel(project, codexAvailable, launching, actions.onStartCodex, actions.chat.onCopy, actions.onPublish)
+            }
+            item(key = "paths") { PathsPanel(project) }
         }
-        item(key = "paths") { PathsPanel(project) }
     }
 }
 
