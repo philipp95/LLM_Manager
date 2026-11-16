@@ -90,6 +90,8 @@ data class IssueSummary(
     val author: String? = null,
     val assignees: List<String> = emptyList(),
     val labels: List<String> = emptyList(),
+    /** The forge's colour per label, as #rrggbb, where it has one. */
+    val labelColors: Map<String, String> = emptyMap(),
     val comments: Int? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null,

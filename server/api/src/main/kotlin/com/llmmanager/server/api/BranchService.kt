@@ -81,8 +81,7 @@ class BranchService(
         val base = target.base ?: return@withTarget Outcome.Invalid("The project's default branch is unknown")
         val pushed = pushTarget(target)
         if (pushed is Outcome.Invalid) return@withTarget pushed
-        val (title, body) = describe(projectId, branch)
-        when (val result = forges.open(forge, branch, base, title, body)) {
+        when (val result = forges.open(forge, describe(projectId, branch, base))) {
             is ForgeClient.Result.Failed -> Outcome.Invalid(result.reason)
             is ForgeClient.Result.Ok -> record(projectId, branch) { it.copy(pullRequest = result.pullRequest) }
                 .let { Outcome.Ok(it, "Opened ${label(forge)} ${result.pullRequest.url}") }
@@ -153,11 +152,12 @@ class BranchService(
     /** The configured origin URL itself (credentials included, if any), only to choose the auth host. */
     private fun rawOrigin(commonDir: File): String = workspace.git.run(commonDir, "config", "--get", "remote.origin.url")?.trim().orEmpty()
 
-    /** Title and body from the run that produced the branch, when there is one. */
-    private fun describe(projectId: String, branch: String): Pair<String, String> {
+    /** Title and body from the run that produced the branch, when there is one; the issues its messages referred to are closed by it. */
+    private fun describe(projectId: String, branch: String, base: String): PullRequestDraft {
         val runs = store.runs().filter { it.projectId == projectId && it.branch == branch }.sortedBy { it.createdAt }
         val first = runs.firstOrNull()
-        val task = first?.prompt?.trim().orEmpty()
+        val task = first?.let(store::task)?.trim().orEmpty()
+        val issues = runs.mapNotNull { it.jobId }.distinct().mapNotNull(store::job).flatMap { it.issues }.map { it.number }.distinct()
         val title = task.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(TITLE_CHARS) ?: "Agent changes from $branch"
         val stages = runs.joinToString("\n") { "- ${it.agent.label} ${it.stage.name.lowercase()}: ${it.status.name.lowercase()}" }
         val review = runs.lastOrNull { it.stage == Stage.REVIEW }?.summary?.let { "\n\n### Review\n\n$it" }.orEmpty()
@@ -167,7 +167,7 @@ class BranchService(
             if (stages.isNotEmpty()) append("\n\n### Runs\n\n$stages")
             append(review)
         }
-        return title to body
+        return PullRequestDraft(branch, base, title, body, closes = issues)
     }
 
     private fun record(projectId: String, branch: String, change: (BranchRecord) -> BranchRecord): BranchRecord =

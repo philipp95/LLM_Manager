@@ -12,15 +12,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -106,4 +110,16 @@ fun Muted(text: String) {
 @Composable
 fun BackgroundNote(text: String) {
     Text(text, color = Palette.onHarbor2, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
+}
+
+/** What a panel shows when it has nothing to list: a mark, a line that says so, and why. */
+@Composable
+fun EmptyState(icon: ImageVector, title: String, text: String) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(40.dp).background(Palette.paper2, CircleShape).border(1.dp, Palette.paperLine, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = Palette.ink2, modifier = Modifier.size(19.dp))
+        }
+        Text(title, color = Palette.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+        Text(text, color = Palette.ink2, fontSize = 12.5.sp, textAlign = TextAlign.Center)
+    }
 }

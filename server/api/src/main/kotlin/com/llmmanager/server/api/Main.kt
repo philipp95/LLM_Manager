@@ -98,11 +98,13 @@ class ApiServer : CliktCommand(name = "api") {
         log.info("Dashboard on http://{}:{}/ scanning {}", address.hostAddress, port, projects)
         log.info("Codex: {}. Token in {}. State in {}. Answering for {}", codexPath ?: "not found", tokenFile, stateDir, hosts)
         log.info("Pairing: {}", if (pairing != null) "devices of this server's Tailscale account pair without the token" else "off")
+        val issueSource = IssueSources(credentials)
+        schedule.chats?.issues = issueSource
         embeddedServer(Netty, port = port, host = address.hostAddress) {
             val services = DashboardServices(
                 launcher, ApkFile(File(apk)), schedule, insights, pairing, settings = settings,
                 cloner = RepoCloner(File(ProjectScanner.expandHome(cloneDir)), credentials, scanner), serverChat = workspace.serverChat != null,
-                issues = IssuesService(IssueSources(credentials)),
+                issues = IssuesService(issueSource),
             )
             dashboardModule(scanner, token, services, allowedHosts = hosts)
         }.start(wait = true)

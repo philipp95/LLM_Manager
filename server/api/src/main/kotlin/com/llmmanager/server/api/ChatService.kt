@@ -21,11 +21,13 @@ data class ChatRequest(
     val sameBranchAs: String? = null,
     /** Push the branch and open (or update) its pull request once the message is done. */
     val publish: Boolean = false,
+    /** Issues (or work items) of this project's forge the message refers to: the agent is given their text. */
+    val issues: List<Long> = emptyList(),
 )
 
 /** One message in a session and what came of it: the run, or a pipeline's build, review and fix. */
 @Serializable
-data class ChatTurn(val message: String, val createdAt: String, val runs: List<Run>)
+data class ChatTurn(val message: String, val createdAt: String, val runs: List<Run>, val issues: List<IssueRef> = emptyList())
 
 /** A chat session: one conversation with one agent, on one branch. */
 @Serializable
@@ -52,6 +54,8 @@ data class ChatView(
     val mergedAt: String? = null,
     /** Commits the session made on its branch. */
     val commits: Int = 0,
+    /** The issues its messages referred to; its pull request closes them when it is merged. */
+    val issues: List<IssueRef> = emptyList(),
 )
 
 @Serializable
@@ -77,7 +81,25 @@ class ChatService(
     }
 
     /** Where a message runs: the agent, its session to resume (if any), and the worktree. */
-    private data class Plan(val agent: Agent, val chatId: String, val resume: SessionRef?, val worktree: String?, val context: String?)
+    private data class Plan(
+        val agent: Agent,
+        val chatId: String,
+        val resume: SessionRef?,
+        val worktree: String?,
+        val context: String?,
+        val issues: List<IssueRef> = emptyList(),
+    ) {
+        /** What came before in the session first, then the issues, then (in the job) the request. */
+        fun with(attached: Attached.Read): Plan {
+            val before = context?.removeSuffix(NEW_REQUEST)?.trim()
+            return copy(issues = attached.issues, context = listOfNotNull(before, attached.text).joinToString("\n\n").ifEmpty { null })
+        }
+    }
+
+    private val attachments = IssueAttachments(workspace.scanner)
+
+    /** Reads issues in full for the agent; null where there is no forge to ask. */
+    var issues: IssueSource? by attachments::source
 
     private sealed interface Planned {
         data class Ready(val plan: Plan) : Planned
@@ -100,12 +122,15 @@ class ChatService(
         val prompt = request.prompt.trim()
         return when (val planned = plan(request, prompt, server)) {
             is Planned.Refused -> Outcome.Invalid(planned.reason)
-            is Planned.Ready -> {
-                // The server chat is not a repository: there is nothing to push.
-                store.putJob(job(request.copy(publish = request.publish && !server), projectName, prompt, planned.plan))
-                scheduler.tick()
-                pruneChatJobs()
-                Outcome.Ok(list(request.projectId).first { it.id == planned.plan.chatId })
+            is Planned.Ready -> when (val attached = attachments.read(request.projectId, request.issues)) {
+                is Attached.Failed -> Outcome.Invalid(attached.reason)
+                is Attached.Read -> {
+                    // The server chat is not a repository: there is nothing to push.
+                    store.putJob(job(request.copy(publish = request.publish && !server), projectName, prompt, planned.plan.with(attached)))
+                    scheduler.tick()
+                    pruneChatJobs()
+                    Outcome.Ok(list(request.projectId).first { it.id == planned.plan.chatId })
+                }
             }
         }
     }
@@ -171,7 +196,8 @@ class ChatService(
             kind = if (request.reviewer != null) JobKind.PIPELINE else JobKind.RUN,
             agent = plan.agent, reviewer = request.reviewer, prompt = prompt,
             schedule = Schedule(at = now), resume = plan.resume, resumeOnLimitReset = true, publish = request.publish,
-            chatId = plan.chatId, worktree = plan.worktree.takeIf { plan.resume == null }, context = plan.context, createdAt = now,
+            chatId = plan.chatId, worktree = plan.worktree.takeIf { plan.resume == null }, context = plan.context, issues = plan.issues,
+            createdAt = now,
         )
     }
 
@@ -204,6 +230,11 @@ class ChatService(
     }
 }
 
+private const val NEW_REQUEST = "The new request:"
+
+/** What the person asked for in [run], without what the server put ahead of it for the agent. */
+fun StateStore.task(run: Run): String = run.jobId?.let(::job)?.prompt?.takeIf { run.prompt.endsWith(it) } ?: run.prompt
+
 /** Sessions as the runs record them: grouped by session, with each message and what came of it. */
 private class ChatHistory(private val store: StateStore, private val pulls: SessionPulls?) {
     fun list(projectId: String): List<ChatView> {
@@ -229,7 +260,7 @@ private class ChatHistory(private val store: StateStore, private val pulls: Sess
         val first = sorted.first()
         val worktree = sorted.lastOrNull { it.worktree != null }?.worktree
         val turns = sorted.groupBy { it.jobId ?: it.pipelineId ?: it.id }.values.map { turnRuns ->
-            ChatTurn(message(turnRuns), turnRuns.first().createdAt, turnRuns)
+            ChatTurn(message(turnRuns), turnRuns.first().createdAt, turnRuns, turnRuns.first().jobId?.let(store::job)?.issues.orEmpty())
         }
         val branch = latestBranch(sorted)
         val pull = branch?.let { pulls?.of(first.projectId, it) }
@@ -242,6 +273,7 @@ private class ChatHistory(private val store: StateStore, private val pulls: Sess
             open = worktree == null || File(worktree).isDirectory,
             sharesBranch = sharesBranch, turns = turns,
             pullRequest = pull?.pullRequest, ci = pull?.ci, mergedAt = pull?.mergedAt,
+            issues = turns.flatMap { it.issues }.distinctBy { it.number },
             commits = sorted.filter { it.resultCommit != it.baseCommit }.mapNotNull { it.resultCommit }.distinct().size,
         )
     }
@@ -253,7 +285,7 @@ private class ChatHistory(private val store: StateStore, private val pulls: Sess
         val messages = runs.sortedBy { it.createdAt }.groupBy { it.jobId ?: it.id }.values
             .map { message(it).trim().take(CONTEXT_CHARS) }
         return "This continues earlier work in this session. What was asked before, oldest first:\n" +
-            messages.joinToString("\n") { "- " + it.replace("\n", " ") } + "\n\nThe new request:"
+            messages.joinToString("\n") { "- " + it.replace("\n", " ") } + "\n\n" + NEW_REQUEST
     }
 
     /** The message as the person typed it: a chat job's prompt, without any context added for the agent. */

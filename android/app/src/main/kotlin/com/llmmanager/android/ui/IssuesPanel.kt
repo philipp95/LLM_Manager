@@ -30,7 +30,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,7 +60,7 @@ fun IssuesPanel(project: Project, issues: RepoIssues?) {
         }
         Spacer(Modifier.size(6.dp))
         if (issues == null) {
-            Muted("Reading $noun from $forge…")
+            EmptyState(Glyphs.clock, "Reading $noun", "Asking $forge for them…")
         } else {
             issues.error?.let {
                 Text(
@@ -64,7 +68,7 @@ fun IssuesPanel(project: Project, issues: RepoIssues?) {
                     modifier = Modifier.fillMaxWidth().background(Palette.warn.copy(alpha = 0.16f), RoundedCornerShape(12.dp)).padding(10.dp),
                 )
             }
-            if (issues.open.isEmpty() && issues.fetchedAt != null) Muted("No open $noun.")
+            if (issues.open.isEmpty() && issues.fetchedAt != null) EmptyState(Glyphs.check, "No open $noun", "Nothing is waiting on $forge.")
             IssueLists(issues, noun, forge)
         }
     }
@@ -118,7 +122,7 @@ private fun IssueRow(issue: IssueSummary) {
     Row(
         Modifier.fillMaxWidth().then(if (url != null) Modifier.clickable(onClickLabel = "Open on the forge") { uriHandler.openUri(url) } else Modifier)
             .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
         Box(
             Modifier.size(26.dp).background(if (isClosed) Palette.ink3 else Palette.ok, CircleShape).semantics { contentDescription = issue.state },
@@ -130,14 +134,14 @@ private fun IssueRow(issue: IssueSummary) {
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                "#${issue.number}  ${issue.title}", color = Palette.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                numbered(issue.number, issue.title), color = Palette.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 18.sp,
             )
             Text(detail, color = Palette.ink2, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp)
             if (issue.labels.isNotEmpty()) {
                 FlowRow(
                     Modifier.padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) { issue.labels.forEach { Chip(it) } }
+                ) { issue.labels.forEach { LabelChip(it, issue.labelColors[it]) } }
             }
         }
         if (issue.assignees.isNotEmpty()) {
@@ -146,3 +150,21 @@ private fun IssueRow(issue: IssueSummary) {
         }
     }
 }
+
+/** "#12 Title" with the number quieter than the title. */
+internal fun numbered(number: Long, title: String): AnnotatedString = buildAnnotatedString {
+    withStyle(SpanStyle(color = Palette.ink3, fontWeight = FontWeight.Medium)) { append("#$number ") }
+    append(title)
+}
+
+private val LABEL_COLOUR = Regex("^#[0-9a-fA-F]{6}$")
+
+/** A label with the forge's own colour as a dot; anything that is not #rrggbb is ignored. */
+@Composable
+fun LabelChip(name: String, colour: String?) {
+    val dot = colour?.takeIf { LABEL_COLOUR.matches(it) }?.let { Color(OPAQUE or it.drop(1).toLong(HEX)) }
+    if (dot == null) Chip(name) else Chip(name, leading = { Box(Modifier.size(8.dp).background(dot, CircleShape)) })
+}
+
+private const val OPAQUE = 0xFF000000
+private const val HEX = 16

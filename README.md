@@ -144,6 +144,16 @@ Tap a tile for the repository's screen:
   For Azure DevOps these are the **work items** of the repository's project,
   with their type and state. Read only: a tap opens the issue on the forge. They
   are read when you look and kept for a minute (`GET /api/projects/{id}/issues`).
+- **Attach issues to a message**: "Attach issue" next to the message box opens
+  a searchable list of the open issues (work items on Azure DevOps); tick up to
+  five, or type a number that is not listed. The agent has no forge credentials,
+  so the server reads each one's title, description and latest comments and
+  puts that text ahead of your request. The message and the session show the
+  attached issues as chips, and the session's pull request says `Closes #12`
+  (Azure DevOps: the work item is linked, which may need Work Items write on
+  the token), so merging closes them. Nothing is posted to the issue itself.
+  An issue attached after the pull request is already open is read by the
+  agent, but not added to that pull request's description.
 - **Branches**: the worktrees, with push, pull request and merge controls, and
   Codex in tmux for hands-on work.
 

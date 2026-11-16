@@ -27,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,7 +87,8 @@ fun LazyListScope.chatItems(chat: ChatScreen, actions: ChatActions) {
                 Conversation(project, selected, chat.schedule, actions)
             }
             HorizontalDivider(color = Palette.paperLine, modifier = Modifier.padding(top = 14.dp, bottom = 12.dp))
-            Composer(project, ComposerTarget(chat.schedule, chat.sessions, selected), chat.chats.sending, actions) { sent -> chat.select(sent.id) }
+            val target = ComposerTarget(chat.schedule, chat.sessions, selected, chat.chats.issues)
+            Composer(project, target, chat.chats.sending, actions) { sent -> chat.select(sent.id) }
         }
     }
 }
@@ -105,6 +107,7 @@ private fun Conversation(project: Project, session: ChatView, schedule: Schedule
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Chip(workplace(project, session), mono = true)
         if (session.sharesBranch) Chip("shared with another session", ChipTone.Warn)
+        session.issues.forEach { IssueChip(it) }
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 8.dp)) {
         session.turns.takeLast(MAX_TURNS).forEach { turn ->
@@ -137,8 +140,10 @@ private class TurnView(turn: ChatTurn) {
 @Composable
 private fun Message(turn: ChatTurn) {
     Column(Modifier.fillMaxWidth().padding(start = 40.dp), horizontalAlignment = Alignment.End) {
-        Column(Modifier.background(Palette.harbor2, RoundedCornerShape(16.dp, 16.dp, 5.dp, 16.dp)).padding(horizontal = 12.dp, vertical = 10.dp)) {
+        val bubble = Brush.verticalGradient(listOf(Palette.harbor2, Palette.harbor))
+        Column(Modifier.background(bubble, RoundedCornerShape(16.dp, 16.dp, 5.dp, 16.dp)).padding(horizontal = 12.dp, vertical = 10.dp)) {
             Text(turn.message.take(MAX_PROMPT), color = Palette.onHarbor, fontSize = 14.sp)
+            if (turn.issues.isNotEmpty()) IssueChips(turn.issues, onDark = true)
             Text(
                 localDateTime(turn.createdAt), color = Palette.onHarbor2, fontSize = 11.5.sp,
                 modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
