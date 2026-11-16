@@ -57,6 +57,7 @@ fun Composer(project: Project, target: ComposerTarget, sending: Boolean, actions
     var text by rememberSaveable(project.id) { mutableStateOf("") }
     var review by rememberSaveable(project.id) { mutableStateOf(false) }
     var shareWith by rememberSaveable(project.id) { mutableStateOf<String?>(null) }
+    val picked = rememberIssuePick(project.id)
     val agent = session?.agent ?: listOfNotNull(chosen, schedule?.defaultAgent).firstOrNull { it in available } ?: available.firstOrNull() ?: "claude"
     val reviewer = reviewerFor(agent, available)
     val shareable = target.sessions.filter { it.branch != null && it.open }
@@ -70,18 +71,20 @@ fun Composer(project: Project, target: ComposerTarget, sending: Boolean, actions
         placeholder = { Text(placeholder) },
         colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = Palette.field, unfocusedContainerColor = Palette.field),
     )
+    IssuePicker(project, target.issues, picked)
     reviewer?.let { ReviewToggle(review, agent, it) { checked -> review = checked } }
     val blocked = blocked(session, agent)
     SendButton(sending, enabled = text.isNotBlank() && available.isNotEmpty() && blocked == null) {
         val request = ChatRequest(
             projectId = project.id, prompt = text.trim(), agent = agent, reviewer = reviewer.takeIf { review },
-            chatId = session?.id, sameBranchAs = shared?.id, publish = project.forge != null,
+            chatId = session?.id, sameBranchAs = shared?.id, publish = project.forge != null, issues = picked.numbers,
         )
         val send = {
             actions.onSend(request) { sent ->
                 text = ""
                 review = false
                 shareWith = null
+                picked.clear()
                 onSent(sent)
             }
         }

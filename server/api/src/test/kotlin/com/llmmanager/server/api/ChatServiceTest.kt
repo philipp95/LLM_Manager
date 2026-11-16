@@ -201,6 +201,52 @@ class ChatServiceTest {
     }
 
     @Test
+    fun `an attached issue is read by the server and given to the agent ahead of the request`() {
+        val f = fixture()
+        gitOutput(File(root, "repos/app"), "remote", "add", "origin", "https://github.com/acme/app.git")
+        val asked = mutableListOf<Pair<Forge, Long>>()
+        f.chats.issues = object : IssueSource {
+            override fun fetch(forge: Forge) = Result.success(RepoIssues())
+
+            override fun detail(forge: Forge, number: Long): Result<IssueDetail> {
+                asked += forge to number
+                if (number == 404L) return Result.failure(java.io.IOException("There is no issue #404 on GitHub"))
+                val issue = IssueSummary(number, "Crash on empty prompt", "https://github.com/acme/app/issues/$number", "open")
+                return Result.success(IssueDetail(issue, "Sending nothing crashes."))
+            }
+        }
+
+        assertEquals("Could not read #404: There is no issue #404 on GitHub", f.send(ChatRequest(f.projectId, "Fix it", issues = listOf(404))).refusal())
+        assertTrue(f.send(ChatRequest(f.projectId, "Fix it", issues = (1L..6L).toList())).refusal().contains("at most 5"))
+        assertTrue(f.chats.list(f.projectId).isEmpty(), "a message whose issue cannot be read is not sent")
+        val chat = f.send(ChatRequest(f.projectId, "Fix this crash", issues = listOf(41, 41))).chat()
+        f.settle()
+
+        assertEquals(Forge.GitHub("acme", "app") to 41L, asked.last(), "the project's own forge is asked, once per issue")
+        assertEquals(listOf(IssueRef(41, "Crash on empty prompt", "https://github.com/acme/app/issues/41")), chat.issues)
+        val session = f.chat(chat.id)
+        assertEquals("Fix this crash", session.title, "the session shows what was typed")
+        assertEquals(chat.issues, session.turns.single().issues)
+        val run = session.turns.single().runs.single()
+        val prompt = File(f.store.runDir(run.id), "prompt.txt").readText()
+        assertTrue(prompt.startsWith("The person attached this issue from github"), prompt.take(200))
+        assertTrue(prompt.contains("<issue number=\"41\" state=\"open\">") && prompt.contains("Sending nothing crashes."))
+        assertTrue(prompt.indexOf("</issue>") < prompt.indexOf("Fix this crash"), "the request comes last")
+        awaitTrue { f.chat(chat.id).turns.single().runs.single().status.finished }
+        f.settle()
+        val commit = f.chat(chat.id).turns.single().runs.single()
+        assertEquals("Claude (work): Fix this crash", gitOutput(File(commit.worktree!!), "log", "--format=%s", "-1"), "the commit is named after the request")
+    }
+
+    @Test
+    fun `issues need a forge`() {
+        val f = fixture()
+        f.chats.issues = IssueSource { Result.success(RepoIssues()) }
+
+        assertTrue(f.send(ChatRequest(f.projectId, "Fix it", issues = listOf(1))).refusal().contains("no issues to attach"))
+    }
+
+    @Test
     fun `sessions over HTTP need the token`() = testApplication {
         val f = fixture()
         val secret = "t".repeat(40)

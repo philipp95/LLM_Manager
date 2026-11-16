@@ -6,7 +6,17 @@ import kotlinx.serialization.Serializable
 
 /** One message in a session and what came of it: the run, or a pipeline's build, review and fix. */
 @Serializable
-data class ChatTurn(val message: String, val createdAt: String = "", val runs: List<Run> = emptyList())
+data class ChatTurn(
+    val message: String,
+    val createdAt: String = "",
+    val runs: List<Run> = emptyList(),
+    /** The issues attached to this message. */
+    val issues: List<IssueRef> = emptyList(),
+)
+
+/** An issue or work item attached to a message; the server reads it for the agent. */
+@Serializable
+data class IssueRef(val number: Long, val title: String = "", val url: String = "", val state: String = "open")
 
 /** A chat session: one conversation with one agent, on one branch. */
 @Serializable
@@ -25,6 +35,8 @@ data class ChatView(
     val open: Boolean = true,
     /** Other sessions work on the same branch. */
     val sharesBranch: Boolean = false,
+    /** Every issue attached in this session; its pull request closes them. */
+    val issues: List<IssueRef> = emptyList(),
     val turns: List<ChatTurn> = emptyList(),
     /** The pull request of the session's branch, as the forge last reported it: open, merged or closed. */
     val pullRequest: PullRequestRef? = null,
@@ -58,4 +70,6 @@ data class ChatRequest(
     /** For a new session: work on this session's branch instead of a new one. */
     val sameBranchAs: String? = null,
     val publish: Boolean = false,
+    /** Issues or work items the agent should read first, by number. */
+    val issues: List<Long> = emptyList(),
 )

@@ -155,7 +155,7 @@ class RunEngine(
         val dir = File(checkNotNull(run.worktree))
         val dirty = git.run(dir, "status", "--porcelain", "--ignore-submodules=all")?.isNotBlank() == true
         if (!dirty) return run.resultCommit
-        val title = run.prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(TITLE_CHARS) ?: "agent changes"
+        val title = store.task(run).lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(TITLE_CHARS) ?: "agent changes"
         val message = "${run.agent.label} (${run.stage.name.lowercase()}): $title\n\nRun ${run.id} started by LLM Manager.\n"
         val agent = "${run.agent.label} via LLM Manager"
         val person = committer()

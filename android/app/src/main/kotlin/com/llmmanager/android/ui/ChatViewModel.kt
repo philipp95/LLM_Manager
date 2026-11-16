@@ -7,6 +7,7 @@ import com.llmmanager.android.data.ChatClient
 import com.llmmanager.android.data.ChatRequest
 import com.llmmanager.android.data.ChatView
 import com.llmmanager.android.data.Credentials
+import com.llmmanager.android.data.RepoIssues
 import com.llmmanager.android.data.ServerAddress
 import com.llmmanager.android.data.SettingsStore
 import kotlinx.coroutines.channels.Channel
@@ -30,6 +31,8 @@ class ChatViewModel(
         /** Null until loaded. */
         val chats: List<ChatView>? = null,
         val error: String? = null,
+        /** The repository's issues on its forge; null until read. */
+        val issues: RepoIssues? = null,
         val sending: Boolean = false,
         /** The session whose pull request is being opened or merged right now. */
         val acting: String? = null,
@@ -57,6 +60,7 @@ class ChatViewModel(
         val target = server ?: return
         // Another repository's sessions are never shown for this one, not even while loading.
         if (mutableState.value.projectId != projectId) mutableState.value = State(projectId = projectId)
+        loadIssues(target, projectId)
         viewModelScope.launch {
             val result = credentials.call(target) { client.chats(target, it, projectId) }
             mutableState.update {
@@ -66,6 +70,14 @@ class ChatViewModel(
                     else -> it.copy(error = describe(result))
                 }
             }
+        }
+    }
+
+    /** Issues are read next to the sessions; when that fails, what was shown stays. */
+    private fun loadIssues(target: ServerAddress, projectId: String) {
+        viewModelScope.launch {
+            val result = credentials.call(target) { client.issues(target, it, projectId) }
+            if (result is ApiResult.Ok) mutableState.update { if (it.projectId == projectId) it.copy(issues = result.value) else it }
         }
     }
 

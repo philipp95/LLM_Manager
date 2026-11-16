@@ -247,11 +247,35 @@
   .server-note svg.icon { color: var(--rust-on-dark); margin-top: 2px; }
 
   .chat-layout { display: grid; gap: 16px; min-width: 0; align-items: start; }
+  .main-col { display: grid; gap: 14px; min-width: 0; }
+  .drawer-head { display: none; align-items: center; justify-content: space-between; gap: 8px; color: var(--on-harbor); }
+  .drawer-head h2 { margin: 0; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--on-harbor-2); }
+  .side-tab {
+    all: unset; display: none; position: fixed; z-index: 7; left: 0; top: 46%; width: 24px; padding: 12px 0; justify-items: center; gap: 4px;
+    border-radius: 0 12px 12px 0; background: var(--rust); color: #fff; font-size: 12px; font-weight: 750; cursor: pointer;
+    box-shadow: 4px 2px 14px rgba(0, 0, 0, .35);
+  }
+  .side-tab::before { content: ""; position: absolute; inset: -10px -14px -10px 0; }
+  .side-tab svg { width: 15px; height: 15px; }
+  .side-tab:focus-visible { outline: 3px solid var(--rust-on-dark); }
+  .scrim { all: unset; display: none; position: fixed; z-index: 30; inset: 0; background: rgba(6, 14, 17, .62); }
   .session-col, .chat-col { display: grid; gap: 10px; min-width: 0; }
   .chat-col { min-height: calc(100vh - 240px); min-height: calc(100dvh - 240px); grid-template-rows: auto auto 1fr auto; }
   @media (max-width: 899px) {
     body:not(.in-chat) .chat-col { display: none; }
-    body.in-chat .session-col, body.in-chat .repo-top, body.in-chat .subtabs, body.in-chat .server-note { display: none; }
+    body.in-chat .repo-top, body.in-chat .subtabs, body.in-chat .server-note { display: none; }
+    /* Away from the list of sessions, that list is a bar that slides in from the left. */
+    body.side-drawer .session-col {
+      position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(88vw, 360px); align-content: start; overflow-y: auto;
+      padding: calc(12px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom));
+      background: var(--harbor); border-right: 1px solid var(--harbor-line); box-shadow: 14px 0 44px rgba(0, 0, 0, .5);
+      transform: translateX(-104%); visibility: hidden; transition: transform .22s cubic-bezier(.2, .7, .2, 1), visibility 0s .22s;
+    }
+    body.side-drawer.drawer-open .session-col { transform: none; visibility: visible; transition: transform .22s cubic-bezier(.2, .7, .2, 1); }
+    body.side-drawer .drawer-head { display: flex; }
+    body.side-drawer .side-tab { display: grid; }
+    body.side-drawer.drawer-open .scrim { display: block; }
+    body.drawer-open { overflow: hidden; }
     body.in-chat .tabs-bottom { display: none; }
     body.in-chat main { padding-bottom: 0; }
     body.in-chat .chat-col { min-height: calc(100vh - 96px); min-height: calc(100dvh - 96px); }
@@ -457,6 +481,39 @@
   .pr-name { font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pr-meta { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pr-tags { display: flex; gap: 5px; align-items: center; }
+  .issue-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .issue-labels .chip { min-height: 20px; font-size: 11px; padding: 0 7px; max-width: 100%; }
+  .issue-talk { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .issue-talk svg.icon { width: 13px; height: 13px; }
+  .issue-more { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 13px; font-weight: 650; min-height: 32px; color: var(--teal-ink); }
+  .issue-closed { margin-top: 12px; }
+  .issue-closed summary { margin-bottom: 8px; }
+  .issue-row .pr-name { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+  .chip.label { background: color-mix(in srgb, var(--label) 16%, var(--paper)); border-color: color-mix(in srgb, var(--label) 45%, var(--paper-line)); color: var(--ink); }
+  .label-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--label); flex: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .12); }
+  .chip.issue-ref { background: rgba(62, 127, 134, .14); border-color: rgba(62, 127, 134, .4); color: var(--teal-ink); font-weight: 650; max-width: min(100%, 320px); }
+  a.chip.issue-ref:hover { border-color: var(--teal); }
+  .chip.issue-ref.done { color: var(--ink-2); background: var(--paper-2); border-color: var(--paper-line); }
+  .bubble.me .chip.issue-ref, .chat-head .chip.issue-ref { background: rgba(143, 199, 205, .12); border-color: rgba(143, 199, 205, .35); color: #A9D6DB; }
+  .bubble.me .refs { margin-top: 8px; justify-content: flex-end; }
+  .chip-x { all: unset; cursor: pointer; display: grid; place-items: center; width: 22px; height: 22px; margin: -2px -6px -2px 0; border-radius: 50%; }
+  .chip-x:hover { background: rgba(0, 0, 0, .1); } .chip-x:focus-visible { outline: 2px solid var(--rust-strong); }
+  .chip-x svg.icon { width: 12px; height: 12px; }
+  .attached .chip { min-height: 28px; }
+  .issue-pick { display: grid; gap: 6px; padding: 8px; border-radius: 16px; background: var(--paper-2); border: 1px solid var(--paper-line); animation: rise .16s ease-out; }
+  .issue-find { min-height: 40px; border-radius: 12px; border: 1px solid var(--paper-line); background: var(--field); color: var(--ink); padding: 0 12px; font: inherit; font-size: 16px; min-width: 0; }
+  .issue-options { display: grid; max-height: min(38vh, 300px); overflow-y: auto; overscroll-behavior: contain; }
+  .issue-options .muted { margin: 6px 4px; font-size: 13px; }
+  .issue-option {
+    all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 22px auto minmax(0, 1fr); gap: 2px 8px; align-items: center;
+    min-height: 44px; padding: 6px 8px; border-radius: 10px; font-size: 14px;
+  }
+  .issue-option:hover { background: rgba(0, 0, 0, .05); } .issue-option:focus-visible { outline: 2px solid var(--rust-strong); outline-offset: -2px; }
+  .issue-option .tick { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--ink-3); display: grid; place-items: center; background: var(--field); }
+  .issue-option[aria-checked="true"] .tick { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .issue-option .tick svg.icon { width: 13px; height: 13px; stroke-width: 3; }
+  .issue-option-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .issue-option .issue-labels { grid-column: 3; margin-top: 0; }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 10px 12px; border-radius: 12px; background: rgba(201, 150, 46, .16); color: var(--warn-ink); overflow-wrap: anywhere; }
   .notice svg.icon { margin-top: 2px; }
   .panel details summary { cursor: pointer; list-style: none; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); display: flex; gap: 6px; align-items: center; }
@@ -618,6 +675,62 @@
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
   .toast.bad { background: var(--bad-ink); color: #FFF8EE; }
+
+  /* ---------- polish: depth, type and motion on the same harbour and paper ---------- */
+  body {
+    background:
+      radial-gradient(120% 50% at 50% -10%, #23484F 0%, transparent 62%),
+      radial-gradient(70% 40% at 100% 100%, rgba(210, 115, 58, .10) 0%, transparent 70%),
+      var(--harbor);
+    background-attachment: fixed;
+    font-feature-settings: "ss01", "cv11"; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, .card-name, .thread-empty b, .empty b { text-wrap: balance; }
+  p, .bubble .text, .composer-hint { text-wrap: pretty; }
+  .panel, .card, .session, .bubble.agent, .composer {
+    background-image: linear-gradient(180deg, rgba(255, 252, 244, .55) 0, rgba(255, 252, 244, 0) 56px);
+  }
+  .panel, .card, .bubble.agent { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), var(--shadow); }
+  .card.pinned { box-shadow: inset 0 0 0 2px var(--rust), var(--shadow); }
+  .session.merged, .session.closed { background-image: none; }
+  .card, .session, .small-btn, .opt, .agent-pick button, .icon-btn, .subtabs button, .tabs button, .chip, .send, .pr-row, .issue-option {
+    transition: transform .16s cubic-bezier(.2, .7, .2, 1), box-shadow .16s ease, background-color .16s ease, border-color .16s ease, color .16s ease;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 1px 0 rgba(0, 0, 0, .22), 0 18px 36px rgba(0, 0, 0, .34); }
+  @media (hover: hover) {
+    .session:hover { transform: translateX(2px); }
+    .small-btn:hover:not(:disabled), .opt:hover, .agent-pick button[aria-pressed="false"]:hover { border-color: var(--ink-3); }
+    .icon-btn:hover { background: var(--harbor-3); }
+    .subtabs button:not([aria-current="page"]):hover, .tabs button:not([aria-current="page"]):hover { color: var(--on-harbor); }
+    a.pr-row:hover { background: linear-gradient(90deg, transparent, rgba(0, 0, 0, .035) 12%, rgba(0, 0, 0, .035) 88%, transparent); }
+    .send:hover:not(:disabled) { box-shadow: 0 6px 16px rgba(169, 80, 31, .45); transform: translateY(-1px); }
+  }
+  .small-btn:active:not(:disabled), .opt:active, .agent-pick button:active, .session:active { transform: scale(.97); }
+  .send { background: linear-gradient(180deg, #BC5C27, var(--rust-strong)); box-shadow: 0 3px 10px rgba(169, 80, 31, .35); }
+  .tab:not([hidden]) { animation: rise .22s cubic-bezier(.2, .7, .2, 1); }
+  .bubble.me { background: linear-gradient(180deg, #2A4F57, var(--harbor-3)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
+  .bubble .text { line-height: 1.5; }
+  .chat-head h2 { font-size: 18px; font-weight: 750; }
+  .panel h2, .panel-head h2 { color: var(--ink-3); }
+  .panel-head { margin-bottom: 12px; }
+  .who { width: 22px; height: 22px; font-size: 9px; box-shadow: 0 0 0 2px var(--paper); }
+  .pr-tags .who + .who { margin-left: -4px; }
+  .issue-row { align-items: start; }
+  .issue-row .state { margin-top: 1px; }
+  .issue-row .pr-tags { margin-top: 3px; }
+  .issue-row .pr-num { color: var(--ink-3); font-weight: 650; }
+  .session-title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }
+  .session-top { align-items: flex-start; }
+  .empty { display: grid; justify-items: center; gap: 6px; text-align: center; padding: 22px 12px 18px; color: var(--ink-2); font-size: 13.5px; }
+  .empty .empty-mark {
+    width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; margin-bottom: 4px; color: var(--teal-ink);
+    background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, .7), transparent 60%), rgba(62, 127, 134, .16); border: 1px solid rgba(62, 127, 134, .28);
+  }
+  .empty .empty-mark svg.icon { width: 22px; height: 22px; }
+  .empty b { color: var(--ink); font-size: 15.5px; }
+  .empty span { max-width: 34ch; }
+  .empty.loading .empty-mark svg.icon { animation: spin 1.2s linear infinite; }
+  .thread-empty .badge { box-shadow: 0 0 0 8px rgba(229, 139, 79, .07), 0 0 0 18px rgba(229, 139, 79, .035); margin-bottom: 8px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -676,6 +789,10 @@
   let pairing = null, pairRefusal = "", lastApp = null;
   // Sessions of the repository on screen; which one is selected (null: a new session) per repository.
   let chatData = null;
+  // The issues of the repository on screen: { projectId, issues }.
+  let issueData = null;
+  let drawerOpen = false;
+  const MAX_ISSUES = 5;
   const sessionsExpanded = new Set(), expandedText = new Set(), openAttach = new Set();
   // Folded groups of the session tree that are open, and merges under way or refused, per session.
   const openGroups = new Set(), mergeBusy = new Set(), mergeErrors = new Map();
@@ -692,6 +809,7 @@
 
   const ICONS = {
     refresh: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
+    issue: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 13.2a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z",
     link: "M14 3h7v7M10 14 21 3M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5",
     branch: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9",
     terminal: "M4 17l6-6-6-6M12 19h8",
@@ -791,6 +909,30 @@
 
   const chip = (text, kind, iconName, mono) =>
     el("span", { class: ["chip", kind, mono && "mono"].filter(Boolean).join(" ") }, iconName && icon(iconName), el("span", { class: "t" }, text));
+  /** A label in the colour its forge gives it. The colour is repository data: only a plain hex value is used. */
+  function labelChip(name, color) {
+    const node = chip(name);
+    if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) return node;
+    node.classList.add("label");
+    node.style.setProperty("--label", color);
+    node.prepend(el("span", { class: "label-dot", "aria-hidden": "true" }));
+    return node;
+  }
+  /** An issue a message referred to; a link when the forge gave an https address. */
+  function issueChip(ref, onRemove) {
+    const url = httpsOnly(ref.url);
+    const parts = [icon(ref.state === "closed" ? "check" : "issue"), el("span", { class: "t" }, "#" + ref.number + (ref.title ? " " + ref.title : ""))];
+    const kind = "chip issue-ref" + (ref.state === "closed" ? " done" : "");
+    if (onRemove) {
+      return el("span", { class: kind }, parts,
+        el("button", { class: "chip-x", type: "button", "aria-label": "Don't attach #" + ref.number, title: "Don't attach", onclick: onRemove }, icon("x")));
+    }
+    return url ? el("a", { class: kind, href: url, target: "_blank", rel: "noopener noreferrer", title: ref.title || "" }, parts)
+      : el("span", { class: kind, title: ref.title || "" }, parts);
+  }
+  /** What a panel shows when it has nothing to list. */
+  const empty = (iconName, title, text, loading) =>
+    el("div", { class: "empty" + (loading ? " loading" : "") }, el("span", { class: "empty-mark", "aria-hidden": "true" }, icon(iconName)), el("b", null, title), text ? el("span", null, text) : null);
   const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
   const clamp = (text, n) => (text.length > n ? text.slice(0, n) + "…" : text);
   const httpsOnly = (url) => (typeof url === "string" && url.startsWith("https://") ? url : null);
@@ -1364,7 +1506,9 @@
     const reviewer = runs.find((r) => r.stage === "review");
     const live = active && active.status === "running" && active.tmuxSession;
     return [
-      el("div", { class: "bubble me" }, longText(t.message, key + ":me"), el("div", { class: "meta" }, fmtTime(t.createdAt))),
+      el("div", { class: "bubble me" }, longText(t.message, key + ":me"),
+        t.issues && t.issues.length ? el("div", { class: "chips refs" }, t.issues.map((ref) => issueChip(ref))) : null,
+        el("div", { class: "meta" }, fmtTime(t.createdAt))),
       el("div", { class: "bubble agent" },
         el("div", { class: "who-row" }, agentMark(first.agent), AGENT[first.agent].label,
           reviewer ? el("span", { class: "meta" }, "· reviewed by " + AGENT[reviewer.agent].label) : null,
@@ -1503,6 +1647,7 @@
       el("h2", null, session ? session.title : "New session"),
       session && session.branch ? el("span", { class: "chip mono" }, icon("branch"), el("span", { class: "t" }, session.branch)) : null,
       session && session.sharesBranch ? chip("shared with another session", "warn", "alert") : null,
+      session && session.issues ? session.issues.map((ref) => issueChip(ref)) : null,
     ];
   }
 
@@ -1600,12 +1745,17 @@
    * starts a new one, on a new branch unless "same branch as" names another session.
    */
   function buildComposer(projectId) {
-    const state = { agent: savedAgent(), project: null, session: null, sessions: [], review: false };
+    const state = { agent: savedAgent(), project: null, session: null, sessions: [], review: false, issues: [], picking: false };
     const picker = el("div", { class: "agent-pick", role: "group", "aria-label": "Agent" });
     const branchSelect = el("select", { class: "opt", "aria-label": "Branch for the new session" });
     const text = el("textarea", { rows: "1", "aria-label": "Message to the agent", enterkeyhint: "send" });
     const review = el("button", { class: "opt", type: "button" });
     const hint = el("p", { class: "composer-hint" });
+    const attach = el("button", { class: "opt", type: "button", "aria-expanded": "false" });
+    const attached = el("div", { class: "chips attached" });
+    const find = el("input", { class: "issue-find", type: "search", autocomplete: "off", enterkeyhint: "search" });
+    const options = el("div", { class: "issue-options" });
+    const pick = el("div", { class: "issue-pick", hidden: true }, find, options);
     const send = el("button", { class: "send", type: "button", "aria-label": "Send", title: "Send" }, icon("up"));
     const available = () => {
       const known = (scheduleData && scheduleData.agents) || {};
@@ -1624,6 +1774,68 @@
     };
     branchSelect.addEventListener("change", render);
     review.addEventListener("click", () => { state.review = !state.review; render(); });
+    attach.addEventListener("click", () => {
+      state.picking = !state.picking;
+      render();
+      if (state.picking && window.matchMedia("(pointer: fine)").matches) find.focus();
+    });
+    find.addEventListener("input", renderIssues);
+    find.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { state.picking = false; render(); attach.focus(); }
+    });
+
+    /** Ticks or unticks an issue for the next message. */
+    function toggleIssue(ref) {
+      const at = state.issues.findIndex((x) => x.number === ref.number);
+      if (at >= 0) state.issues.splice(at, 1);
+      else if (state.issues.length >= MAX_ISSUES) { toast("Attach at most " + MAX_ISSUES + " to one message", true); return; }
+      else state.issues.push({ number: ref.number, title: ref.title || "", url: ref.url || "", state: ref.state || "open" });
+      const focused = options.contains(document.activeElement);
+      renderIssues();
+      if (focused) { const again = options.querySelector('[data-number="' + ref.number + '"]'); if (again) again.focus(); }
+    }
+
+    /** The chosen issues, and the open ones to choose from, narrowed by what is typed. */
+    function renderIssues() {
+      const p = state.project;
+      const noun = issueNoun(p, false).toLowerCase(), nouns = issueNoun(p, true).toLowerCase();
+      const can = !p.server && !!p.forge;
+      if (!can) { state.issues = []; state.picking = false; }
+      attach.hidden = !can;
+      attach.setAttribute("aria-expanded", String(state.picking));
+      attach.setAttribute("aria-pressed", String(state.issues.length > 0));
+      attach.replaceChildren(icon("issue"), state.issues.length ? plural(state.issues.length, noun, nouns) : "Attach " + noun);
+      attach.title = AGENT[agentNow()].label + " gets the " + noun + "'s description and comments with your message";
+      attached.hidden = !state.issues.length;
+      attached.replaceChildren(...state.issues.map((ref) => issueChip(ref, () => toggleIssue(ref))));
+      pick.hidden = !state.picking;
+      if (!state.picking) return;
+      find.placeholder = "Title, label or number";
+      find.setAttribute("aria-label", "Find an open " + noun + " by title, label or number");
+      const data = issueData && issueData.projectId === p.id ? issueData.issues : null;
+      const words = find.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const hay = (i) => ("#" + i.number + " " + i.title + " " + (i.labels || []).join(" ") + " " + (i.author || "")).toLowerCase();
+      const found = data ? data.open.filter((i) => words.every((w) => hay(i).includes(w))) : [];
+      const typed = /^#?(\d{1,9})$/.exec(find.value.trim());
+      const number = typed ? Number(typed[1]) : 0;
+      const byNumber = number > 0 && !found.some((i) => i.number === number) ? { number, title: "", url: "", state: "open" } : null;
+      const option = (i, text) => {
+        const on = state.issues.some((x) => x.number === i.number);
+        return el("button", { class: "issue-option", type: "button", role: "checkbox", "aria-checked": String(on), "data-number": String(i.number), onclick: () => toggleIssue(i) },
+          el("span", { class: "tick", "aria-hidden": "true" }, on ? icon("check") : null),
+          el("span", { class: "pr-num" }, "#" + i.number),
+          el("span", { class: "issue-option-title" }, text || i.title),
+          i.labels && i.labels.length ? el("span", { class: "issue-labels" }, i.labels.slice(0, 3).map((l) => labelChip(l, (i.labelColors || {})[l]))) : null);
+      };
+      options.replaceChildren(...[
+        ...found.map((i) => option(i)),
+        byNumber ? option(byNumber, "Attach " + noun + " #" + number + ", which is not in this list") : null,
+        !data ? el("p", { class: "muted" }, "Reading " + nouns + " from " + FORGE[p.forge].label + "…")
+          : data.error && !data.open.length ? el("p", { class: "muted" }, "Couldn't read " + nouns + ": " + data.error + " You can still type a number.")
+          : !found.length && !byNumber ? el("p", { class: "muted" }, words.length ? "No open " + noun + " matches. Type its number to attach it anyway." : "No open " + nouns + ".")
+          : null,
+      ].filter(Boolean));
+    }
 
     function render() {
       const p = state.project, s = state.session;
@@ -1662,6 +1874,7 @@
           : p.forge ? "Starts a new session on a new branch. When it's done, the branch is pushed and a pull request is opened on " + FORGE[p.forge].label + "."
           : "Starts a new session on a new branch. This repository has no GitHub, GitLab or Azure DevOps remote, so the work stays local.");
       send.disabled = !ok.length || !!blocked;
+      renderIssues();
     }
 
     async function submit() {
@@ -1681,6 +1894,7 @@
       if (reviewer) request.reviewer = reviewer;
       if (s) request.chatId = s.id;
       else if (branchSelect.value) request.sameBranchAs = branchSelect.value;
+      if (state.issues.length) request.issues = state.issues.map((x) => x.number);
       send.disabled = true;
       try {
         const result = await postJson("/api/chats", request);
@@ -1688,6 +1902,9 @@
         text.value = "";
         grow();
         state.review = false;
+        state.issues = [];
+        state.picking = false;
+        find.value = "";
         branchSelect.value = "";
         const chats = chatData && chatData.projectId === p.id ? chatData.chats.filter((c) => c.id !== result.body.id) : [];
         chatData = { projectId: p.id, chats: [result.body, ...chats] };
@@ -1710,8 +1927,8 @@
       const desktop = window.matchMedia("(pointer: fine)").matches;
       if (e.ctrlKey || e.metaKey || (desktop && !e.shiftKey)) { e.preventDefault(); submit(); }
     });
-    const node = el("div", { class: "composer" }, el("div", { class: "composer-opts" }, picker, branchSelect, review),
-      el("div", { class: "composer-main" }, text, send), hint);
+    const node = el("div", { class: "composer" }, el("div", { class: "composer-opts" }, picker, branchSelect, review, attach),
+      pick, attached, el("div", { class: "composer-main" }, text, send), hint);
     return {
       projectId, node,
       update: (p, session, sessions) => {
@@ -1840,17 +2057,60 @@
     return url ? el("a", { class: "pr-row", href: url, target: "_blank", rel: "noopener noreferrer" }, parts) : el("div", { class: "pr-row" }, parts);
   }
 
+  /** Azure DevOps has work items, kept per project; the others have issues. */
+  const issueNoun = (p, plural) => (p.forge === "azure-devops" ? "Work item" : "Issue") + (plural ? "s" : "");
+
+  function issueRow(issue) {
+    const closed = issue.state === "closed";
+    const meta = [issue.kind, issue.status, issue.author ? "by " + issue.author : null, "updated " + relative(issue.updatedAt || issue.createdAt, "at some time")].filter(Boolean).join(" · ");
+    const parts = [
+      el("span", { class: "state " + (closed ? "closed" : "open"), role: "img", "aria-label": closed ? "closed" : "open" }, icon(closed ? "check" : "issue")),
+      el("div", { style: "min-width:0" },
+        el("div", { class: "pr-head" }, el("span", { class: "pr-num" }, "#" + issue.number), el("span", { class: "pr-name", title: issue.title }, issue.title)),
+        el("div", { class: "pr-meta" }, meta),
+        issue.labels && issue.labels.length ? el("div", { class: "issue-labels" }, issue.labels.map((label) => labelChip(label, (issue.labelColors || {})[label]))) : null),
+      el("div", { class: "pr-tags" },
+        issue.comments ? el("span", { class: "issue-talk", title: issue.comments + (issue.comments === 1 ? " comment" : " comments") }, icon("chat"), String(issue.comments)) : null,
+        (issue.assignees || []).map(person)),
+    ];
+    const url = httpsOnly(issue.url);
+    return url ? el("a", { class: "pr-row issue-row", href: url, target: "_blank", rel: "noopener noreferrer" }, parts) : el("div", { class: "pr-row issue-row" }, parts);
+  }
+
+  function issuesPanel(p, data) {
+    const forge = FORGE[p.forge], noun = issueNoun(p, true).toLowerCase();
+    const page = data && httpsOnly(data.url);
+    const more = data ? data.openCount - data.open.length : 0;
+    const body = !p.forge
+      ? empty("issue", "No issues here", "Issues need a GitHub, GitLab or Azure DevOps remote.")
+      : !data
+        ? empty("refresh", "Reading " + noun, "Asking " + forge.label + "…", true)
+        : [
+            data.error ? el("div", { class: "notice" }, icon("alert"), el("span", null, "Couldn't read " + noun + ": " + data.error)) : null,
+            data.open.length ? el("div", null, data.open.map(issueRow))
+              : data.fetchedAt ? empty("check", "No open " + noun, "Nothing is waiting on " + forge.label + ". New " + noun + " show up here, ready to attach to a message.") : null,
+            page ? el("a", { class: "issue-more", href: page, target: "_blank", rel: "noopener noreferrer" }, icon("link"),
+              more > 0 ? more + " more on " + forge.label : "All " + noun + " on " + forge.label) : null,
+            data.closed.length ? el("details", { class: "issue-closed" }, el("summary", null, icon("check"), "Recently closed · " + data.closed.length),
+              el("div", null, data.closed.map(issueRow))) : null,
+          ];
+    return el("section", { class: "panel" },
+      el("div", { class: "panel-head" }, el("h2", null, "Open " + noun),
+        data && data.fetchedAt ? el("span", { class: "panel-sub" }, (p.forge === "azure-devops" ? "of the project, " : "") + "from " + forge.label + " · " + relative(data.fetchedAt)) : null),
+      body);
+  }
+
   function historyPanel(p) {
     const ins = p.insights;
     const forge = FORGE[p.forge];
     const body = !p.forge
-      ? el("p", { class: "muted" }, "Pull request history needs a GitHub, GitLab or Azure DevOps remote.")
+      ? empty("pr", "No pull requests here", "Pull request history needs a GitHub, GitLab or Azure DevOps remote.")
       : !ins
-        ? el("p", { class: "muted" }, "Reading pull requests from " + forge.label + "…")
+        ? empty("refresh", "Reading pull requests", "Asking " + forge.label + "…", true)
         : [
             ins.error ? el("div", { class: "notice" }, icon("alert"), el("span", null, "Couldn't read pull requests: " + ins.error)) : null,
             ins.recent.length ? el("div", null, ins.recent.map((pr) => prRow(p, pr)))
-              : ins.fetchedAt ? el("p", { class: "muted" }, "No pull requests yet.") : null,
+              : ins.fetchedAt ? empty("pr", "No pull requests yet", "A session opens one when its agent is done.") : null,
           ];
     return el("section", { class: "panel" },
       el("div", { class: "panel-head" }, el("h2", null, "Branch history"),
@@ -1873,7 +2133,21 @@
     return projectsCache.find((p) => p.id === currentRepo) || null;
   }
 
+  /** On a narrow screen: slides the bar of sessions in from the left, or away again. */
+  function setDrawer(on) {
+    const was = drawerOpen;
+    drawerOpen = on && !wideScreen.matches;
+    document.body.classList.toggle("drawer-open", drawerOpen);
+    if (!repoView) return;
+    repoView.sideTab.setAttribute("aria-expanded", String(drawerOpen));
+    const first = drawerOpen ? repoView.sessions.querySelector("button") : null;
+    if (first) first.focus();
+    else if (was && document.body.classList.contains("side-drawer")) repoView.sideTab.focus();
+  }
+
   function dropRepoView() {
+    setDrawer(false);
+    document.body.classList.remove("side-drawer");
     repoView = null;
     composer = null;
     liveLog = null;
@@ -1893,13 +2167,17 @@
       thread: el("div", { class: "thread", "aria-live": "polite" }),
       other: el("div", { class: "repo-part" }),
     };
-    view.layout = el("div", { class: "chat-layout" }, view.sessions, el("section", { class: "chat-col" }, view.head, view.merge, view.thread, composer.node));
+    view.chat = el("section", { class: "chat-col" }, view.head, view.merge, view.thread, composer.node);
+    view.layout = el("div", { class: "chat-layout" }, view.sessions, el("div", { class: "main-col" }, view.chat, view.other));
+    view.sideTab = el("button", { class: "side-tab", type: "button", "aria-expanded": "false", onclick: () => setDrawer(true) });
+    view.scrim = el("button", { class: "scrim", type: "button", "aria-label": "Close the sessions", tabindex: "-1", onclick: () => setDrawer(false) });
+    view.sessions.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawerOpen) setDrawer(false); });
     repoTab.replaceChildren(
       el("button", { class: "back", type: "button", onclick: () => go("") }, icon("back"), "All repositories"),
       view.top,
       p.server ? el("div", { class: "server-note" }, icon("alert"),
         el("span", null, "The Server chat changes this machine itself. Its agent is not tied to a repository and not sandboxed: it can do what the server's user can.")) : "",
-      view.tabs, view.layout, view.other);
+      view.tabs, view.layout, view.sideTab, view.scrim);
     return view;
   }
 
@@ -1928,7 +2206,13 @@
     const mr = !!(FORGE[p.forge] || {}).mr;
     const ins = p.insights && p.insights.fetchedAt ? p.insights : null;
     const branches = p.worktrees.filter((w) => !w.main).length;
+    const issues = issueData && issueData.projectId === p.id ? issueData.issues : null;
     document.body.classList.toggle("in-chat", part === "sessions" && chat !== null);
+    // Wherever the list of sessions is not the page itself, it is the bar on the left.
+    document.body.classList.toggle("side-drawer", !(part === "sessions" && chat === null));
+    const openSessions = sessions.filter((s) => sessionKind(s) === "open").length;
+    setPart(view, view.sideTab, String(openSessions), () => [icon("branch"), openSessions ? el("span", null, String(openSessions)) : null]);
+    view.sideTab.setAttribute("aria-label", "Sessions: " + plural(openSessions, "open session", "open sessions"));
 
     setPart(view, view.top, JSON.stringify([p.name, p.forge, p.webUrl, p.gitHubUrl]), () => {
       const { owner, repo } = splitName(p.name);
@@ -1941,24 +2225,30 @@
       ];
     });
     if (!p.server) {
-      setPart(view, view.tabs, JSON.stringify([part, sessions.length, mr, ins && ins.openCount, branches]), () =>
-        [["sessions", "Sessions", sessions.length], ["prs", mr ? "Merge requests" : "Pull requests", ins ? ins.openCount : null], ["branches", "Branches", branches]].map((t) =>
+      setPart(view, view.tabs, JSON.stringify([part, sessions.length, mr, ins && ins.openCount, issues && issues.openCount, branches]), () =>
+        [["sessions", "Sessions", sessions.length], ["prs", mr ? "Merge requests" : "Pull requests", ins ? ins.openCount : null],
+          ["issues", issueNoun(p, true), issues ? issues.openCount : null], ["branches", "Branches", branches]].map((t) =>
           el("button", { type: "button", "aria-current": t[0] === part ? "page" : null, onclick: () => go(repoHash(p.id, t[0] === "sessions" ? "" : t[0])) },
             t[1], t[2] ? el("span", { class: "count" }, t[2]) : null)));
     }
-    view.layout.hidden = part !== "sessions";
+    view.chat.hidden = part !== "sessions";
     view.other.hidden = part === "sessions";
+    // The sessions stay beside every part; none is marked as shown while another part is.
+    const marked = part === "sessions" ? chat : "";
+    const turnMarks = (s) => s.turns.map((t) => t.runs.map((r) => r.status[0]).join(""));
+    setPart(view, view.sessions, JSON.stringify([sessions.map((s) => [s.id, s.title, s.agent, s.branch, s.sharesBranch, s.updatedAt, sessionState(s), s.pullRequest, s.ci, s.open, s.mergedAt, turnMarks(s)]),
+      marked, sessionsExpanded.has(p.id), [...openGroups], p.defaultBranch, minute]), () => [
+      el("div", { class: "drawer-head" }, el("h2", null, "Sessions"),
+        el("button", { class: "icon-btn", type: "button", "aria-label": "Close the sessions", onclick: () => setDrawer(false) }, icon("x"))),
+      sessionColumn(p, sessions, marked)]);
     if (part !== "sessions") {
-      setPart(view, view.other, JSON.stringify([part, p, codexAvailable, minute]), () =>
-        (part === "prs" ? [statsPanel(p), historyPanel(p)] : [branchesPanel(p), pathsPanel(p)]));
+      setPart(view, view.other, JSON.stringify([part, p, part === "issues" ? issues : null, codexAvailable, minute]), () =>
+        (part === "prs" ? [statsPanel(p), historyPanel(p)] : part === "issues" ? [issuesPanel(p, issues)] : [branchesPanel(p), pathsPanel(p)]));
       if (toBottom || view.fresh) window.scrollTo(0, 0);
       view.fresh = false;
       return;
     }
-    const turnMarks = (s) => s.turns.map((t) => t.runs.map((r) => r.status[0]).join(""));
-    setPart(view, view.sessions, JSON.stringify([sessions.map((s) => [s.id, s.title, s.agent, s.branch, s.sharesBranch, s.updatedAt, sessionState(s), s.pullRequest, s.ci, s.open, s.mergedAt, turnMarks(s)]),
-      chat, sessionsExpanded.has(p.id), [...openGroups], p.defaultBranch, minute]), () => sessionColumn(p, sessions, chat));
-    setPart(view, view.head, JSON.stringify([session && [session.id, session.title, session.branch, session.sharesBranch]]), () => chatHead(p, session));
+    setPart(view, view.head, JSON.stringify([session && [session.id, session.title, session.branch, session.sharesBranch, session.issues]]), () => chatHead(p, session));
     document.documentElement.style.setProperty("--header-h", document.querySelector("header").offsetHeight + "px");
     setPart(view, view.merge, JSON.stringify([session && [session.id, session.branch, session.pullRequest, session.ci, session.open, session.busy, session.commits, session.mergedAt,
       mergeBusy.has(session.id), mergeErrors.get(session.id)], p.forge, p.defaultBranch, minute]), () => mergeBar(p, session));
@@ -1977,15 +2267,19 @@
     if (!(await ensureAccess())) { dropRepoView(); repoTab.replaceChildren(lockedPanel(false)); return; }
     spin(true);
     try {
-      const [projects, schedule, chats] = await Promise.all([
+      const [projects, schedule, chats, issues] = await Promise.all([
         fetchProjects(),
         api("/api/schedule", { prompt: false }).catch(() => null),
         api("/api/projects/" + encodeURIComponent(id) + "/chats", { prompt: false }).catch(() => null),
+        id === ServerProject.id ? null : api("/api/projects/" + encodeURIComponent(id) + "/issues", { prompt: false }).catch(() => null),
       ]);
       if (id !== currentRepo) return;
       if (projects.locked) { dropRepoView(); repoTab.replaceChildren(lockedPanel(true)); return; }
       if (schedule && schedule.ok && schedule.json) scheduleData = schedule.body;
       if (chats && chats.ok && chats.json) chatData = { projectId: id, chats: chats.body.chats || [] };
+      if (issues && issues.ok && issues.json) {
+        issueData = { projectId: id, issues: Object.assign({ openCount: 0, open: [], closed: [] }, issues.body) };
+      }
       if (!repoProject()) {
         dropRepoView();
         repoTab.replaceChildren(
@@ -2042,12 +2336,13 @@
   function route() {
     const hash = location.hash.replace(/^#/, "");
     if (activeTab === "overview") gridScroll = window.scrollY;
-    const match = /^(?:repo\/([^/]+)|(server))(?:\/(new|prs|branches|s\/([^/]+)))?$/.exec(hash);
+    const match = /^(?:repo\/([^/]+)|(server))(?:\/(new|prs|issues|branches|s\/([^/]+)))?$/.exec(hash);
     if (match) {
       const id = match[2] ? ServerProject.id : match[1];
       const same = activeTab === "repo" && currentRepo === id && repoView && repoView.id === id;
       currentRepo = id;
-      repoRoute = { view: match[3] === "prs" || match[3] === "branches" ? match[3] : "sessions", chat: match[3] === "new" ? "new" : match[4] || null };
+      setDrawer(false);
+      repoRoute = { view: ["prs", "issues", "branches"].includes(match[3]) ? match[3] : "sessions", chat: match[3] === "new" ? "new" : match[4] || null };
       liveLog = null;
       if (same) {
         // Within a repository: show what is known at once, then look for news.
@@ -2785,6 +3080,7 @@
   $("lock").addEventListener("click", openAccess);
   renderLock();
   window.addEventListener("hashchange", route);
+  wideScreen.addEventListener("change", () => { setDrawer(false); });
   wideScreen.addEventListener("change", () => { if (activeTab === "repo" && repoView) renderRepo(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden && activeTab !== "settings") refreshActive(); });
   const quiet = () => !document.hidden && !document.querySelector("dialog[open]");

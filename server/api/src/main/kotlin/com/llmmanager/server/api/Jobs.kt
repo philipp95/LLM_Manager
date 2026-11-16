@@ -76,6 +76,8 @@ data class Job(
     val worktree: String? = null,
     /** Told to an agent that starts afresh in a session: what was asked before. Sent ahead of [prompt]. */
     val context: String? = null,
+    /** The issues this message refers to; their text is part of [context]. */
+    val issues: List<IssueRef> = emptyList(),
     val enabled: Boolean = true,
     val createdAt: String,
     val lastFiredAt: String? = null,

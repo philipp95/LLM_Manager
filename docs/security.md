@@ -57,7 +57,9 @@ The phone (web page or app) steers agents that edit those repositories, unattend
 | Merging takes one tap and no confirmation; it is refused while an agent works on the branch. Afterwards only that agent branch is removed (on the forge, its worktree, the local branch), never the default branch and never by force: a worktree with uncommitted changes stays | `BranchService`, `MergeCleanup` |
 | A chat message may ask for publishing; the server then pushes that run's own branch and opens a pull request after the run (and its review) finished, on a separate thread, never the default branch | `Scheduler` (`FollowUps`), `BranchService` |
 | Pull request insights use the same host-bound credentials, read only; GitHub via `gh`, with the query passed as an argument | `InsightSources` |
-| Repository and forge text (README sentence, pull request titles, authors, run output) is untrusted: the page and app render it as text, never HTML, and follow only `https://` links built or checked by the server | `index.html`, `android/app` |
+| Repository and forge text (README sentence, pull request and issue titles, labels, authors, run output) is untrusted: the page and app render it as text, never HTML, and follow only `https://` links built or checked by the server | `index.html`, `android/app` |
+| An issue attached to a message is read by the server, not by the agent, which still has no forge credentials. Its title, description and comments are untrusted: at most five per message, each cut to a fixed size, fenced in `<issue>` tags and introduced as reference material, not instructions. This lowers but cannot remove the risk of an issue's text steering the agent, so attach issues from people you trust; the sandbox and the pull request review stay the limits on what such text can cause | `IssueContext`, `IssueAttachments` |
+| Label colours from a forge are used only when they are exactly `#rrggbb` | `index.html`, `android/app` |
 | Secrets redacted from run logs before they reach the phone | `RunOutput` (`SecretRedactor`) |
 | Android: token in Android Keystore (AES-GCM), excluded from backup; only Tailscale hosts accepted; no redirects with the token | `android/app` |
 | Dependencies checked against OSV; Netty and Logback pinned to patched releases | `gradle/libs.versions.toml` |
@@ -78,7 +80,8 @@ The phone (web page or app) steers agents that edit those repositories, unattend
   restarting the server, then paste the new token into each device.
 - **Restrict the tailnet**: use Tailscale ACLs so only your devices reach port 8080.
 - **Forge tokens**: give them the smallest scope (GitLab `api` on one instance; Azure
-  DevOps organisation-scoped, Code read & write). Global Azure DevOps PATs stop working
+  DevOps organisation-scoped, Code read & write, plus Work Items read if you want
+  work items listed; issues and work items are only ever read). Global Azure DevOps PATs stop working
   on 1 December 2026.
 - **Repositories**: allowed build commands run the repository's own build scripts.
   Without bubblewrap or Landlock, a run can do anything this account can.

@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.condition.DisabledOnOs
 import org.junit.jupiter.api.condition.OS
@@ -122,6 +123,25 @@ class BranchServiceTest {
         assertTrue(merged is BranchService.Outcome.Ok, merged.toString())
         assertEquals("PUT /projects/team%2Fapp/merge_requests/7/merge", requests.last().first)
         assertEquals("merged", f.store.get(f.projectId, f.branch)!!.pullRequest!!.state)
+    }
+
+    @Test
+    fun `the pull request closes the issues its messages referred to, and describes the task as typed`() {
+        val f = gitlabFixture()
+        val job = Job(
+            "j1", "Claude in chat", f.projectId, "app", JobKind.RUN, Agent.CLAUDE, prompt = "Fix the export", schedule = Schedule(at = "2026-11-09T10:00:00Z"),
+            context = "issue text\n\nThe request:", issues = listOf(IssueRef(12, "Export fails", "https://x/12"), IssueRef(3, "Other", "https://x/3")),
+            createdAt = "2026-11-09T10:00:00Z",
+        )
+        f.runs.putJob(job)
+        f.runs.putRun(f.runs.runs().single().copy(jobId = "j1", prompt = "${job.context}\n\n${job.prompt}"))
+
+        assertTrue(f.service.openPullRequest(f.projectId, f.branch) is BranchService.Outcome.Ok)
+
+        val body = requests.single().second
+        assertTrue(body.contains("\"title\":\"Fix the export\""), body)
+        assertTrue(body.contains("Closes #12\\nCloses #3"), body)
+        assertFalse(body.contains("issue text"), "what strangers wrote on the forge is not copied into the pull request")
     }
 
     private fun gitlabFixture(): Fixture {

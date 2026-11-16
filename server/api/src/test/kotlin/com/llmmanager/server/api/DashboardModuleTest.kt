@@ -101,6 +101,23 @@ class DashboardModuleTest {
     }
 
     @Test
+    fun `issues need the token and a known project`() = testApplication {
+        val scanner = scanner()
+        val asked = mutableListOf<Forge>()
+        val known = RepoIssues(1, listOf(IssueSummary(3, "Broken", "https://github.com/acme/demo/issues/3", "open")))
+        val issues = IssuesService({ forge -> asked += forge; Result.success(known) })
+        application { dashboardModule(scanner, token, DashboardServices(issues = issues)) }
+        val id = scanner.scan().single().id
+
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/projects/$id/issues").status)
+        assertEquals(HttpStatusCode.NotFound, client.get("/api/projects/nope/issues") { auth() }.status)
+        val found = Json.decodeFromString<RepoIssues>(client.get("/api/projects/$id/issues") { auth() }.bodyAsText())
+
+        assertEquals(known.open, found.open)
+        assertEquals(listOf<Forge>(Forge.GitHub("acme", "demo")), asked)
+    }
+
+    @Test
     fun `the log of a run can be cut to its last steps`() = testApplication {
         val scanner = scanner()
         val api = scheduleApi(scanner)

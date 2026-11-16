@@ -137,8 +137,30 @@ Tap a tile for the repository's screen:
   session's branch (**Same as …** under Branch); both sessions then change that
   branch, taking turns in its worktree. Each firing of a scheduled job is a
   session too, so you can follow up on it in the chat.
+  The session tree is also a **bar on the left** of the whole repository view:
+  which sessions are open, how each is doing and which pull request it belongs
+  to, while the detail (the chat, pull requests, issues, branches) stays in the
+  middle. On a wide screen the bar stays beside every part. On a phone it
+  slides in from the left: swipe from the edge in the app, tap the tab on the
+  left edge showing the number of open sessions, or tap the sessions row. Pick
+  a session there to open it.
 - **Branch history**: the pull requests most recently updated on the forge,
   with state, branch, author, agent and CI/CD.
+- **Issues**: the open issues on GitHub or GitLab, most recently updated first,
+  with labels, author, assignees and comment count, and the ones closed lately.
+  For Azure DevOps these are the **work items** of the repository's project,
+  with their type and state. Read only: a tap opens the issue on the forge. They
+  are read when you look and kept for a minute (`GET /api/projects/{id}/issues`).
+- **Attach issues to a message**: "Attach issue" next to the message box opens
+  a searchable list of the open issues (work items on Azure DevOps); tick up to
+  five, or type a number that is not listed. The agent has no forge credentials,
+  so the server reads each one's title, description and latest comments and
+  puts that text ahead of your request. The message and the session show the
+  attached issues as chips, and the session's pull request says `Closes #12`
+  (Azure DevOps: the work item is linked, which may need Work Items write on
+  the token), so merging closes them. Nothing is posted to the issue itself.
+  An issue attached after the pull request is already open is read by the
+  agent, but not added to that pull request's description.
 - **Branches**: the worktrees, with push, pull request and merge controls, and
   Codex in tmux for hands-on work.
 
@@ -301,7 +323,7 @@ what is left. The session stays readable under **Merged**.
 | --- | --- | --- |
 | GitHub | `github.com` | the signed-in `gh` CLI |
 | GitLab | `gitlab.com` and hosts with a `gitlab` label | token with `api` scope in `~/.config/llm-manager/gitlab-token` (gitlab.com) or `gitlab-token-<host>` (self-hosted) |
-| Azure DevOps | `dev.azure.com`, `ssh.dev.azure.com`, `*.visualstudio.com` | organisation-scoped PAT (Code: Read & write) in `~/.config/llm-manager/azure-devops-token` |
+| Azure DevOps | `dev.azure.com`, `ssh.dev.azure.com`, `*.visualstudio.com` | organisation-scoped PAT (Code: Read & write; Work Items: Read to list work items) in `~/.config/llm-manager/azure-devops-token` |
 
 **Settings → Code hosts** checks a token with its host and writes these files
 (0600) for you. By hand, create token files with `chmod 600`; files readable by

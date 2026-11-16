@@ -9,6 +9,12 @@ class ChatClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
             json.decodeFromString(ChatsResponse.serializer(), it).chats
         }
 
+    /** The repository's issues, or its project's work items, read from its forge by the server. */
+    suspend fun issues(server: ServerAddress, token: String, projectId: String): ApiResult<RepoIssues> =
+        request(json, server, Call("GET", "/api/projects/${encode(projectId)}/issues"), token) {
+            json.decodeFromString(RepoIssues.serializer(), it)
+        }
+
     /** Starts a session, or sends the next message in one; answers with that session. */
     suspend fun send(server: ServerAddress, token: String, message: ChatRequest): ApiResult<ChatView> =
         request(json, server, Call("POST", "/api/chats", json.encodeToString(ChatRequest.serializer(), message)), token) {

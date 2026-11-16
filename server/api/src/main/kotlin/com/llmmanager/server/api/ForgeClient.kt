@@ -100,8 +100,7 @@ class ForgeClient(
     private val gitlab = GitLabPulls(credentials, http, gitlabApi)
     private val azure = AzurePulls(credentials, http, azureApi)
 
-    fun open(forge: Forge, branch: String, base: String, title: String, body: String): Result = guarded(forge) {
-        val request = PullRequestDraft(branch, base, title, body)
+    fun open(forge: Forge, request: PullRequestDraft): Result = guarded(forge) {
         when (forge) {
             is Forge.GitHub -> github.open(forge, request)
             is Forge.GitLab -> gitlab.open(forge, request)
@@ -131,14 +130,18 @@ class ForgeClient(
     }
 }
 
-internal data class PullRequestDraft(val branch: String, val base: String, val title: String, val body: String)
+/** A pull request to open. Merging it closes the issues in [closes]. */
+data class PullRequestDraft(val branch: String, val base: String, val title: String, val body: String, val closes: List<Long> = emptyList()) {
+    /** The body with the closing keywords GitHub and GitLab act on when the pull request is merged. */
+    val bodyWithClosing: String get() = if (closes.isEmpty()) body else body + "\n\n" + closes.joinToString("\n") { "Closes #$it" }
+}
 
 /** GitHub through the signed-in gh CLI, which holds the credentials. */
 private class GitHubPulls(private val credentials: ForgeCredentials) {
     fun open(forge: Forge.GitHub, pr: PullRequestDraft): ForgeClient.Result {
         val created = gh(
             "api", "-X", "POST", "repos/${forge.name}/pulls",
-            "-f", "head=${pr.branch}", "-f", "base=${pr.base}", "-f", "title=${pr.title}", "-f", "body=${pr.body}",
+            "-f", "head=${pr.branch}", "-f", "base=${pr.base}", "-f", "title=${pr.title}", "-f", "body=${pr.bodyWithClosing}",
         )
         if (created.ok) return ref(forgeJson.parseToJsonElement(created.stdout) as JsonObject)
         // Already open for this branch: return that one instead of failing.
@@ -171,7 +174,7 @@ private class GitLabPulls(private val credentials: ForgeCredentials, private val
             put("source_branch", pr.branch)
             put("target_branch", pr.base)
             put("title", pr.title)
-            put("description", pr.body)
+            put("description", pr.bodyWithClosing)
         }
         val created = http.send(request(forge, requests).POST(HttpRequest.BodyPublishers.ofString(payload.toString())))
         if (created.statusCode() == HTTP_CONFLICT) {
@@ -202,6 +205,8 @@ private class AzurePulls(private val credentials: ForgeCredentials, private val 
             put("targetRefName", "refs/heads/${pr.base}")
             put("title", pr.title)
             put("description", pr.body.take(DESCRIPTION_MAX))
+            // Linked work items are moved to their finished state when the pull request completes.
+            if (pr.closes.isNotEmpty()) put("workItemRefs", JsonArray(pr.closes.map { buildJsonObject { put("id", it.toString()) } }))
         }
         val created = http.send(request("${pulls(forge)}?api-version=$API_VERSION").POST(HttpRequest.BodyPublishers.ofString(payload.toString())))
         if (created.statusCode() == HTTP_CONFLICT) {
@@ -223,7 +228,10 @@ private class AzurePulls(private val credentials: ForgeCredentials, private val 
         val payload = buildJsonObject {
             put("status", "completed")
             put("lastMergeSourceCommit", buildJsonObject { put("commitId", commit) })
-            put("completionOptions", buildJsonObject { put("deleteSourceBranch", false) })
+            put("completionOptions", buildJsonObject {
+                put("deleteSourceBranch", false)
+                put("transitionWorkItems", true)
+            })
         }
         val done = http.send(request(url).method("PATCH", HttpRequest.BodyPublishers.ofString(payload.toString())))
         return if (done.statusCode() in OK_RANGE && http.isJson(done)) ref(forge, http.parse(done)) else ForgeClient.Result.Failed(error(done))

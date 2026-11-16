@@ -75,6 +75,40 @@ data class Project(
     val stars: Int = 0,
 )
 
+/** An issue (GitHub, GitLab) or work item (Azure DevOps). */
+@Serializable
+data class IssueSummary(
+    val number: Long,
+    val title: String = "",
+    val url: String = "",
+    /** open or closed. */
+    val state: String = "open",
+    /** Azure DevOps: the work item type, such as Bug. */
+    val kind: String? = null,
+    /** Azure DevOps: the state in the team's own words, such as Active. */
+    val status: String? = null,
+    val author: String? = null,
+    val assignees: List<String> = emptyList(),
+    val labels: List<String> = emptyList(),
+    /** The forge's colour per label, as #rrggbb, where it has one. */
+    val labelColors: Map<String, String> = emptyMap(),
+    val comments: Int? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
+)
+
+/** A repository's issues on its forge: the open ones, most recently updated first, and the latest closed ones. */
+@Serializable
+data class RepoIssues(
+    val openCount: Int = 0,
+    val open: List<IssueSummary> = emptyList(),
+    val closed: List<IssueSummary> = emptyList(),
+    /** The forge's own page of them. */
+    val url: String? = null,
+    val fetchedAt: String? = null,
+    val error: String? = null,
+)
+
 /** A pull request (GitLab: merge request) as the dashboard shows it. */
 @Serializable
 data class PullRequestSummary(

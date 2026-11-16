@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import com.llmmanager.android.data.AndroidApp
 import com.llmmanager.android.data.ChatRequest
 import com.llmmanager.android.data.ChatView
+import com.llmmanager.android.data.RepoIssues
 import com.llmmanager.android.data.ScheduleResponse
 import com.llmmanager.android.data.Project
 import com.llmmanager.android.data.RepoPreference
@@ -32,7 +33,13 @@ class RepoActions(
 )
 
 /** What the message box sends to: the selected session, or a new one; and what the server says about agents. */
-class ComposerTarget(val schedule: ScheduleResponse?, val sessions: List<ChatView>, val session: ChatView?)
+class ComposerTarget(
+    val schedule: ScheduleResponse?,
+    val sessions: List<ChatView>,
+    val session: ChatView?,
+    /** The repository's issues, for attaching to a message; null until read. */
+    val issues: RepoIssues? = null,
+)
 
 /** The screen's view models, handed around together. */
 class ViewModels(
